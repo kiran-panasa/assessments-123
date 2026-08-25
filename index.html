@@ -149,6 +149,13 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 .type-tag--rose{background:var(--rose-soft);color:var(--rose);}
 .paragraph-text{white-space:pre-wrap;display:block;max-width:220px;line-height:1.4;}
 .cell-textarea{min-height:44px;resize:vertical;font-family:var(--font-body);line-height:1.4;}
+.item-list{display:flex;flex-direction:column;gap:2px;max-width:220px;}
+.item-row{font-size:12.5px;color:var(--ink);padding:3px 0;border-bottom:1px dashed var(--border-soft);}
+.item-row:last-child{border-bottom:none;}
+.item-list-editor{display:flex;flex-direction:column;gap:6px;min-width:180px;max-width:240px;}
+.item-edit-row{display:flex;gap:4px;align-items:center;}
+.item-edit-row .cell-input{flex:1;min-width:0;}
+.item-add-input{opacity:.85;}
 .rel-label{color:var(--muted);font-size:11.5px;white-space:nowrap;text-align:right;}
 .badge--today{background:var(--amber-soft);color:var(--amber);}
 .badge--upcoming{background:var(--accent-soft);color:var(--accent-ink);}
@@ -268,13 +275,20 @@ function boot(seedBatches) {
     }
   }
 
+  function normalizeList(raw, legacy) {
+    if (Array.isArray(raw)) return raw.filter(v => v != null && v !== '');
+    if (typeof raw === 'string' && raw.trim()) return raw.split(/\r?\n|,/).map(s => s.trim()).filter(Boolean);
+    if (Array.isArray(legacy)) return legacy.filter(v => v != null && v !== '');
+    return [];
+  }
+
   function normalizeBatch(b) {
     return {
       id: b.id,
       batch: b.batch != null ? b.batch : (b.firstBatch || ''),
       week: b.week || '',
-      subject: b.subject != null ? b.subject : (Array.isArray(b.subjects) ? b.subjects.join(', ') : ''),
-      topic: b.topic != null ? b.topic : (Array.isArray(b.topics) ? b.topics.join(', ') : ''),
+      subject: normalizeList(b.subject, b.subjects),
+      topic: normalizeList(b.topic, b.topics),
       mockRequired: !!b.mockRequired,
       mockTitle: b.mockTitle || '',
       mockDate: b.mockDate || '',
@@ -444,9 +458,15 @@ function boot(seedBatches) {
     if (!editing) return esc(value) || dash();
     return '<input type="text" class="cell-input" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'">';
   }
-  function paragraphCell(field, value, editing, placeholder) {
-    if (!editing) return value ? '<span class="paragraph-text">'+esc(value)+'</span>' : dash();
-    return '<textarea class="cell-input cell-textarea" data-field="'+field+'" placeholder="'+esc(placeholder||'')+'">'+esc(value)+'</textarea>';
+  function listCell(field, values, editing, placeholder) {
+    if (!editing) {
+      if (!values.length) return dash();
+      return '<div class="item-list">' + values.map(v => '<div class="item-row">'+esc(v)+'</div>').join('') + '</div>';
+    }
+    return '<div class="item-list-editor">'
+      + values.map((v, i) => '<div class="item-edit-row"><input type="text" class="cell-input item-edit-input" data-field="'+field+'" data-index="'+i+'" value="'+esc(v)+'"><button type="button" class="chip-x" data-action="remove-item" data-field="'+field+'" data-index="'+i+'" aria-label="Remove">&times;</button></div>').join('')
+      + '<input type="text" class="cell-input item-add-input" data-field="'+field+'" data-item-add="1" placeholder="'+esc(placeholder||'Add…')+'">'
+      + '</div>';
   }
   function errSpan(key, id, msg) {
     return '<div class="field-error" id="err-'+key+'-'+id+'"'+(msg?'':' hidden')+'>'+(msg||'')+'</div>';
@@ -508,8 +528,8 @@ function boot(seedBatches) {
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus">' + textCell('batch', d.batch, editing, 'Batch name') + '</td>'
       + '<td>' + textCell('week', d.week, editing, 'Week 1') + '</td>'
-      + '<td>' + paragraphCell('subject', d.subject, editing, 'Subject details') + '</td>'
-      + '<td>' + paragraphCell('topic', d.topic, editing, 'Topic details') + '</td>'
+      + '<td>' + listCell('subject', d.subject, editing, 'Add subject…') + '</td>'
+      + '<td>' + listCell('topic', d.topic, editing, 'Add topic…') + '</td>'
       + '<td>' + toggleCell(d, editing) + '</td>'
       + mockCols
       + mockInterviewCols
@@ -700,7 +720,7 @@ function boot(seedBatches) {
     const b = batches.find(x => x.id === id);
     if (!b) return;
     editingId = id; isNewRow = false;
-    draft = { ...b };
+    draft = { ...b, subject: [...b.subject], topic: [...b.topic] };
     render();
   }
 
@@ -711,7 +731,7 @@ function boot(seedBatches) {
     const blank = normalizeBatch({ id });
     batches.unshift(blank);
     editingId = id; isNewRow = true;
-    draft = { ...blank };
+    draft = { ...blank, subject: [...blank.subject], topic: [...blank.topic] };
     render();
     requestAnimationFrame(() => {
       const el = document.querySelector('#row-' + id + ' .cell-input[data-field="batch"]');
@@ -767,15 +787,42 @@ function boot(seedBatches) {
       const toEl = document.getElementById('syllabus-filter-to'); if (toEl) toEl.value = '';
       renderRecordsTable();
     }
+    else if (action === 'remove-item') {
+      if (!draft) return;
+      const field = btn.dataset.field, index = Number(btn.dataset.index);
+      draft[field].splice(index, 1);
+      render();
+    }
   });
 
   root.addEventListener('input', e => {
     const t = e.target;
     if (t.id === 'syllabus-search') { searchQuery = t.value; renderRecordsTable(); return; }
     if (!draft) return;
+    if (t.matches('.item-edit-input')) {
+      draft[t.dataset.field][Number(t.dataset.index)] = t.value;
+      return;
+    }
+    if (t.matches('.item-add-input')) return;
     if (t.matches('.cell-input[data-field]') && t.type !== 'date' && t.type !== 'time') {
       draft[t.dataset.field] = t.value;
     }
+  });
+
+  root.addEventListener('keydown', e => {
+    const t = e.target;
+    if (!t.matches('.item-add-input') || e.key !== 'Enter') return;
+    e.preventDefault();
+    if (!draft) return;
+    const field = t.dataset.field;
+    const val = t.value.trim();
+    if (!val) { t.value = ''; return; }
+    draft[field].push(val);
+    render();
+    requestAnimationFrame(() => {
+      const el = root.querySelector('.item-add-input[data-field="' + field + '"]');
+      if (el) el.focus();
+    });
   });
 
   root.addEventListener('change', e => {
