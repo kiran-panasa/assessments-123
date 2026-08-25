@@ -119,6 +119,15 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 document.getElementById('app-style').textContent = CSS;
 
 const LS_KEY = 'cohort-ledger:batches:v1';
+const FIREBASE_SDK_VERSION = '12.18.0';
+const FIREBASE_CONFIG = {
+  apiKey: 'REPLACE_WITH_FIREBASE_API_KEY',
+  authDomain: 'REPLACE_WITH_PROJECT.firebaseapp.com',
+  projectId: 'REPLACE_WITH_PROJECT_ID',
+  storageBucket: 'REPLACE_WITH_PROJECT.appspot.com',
+  messagingSenderId: 'REPLACE_WITH_SENDER_ID',
+  appId: 'REPLACE_WITH_APP_ID'
+};
 
 function fullDocumentHTML(batches) {
   return `<!doctype html>
@@ -138,6 +147,8 @@ function fullDocumentHTML(batches) {
 const CSS = ${JSON.stringify(CSS)};
 document.getElementById('app-style').textContent = CSS;
 const LS_KEY = ${JSON.stringify(LS_KEY)};
+const FIREBASE_SDK_VERSION = ${JSON.stringify(FIREBASE_SDK_VERSION)};
+const FIREBASE_CONFIG = ${JSON.stringify(FIREBASE_CONFIG)};
 ${fullDocumentHTML.toString()}
 ${boot.toString()}
 boot(${JSON.stringify(batches)});
@@ -160,9 +171,82 @@ function boot(seedBatches) {
   let artifactAPI = null;
   let canWrite = true;
   let toastTimer = null;
+  let syncMode = 'local';
+  let db = null;
+  let fs = null;
+  let latestRemote = null;
+  const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
+  const firebaseConfigured = ['apiKey','projectId','appId'].every(isConfigured);
 
   if (window.claude && typeof window.claude.use === 'function') {
     window.claude.use('artifact').then(a => { artifactAPI = a; });
+  } else if (firebaseConfigured) {
+    initFirebase();
+  }
+
+  async function initFirebase() {
+    try {
+      const appMod = await import('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-app.js');
+      const fsMod = await import('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-firestore.js');
+      const app = appMod.initializeApp(FIREBASE_CONFIG);
+      db = fsMod.getFirestore(app);
+      fs = fsMod;
+      syncMode = 'firebase';
+      const col = fs.collection(db, 'batches');
+      fs.onSnapshot(col, snap => {
+        if (snap.empty && !snap.metadata.fromCache) {
+          seedFirestore();
+          return;
+        }
+        const list = snap.docs.map(d => normalizeBatch({ id: d.id, ...d.data() }));
+        list.sort((a, b) => (a.syllabus || '').localeCompare(b.syllabus) || (a.firstBatch || '').localeCompare(b.firstBatch));
+        applyRemoteBatches(list);
+      }, err => {
+        console.error('Firestore sync error', err);
+        syncMode = 'local';
+        updateSyncBadge();
+        flashToast('Live sync unavailable — saving to this browser only.', 'error');
+      });
+      updateSyncBadge();
+    } catch (err) {
+      console.error('Firebase init failed', err);
+      syncMode = 'local';
+      updateSyncBadge();
+    }
+  }
+
+  function normalizeBatch(b) {
+    return { ...b, subjects: [...(b.subjects||[])], topics: [...(b.topics||[])], subTopics: [...(b.subTopics||[])] };
+  }
+
+  let seeded = false;
+  function seedFirestore() {
+    if (seeded || !db || !fs) return;
+    seeded = true;
+    batches.forEach(b => {
+      const { id, ...data } = b;
+      fs.setDoc(fs.doc(db, 'batches', id), data).catch(e => console.error('Seed failed', e));
+    });
+  }
+
+  function applyRemoteBatches(list) {
+    latestRemote = list;
+    if (editingId === null) { batches = list; render(); }
+  }
+
+  function updateSyncBadge() {
+    const el = document.getElementById('sync-badge');
+    if (!el) return;
+    if (syncMode === 'firebase') {
+      el.textContent = 'Live — synced for everyone';
+      el.className = 'badge badge--yes';
+    } else if (artifactAPI) {
+      el.textContent = 'Synced via Claude';
+      el.className = 'badge badge--yes';
+    } else {
+      el.textContent = 'Saved to this browser only';
+      el.className = 'badge badge--no';
+    }
   }
 
   function uid() { return 'b' + Math.random().toString(36).slice(2, 9); }
@@ -197,8 +281,8 @@ function boot(seedBatches) {
       <div id="access-banner" class="access-banner" hidden>You have read-only access to this ledger &mdash; changes here won't be saved.</div>
       <div class="app-header">
         <div>
-          <h1 class="app-title">Cohort Ledger</h1>
-          <div class="app-subtitle">Syllabus coverage, exam windows, and mock schedules across every batch.</div>
+          <h1 class="app-title">Assessment Ops</h1>
+          <span class="badge badge--no" id="sync-badge" style="margin-top:6px;display:inline-block;">Saved to this browser only</span>
         </div>
         <div class="header-right">
           <div class="stats">
@@ -241,7 +325,7 @@ function boot(seedBatches) {
           <tbody id="tbody"></tbody>
         </table>
       </div>
-      <div class="footnote">Times shown in each editor's local wall-clock. Deleting a batch cannot be undone.</div>
+      
     </div>
     <div class="toast" id="toast"></div>
   `;
@@ -327,6 +411,7 @@ function boot(seedBatches) {
     }
     updateStats();
     updateAccessBanner();
+    updateSyncBadge();
   }
 
   function updateErrorDisplays() {
@@ -348,8 +433,15 @@ function boot(seedBatches) {
     toastTimer = setTimeout(() => { el.className = 'toast'; }, 2600);
   }
 
-  function persist() {
-    if (artifactAPI) {
+  function persistSave(batchObj) {
+    if (syncMode === 'firebase' && db && fs) {
+      const { id, ...data } = batchObj;
+      fs.setDoc(fs.doc(db, 'batches', id), data).catch(err => {
+        console.error('Firestore save failed', err);
+        flashToast('Live sync failed — saved to this browser only.', 'error');
+        try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
+      });
+    } else if (artifactAPI) {
       artifactAPI.publish(fullDocumentHTML(batches)).catch(err => {
         const code = err && err.code;
         if (code === 'not_writer' || code === 'not_granted') {
@@ -362,6 +454,21 @@ function boot(seedBatches) {
         } else {
           try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
         }
+      });
+    } else {
+      try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
+    }
+  }
+
+  function persistDelete(id) {
+    if (syncMode === 'firebase' && db && fs) {
+      fs.deleteDoc(fs.doc(db, 'batches', id)).catch(err => {
+        console.error('Firestore delete failed', err);
+        flashToast('Live sync failed to delete.', 'error');
+      });
+    } else if (artifactAPI) {
+      artifactAPI.publish(fullDocumentHTML(batches)).catch(() => {
+        try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
       });
     } else {
       try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
@@ -400,15 +507,17 @@ function boot(seedBatches) {
     if (!draft.firstBatch.trim()) { flashToast('First batch is required.', 'error'); return; }
     const idx = batches.findIndex(b => b.id === editingId);
     if (idx > -1) batches[idx] = { ...draft };
+    const saved = { ...draft };
     editingId = null; draft = null; isNewRow = false;
     render();
-    persist();
+    persistSave(saved);
     flashToast('Batch saved.', 'success');
   }
 
   function cancel() {
     if (isNewRow) batches = batches.filter(b => b.id !== editingId);
     editingId = null; draft = null; isNewRow = false;
+    if (latestRemote) batches = latestRemote;
     render();
   }
 
@@ -417,7 +526,7 @@ function boot(seedBatches) {
     batches = batches.filter(b => b.id !== id);
     if (editingId === id) { editingId = null; draft = null; isNewRow = false; }
     render();
-    persist();
+    persistDelete(id);
     flashToast('Batch deleted.', 'success');
   }
 
