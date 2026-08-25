@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cohort Ledger</title>
+<title>Assessments Ops</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -178,7 +178,7 @@ function fullDocumentHTML(batches) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cohort Ledger</title>
+<title>Assessments Ops</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -220,7 +220,7 @@ function boot(seedBatches) {
   let latestRemote = null;
   let activeSection = 'overview';
   let syllabusSearch = '';
-  let mockFilter = { type: 'all', from: '', to: '' };
+  let syllabusDateFilter = { from: '', to: '' };
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
   const firebaseConfigured = ['apiKey','projectId','appId'].every(isConfigured);
 
@@ -340,7 +340,6 @@ function boot(seedBatches) {
           <button type="button" class="sidebar-link" data-action="nav" data-section="overview">Overview</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="batches">Batches</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="syllabus">Syllabus</button>
-          <button type="button" class="sidebar-link" data-action="nav" data-section="mock">Mock &amp; Interviews</button>
         </nav>
 
         <div class="content">
@@ -391,56 +390,42 @@ function boot(seedBatches) {
 
           <section class="content-section" id="section-syllabus">
             <h2 class="section-heading">Syllabus</h2>
-            <p class="section-desc">Subjects, topics, and sub-topics covered across every batch.</p>
+            <p class="section-desc">Subjects, topics, sub-topics, and the exam, mock, and interview schedule for every batch.</p>
             <div class="filter-bar">
               <div class="filter-field"><label for="syllabus-search">Search</label><input type="text" id="syllabus-search" placeholder="Search syllabus, subject, topic&hellip;"></div>
+              <div class="filter-field"><label for="syllabus-filter-from">From</label><input type="date" id="syllabus-filter-from"></div>
+              <div class="filter-field"><label for="syllabus-filter-to">To</label><input type="date" id="syllabus-filter-to"></div>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-syllabus-filter">Clear</button>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
+                  <tr class="thead-groups">
+                    <th colspan="4">Syllabus Details</th>
+                    <th colspan="5" class="grp-blue">Main Exam</th>
+                    <th colspan="4" class="grp-amber">Mock Assessment</th>
+                    <th colspan="3" class="grp-teal">Next Mock Interview</th>
+                  </tr>
                   <tr class="thead-fields">
-                    <th>Syllabus</th>
+                    <th class="col-syllabus">Syllabus</th>
                     <th>Subjects</th>
                     <th>Topics</th>
                     <th>Sub-Topics</th>
-                    <th>First Batch</th>
-                    <th>Week</th>
+                    <th class="grp-blue">First Batch</th>
+                    <th class="grp-blue">Week</th>
+                    <th class="grp-blue">Date</th>
+                    <th class="grp-blue">Start</th>
+                    <th class="grp-blue">End</th>
+                    <th class="grp-amber">Required</th>
+                    <th class="grp-amber">Date</th>
+                    <th class="grp-amber">Start</th>
+                    <th class="grp-amber">End</th>
+                    <th class="grp-teal">Date</th>
+                    <th class="grp-teal">Start</th>
+                    <th class="grp-teal">End</th>
                   </tr>
                 </thead>
                 <tbody id="syllabus-tbody"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="content-section" id="section-mock">
-            <h2 class="section-heading">Mock Assessments &amp; Interviews</h2>
-            <p class="section-desc">Filter by type and date range to see what's coming up.</p>
-            <div class="filter-bar">
-              <div class="filter-field"><label for="mock-filter-type">Type</label>
-                <select id="mock-filter-type">
-                  <option value="all">All types</option>
-                  <option value="mock">Mock Assessment</option>
-                  <option value="interview">Mock Interview</option>
-                </select>
-              </div>
-              <div class="filter-field"><label for="mock-filter-from">From</label><input type="date" id="mock-filter-from"></div>
-              <div class="filter-field"><label for="mock-filter-to">To</label><input type="date" id="mock-filter-to"></div>
-              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-mock-filter">Clear</button>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr class="thead-fields">
-                    <th>Type</th>
-                    <th>Syllabus</th>
-                    <th>Batch</th>
-                    <th>Date</th>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody id="mock-tbody"></tbody>
               </table>
             </div>
           </section>
@@ -518,12 +503,6 @@ function boot(seedBatches) {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
 
-  function dateStatus(iso) {
-    const t = todayISO();
-    if (iso === t) return 'today';
-    return iso < t ? 'past' : 'upcoming';
-  }
-
   function relLabel(iso) {
     const today = new Date(); today.setHours(0,0,0,0);
     const d = new Date(iso + 'T00:00:00');
@@ -582,59 +561,50 @@ function boot(seedBatches) {
     ).join('');
   }
 
+  function batchMatchesDateRange(b, from, to) {
+    if (!from && !to) return true;
+    const dates = [b.mainExamDate, (b.mockRequired ? b.mockDate : ''), b.nextDate].filter(Boolean);
+    if (!dates.length) return false;
+    return dates.some(d => (!from || d >= from) && (!to || d <= to));
+  }
+
+  function syllabusRowHTML(b) {
+    const mockCols = b.mockRequired
+      ? '<td>' + dateCell('mockDate', b, false) + '</td>'
+        + '<td>' + timeCell('mockStart', b, false) + '</td>'
+        + '<td>' + timeCell('mockEnd', b, false) + '</td>'
+      : '<td class="muted-cell" colspan="3">Not scheduled</td>';
+    return '<tr>'
+      + '<td class="col-syllabus">' + (b.syllabus ? '<span class="cell-strong">' + esc(b.syllabus) + '</span>' : dash()) + '</td>'
+      + '<td>' + chipsCell('', b.subjects, false) + '</td>'
+      + '<td>' + chipsCell('', b.topics, false) + '</td>'
+      + '<td>' + chipsCell('', b.subTopics, false) + '</td>'
+      + '<td>' + (esc(b.firstBatch) || dash()) + '</td>'
+      + '<td>' + (esc(b.week) || dash()) + '</td>'
+      + '<td>' + dateCell('mainExamDate', b, false) + '</td>'
+      + '<td>' + timeCell('mainExamStart', b, false) + '</td>'
+      + '<td>' + timeCell('mainExamEnd', b, false) + '</td>'
+      + '<td>' + toggleCell(b, false) + '</td>'
+      + mockCols
+      + '<td>' + dateCell('nextDate', b, false) + '</td>'
+      + '<td>' + timeCell('nextStart', b, false) + '</td>'
+      + '<td>' + timeCell('nextEnd', b, false) + '</td>'
+    + '</tr>';
+  }
+
   function renderSyllabusTable() {
     const tbody = document.getElementById('syllabus-tbody');
     if (!tbody) return;
     const q = syllabusSearch.trim().toLowerCase();
     const filtered = batches.filter(b => {
-      if (!q) return true;
-      const hay = [b.syllabus, ...b.subjects, ...b.topics, ...b.subTopics].join(' ').toLowerCase();
-      return hay.includes(q);
+      if (q) {
+        const hay = [b.syllabus, ...b.subjects, ...b.topics, ...b.subTopics].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return batchMatchesDateRange(b, syllabusDateFilter.from, syllabusDateFilter.to);
     });
-    if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No syllabus entries match your search.</div></td></tr>'; return; }
-    tbody.innerHTML = filtered.map(b =>
-      '<tr>'
-        + '<td class="cell-strong">' + esc(b.syllabus) + '</td>'
-        + '<td>' + chipsCell('', b.subjects, false) + '</td>'
-        + '<td>' + chipsCell('', b.topics, false) + '</td>'
-        + '<td>' + chipsCell('', b.subTopics, false) + '</td>'
-        + '<td>' + (esc(b.firstBatch) || dash()) + '</td>'
-        + '<td>' + (esc(b.week) || dash()) + '</td>'
-      + '</tr>'
-    ).join('');
-  }
-
-  function buildMockRows() {
-    const rows = [];
-    batches.forEach(b => {
-      if (b.mockRequired && b.mockDate) rows.push({ kind:'Mock Assessment', kindKey:'mock', cls:'amber', date:b.mockDate, start:b.mockStart, end:b.mockEnd, syllabus:b.syllabus, batch:b.firstBatch });
-      if (b.nextDate) rows.push({ kind:'Mock Interview', kindKey:'interview', cls:'teal', date:b.nextDate, start:b.nextStart, end:b.nextEnd, syllabus:b.syllabus, batch:b.firstBatch });
-    });
-    rows.sort((a, b) => a.date.localeCompare(b.date));
-    return rows;
-  }
-
-  function renderMockTable() {
-    const tbody = document.getElementById('mock-tbody');
-    if (!tbody) return;
-    let rows = buildMockRows();
-    if (mockFilter.type !== 'all') rows = rows.filter(r => r.kindKey === mockFilter.type);
-    if (mockFilter.from) rows = rows.filter(r => r.date >= mockFilter.from);
-    if (mockFilter.to) rows = rows.filter(r => r.date <= mockFilter.to);
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No entries match this filter.</div></td></tr>'; return; }
-    tbody.innerHTML = rows.map(r => {
-      const status = dateStatus(r.date);
-      const statusLabel = status === 'today' ? 'Today' : (status === 'past' ? 'Past' : 'Upcoming');
-      return '<tr>'
-        + '<td><span class="type-tag type-tag--' + r.cls + '">' + esc(r.kind) + '</span></td>'
-        + '<td class="cell-strong">' + esc(r.syllabus) + '</td>'
-        + '<td>' + (esc(r.batch) || dash()) + '</td>'
-        + '<td class="mono">' + fmtDate(r.date) + '</td>'
-        + '<td class="mono">' + (r.start ? fmt12(r.start) : dash()) + '</td>'
-        + '<td class="mono">' + (r.end ? fmt12(r.end) : dash()) + '</td>'
-        + '<td><span class="badge badge--' + status + '">' + statusLabel + '</span></td>'
-      + '</tr>';
-    }).join('');
+    if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="16"><div class="empty-state">No syllabus entries match your filters.</div></td></tr>'; return; }
+    tbody.innerHTML = filtered.map(syllabusRowHTML).join('');
   }
 
   function render() {
@@ -655,7 +625,6 @@ function boot(seedBatches) {
     renderKPICards();
     renderTimeline();
     renderSyllabusTable();
-    renderMockTable();
     updateAccessBanner();
     updateSyncBadge();
   }
@@ -788,12 +757,11 @@ function boot(seedBatches) {
     else if (action === 'cancel') cancel();
     else if (action === 'add-batch') startAdd();
     else if (action === 'nav') { activeSection = btn.dataset.section; render(); }
-    else if (action === 'clear-mock-filter') {
-      mockFilter = { type: 'all', from: '', to: '' };
-      const typeEl = document.getElementById('mock-filter-type'); if (typeEl) typeEl.value = 'all';
-      const fromEl = document.getElementById('mock-filter-from'); if (fromEl) fromEl.value = '';
-      const toEl = document.getElementById('mock-filter-to'); if (toEl) toEl.value = '';
-      renderMockTable();
+    else if (action === 'clear-syllabus-filter') {
+      syllabusDateFilter = { from: '', to: '' };
+      const fromEl = document.getElementById('syllabus-filter-from'); if (fromEl) fromEl.value = '';
+      const toEl = document.getElementById('syllabus-filter-to'); if (toEl) toEl.value = '';
+      renderSyllabusTable();
     }
     else if (action === 'remove-chip') {
       if (!draft) return;
@@ -814,9 +782,8 @@ function boot(seedBatches) {
 
   root.addEventListener('change', e => {
     const t = e.target;
-    if (t.id === 'mock-filter-type') { mockFilter.type = t.value; renderMockTable(); return; }
-    if (t.id === 'mock-filter-from') { mockFilter.from = t.value; renderMockTable(); return; }
-    if (t.id === 'mock-filter-to') { mockFilter.to = t.value; renderMockTable(); return; }
+    if (t.id === 'syllabus-filter-from') { syllabusDateFilter.from = t.value; renderSyllabusTable(); return; }
+    if (t.id === 'syllabus-filter-to') { syllabusDateFilter.to = t.value; renderSyllabusTable(); return; }
     if (!draft) return;
     if (t.dataset.action === 'toggle-mock') {
       draft.mockRequired = t.checked;
