@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cohort Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style id="app-style"></style>
+</head>
+<body>
+<script>
+'use strict';
+
+const CSS = `
+:root{
+  --bg:#F5F7F3; --surface:#FFFFFF; --surface-2:#EDF1EA; --border:#D9DFD5; --border-soft:#E8ECE4;
+  --ink:#171F19; --ink-2:#48544C; --muted:#7C8A7E;
+  --accent:#1F6F5C; --accent-ink:#0E3F33; --accent-soft:#DFF0E9;
+  --blue:#2B6CB0; --blue-soft:#E3EDF7;
+  --amber:#966018; --amber-soft:#F7ECD9;
+  --danger:#B3392B; --danger-soft:#FBE4E1;
+  --font-display:'Lexend','Segoe UI',system-ui,sans-serif;
+  --font-body:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono','SFMono-Regular',Consolas,monospace;
+  --group-row-h:33px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10130F; --surface:#171C15; --surface-2:#1E241B; --border:#2B332C; --border-soft:#232A20;
+    --ink:#EAF1E6; --ink-2:#B9C4B3; --muted:#87947F;
+    --accent:#4FCBA6; --accent-ink:#E3FBF3; --accent-soft:#16332C;
+    --blue:#87B4E8; --blue-soft:#17263A;
+    --amber:#E3B25E; --amber-soft:#332A15;
+    --danger:#EE8E80; --danger-soft:#3A1C18;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10130F; --surface:#171C15; --surface-2:#1E241B; --border:#2B332C; --border-soft:#232A20;
+  --ink:#EAF1E6; --ink-2:#B9C4B3; --muted:#87947F;
+  --accent:#4FCBA6; --accent-ink:#E3FBF3; --accent-soft:#16332C;
+  --blue:#87B4E8; --blue-soft:#17263A;
+  --amber:#E3B25E; --amber-soft:#332A15;
+  --danger:#EE8E80; --danger-soft:#3A1C18;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;}
+.page{max-width:1440px;margin:0 auto;padding:32px 28px 72px;}
+.app-header{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;margin-bottom:18px;}
+.app-title{font-family:var(--font-display);font-weight:700;font-size:26px;letter-spacing:-.01em;color:var(--ink);text-wrap:balance;margin:0;}
+.app-subtitle{font-family:var(--font-body);color:var(--muted);font-size:13.5px;margin-top:5px;}
+.header-right{display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
+.stats{display:flex;gap:10px;}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 14px;min-width:92px;}
+.stat-value{font-family:var(--font-mono);font-weight:500;font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums;}
+.stat-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:2px;}
+.btn{font-family:var(--font-display);font-weight:600;font-size:12.5px;border-radius:8px;padding:9px 16px;border:1px solid transparent;cursor:pointer;transition:background-color .15s ease,border-color .15s ease,color .15s ease;}
+.btn--sm{padding:6px 12px;font-size:12px;}
+.btn--primary{background:var(--accent);color:#fff;}
+.btn--primary:hover{background:var(--accent-ink);}
+.btn--primary:disabled{opacity:.5;cursor:not-allowed;}
+.btn--ghost{background:transparent;border-color:var(--border);color:var(--ink-2);}
+.btn--ghost:hover{background:var(--surface-2);}
+.btn--icon-danger{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 8px;display:inline-flex;align-items:center;}
+.btn--icon-danger:hover{color:var(--danger);background:var(--danger-soft);border-color:var(--danger-soft);}
+.btn:focus-visible,.cell-input:focus-visible,.chip-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.access-banner{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber);border-radius:10px;padding:9px 14px;font-size:12.5px;margin-bottom:14px;font-family:var(--font-body);}
+.table-wrap{overflow:auto;max-height:74vh;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.04);}
+table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-family:var(--font-body);font-size:13px;}
+thead th{position:sticky;background:var(--surface-2);font-family:var(--font-display);font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--ink-2);padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;text-align:left;line-height:16px;}
+.thead-groups th{top:0;z-index:4;}
+.thead-fields th{top:var(--group-row-h);z-index:3;}
+.grp-blue{background:var(--blue-soft);color:var(--blue);}
+.grp-amber{background:var(--amber-soft);color:var(--amber);}
+.grp-teal{background:var(--accent-soft);color:var(--accent-ink);}
+th.col-syllabus,td.col-syllabus{position:sticky;left:0;z-index:2;background:var(--surface);box-shadow:1px 0 0 var(--border);}
+thead th.col-syllabus{z-index:5;background:var(--surface-2);}
+th.col-actions,td.col-actions{position:sticky;right:0;z-index:2;background:var(--surface);box-shadow:-1px 0 0 var(--border);}
+thead th.col-actions{z-index:5;background:var(--surface-2);}
+tbody td{padding:9px 12px;border-bottom:1px solid var(--border-soft);vertical-align:top;}
+tbody tr:not(.row-editing):hover td{background:var(--surface-2);}
+tr.row-editing td{background:var(--surface-2);}
+tr.row-editing td.col-syllabus,tr.row-editing td.col-actions{background:var(--surface-2);}
+tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 var(--border);}
+.cell-strong{font-family:var(--font-display);font-weight:600;color:var(--ink);}
+.empty-dash{color:var(--muted);}
+.muted-cell{color:var(--muted);font-size:12px;font-style:italic;}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap;}
+.chips{display:flex;flex-wrap:wrap;gap:4px;max-width:180px;}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--border-soft);color:var(--ink-2);font-size:11.5px;padding:2px 4px 2px 8px;border-radius:999px;white-space:nowrap;}
+.chip-x{border:none;background:none;cursor:pointer;color:var(--muted);font-size:13px;line-height:1;padding:2px;border-radius:50%;}
+.chip-x:hover{color:var(--danger);}
+.chip-input{margin-top:4px;width:100%;min-width:140px;}
+.switch{position:relative;display:inline-flex;cursor:pointer;}
+.switch input{position:absolute;opacity:0;width:1px;height:1px;}
+.switch-track{width:34px;height:20px;background:var(--border);border-radius:999px;position:relative;transition:background-color .15s ease;}
+.switch-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s ease;}
+.switch input:checked+.switch-track{background:var(--accent);}
+.switch input:checked+.switch-track .switch-thumb{transform:translateX(14px);}
+.switch input:focus-visible+.switch-track{outline:2px solid var(--accent);outline-offset:2px;}
+.badge{font-family:var(--font-display);font-weight:600;font-size:11px;padding:3px 9px;border-radius:999px;letter-spacing:.02em;display:inline-block;}
+.badge--yes{background:var(--accent-soft);color:var(--accent-ink);}
+.badge--no{background:var(--surface-2);color:var(--muted);}
+.cell-input{width:100%;min-width:104px;font-family:var(--font-body);font-size:12.5px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--ink);}
+.cell-input--narrow{min-width:68px;}
+.cell-input--date,.cell-input--time{font-family:var(--font-mono);min-width:120px;font-variant-numeric:tabular-nums;}
+.field-error{color:var(--danger);font-size:11px;margin-top:4px;font-family:var(--font-body);max-width:130px;}
+.actions{display:flex;gap:6px;}
+.empty-state{padding:56px 24px;text-align:center;color:var(--muted);font-family:var(--font-body);}
+.empty-state .btn{margin-top:14px;}
+.toast{position:fixed;bottom:22px;right:22px;background:var(--ink);color:var(--bg);font-family:var(--font-body);font-size:13px;padding:10px 16px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.22);opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s ease,transform .2s ease;z-index:50;}
+.toast.show{opacity:1;transform:translateY(0);}
+.toast.error{background:var(--danger);color:#fff;}
+.footnote{margin-top:10px;font-size:11.5px;color:var(--muted);}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;}}
+`;
+document.getElementById('app-style').textContent = CSS;
+
+const LS_KEY = 'cohort-ledger:batches:v1';
+
+function fullDocumentHTML(batches) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cohort Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style id="app-style"></style>
+</head>
+<body>
+<script>
+'use strict';
+const CSS = ${JSON.stringify(CSS)};
+document.getElementById('app-style').textContent = CSS;
+const LS_KEY = ${JSON.stringify(LS_KEY)};
+${fullDocumentHTML.toString()}
+${boot.toString()}
+boot(${JSON.stringify(batches)});
+<\/script>
+</body>
+</html>`;
+}
+
+function boot(seedBatches) {
+  const ICON_TRASH = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 4H13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6 4V2.6C6 2.27 6.27 2 6.6 2H9.4C9.73 2 10 2.27 10 2.6V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M4.2 4L4.8 12.6C4.85 13.37 5.48 14 6.26 14H9.74C10.52 14 11.15 13.37 11.2 12.6L11.8 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  let stored = null;
+  try { const raw = localStorage.getItem(LS_KEY); if (raw) stored = JSON.parse(raw); } catch (e) {}
+  const base = (stored && Array.isArray(stored) && stored.length) ? stored : seedBatches;
+  let batches = base.map(b => ({ ...b, subjects: [...(b.subjects||[])], topics: [...(b.topics||[])], subTopics: [...(b.subTopics||[])] }));
+
+  let editingId = null;
+  let draft = null;
+  let isNewRow = false;
+  let artifactAPI = null;
+  let canWrite = true;
+  let toastTimer = null;
+
+  if (window.claude && typeof window.claude.use === 'function') {
+    window.claude.use('artifact').then(a => { artifactAPI = a; });
+  }
+
+  function uid() { return 'b' + Math.random().toString(36).slice(2, 9); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function dash() { return '<span class="empty-dash">&mdash;</span>'; }
+  function timeToMinutes(t) { if (!t) return null; const p = t.split(':').map(Number); return p[0]*60+p[1]; }
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const parts = iso.split('-').map(Number);
+    const dt = new Date(Date.UTC(parts[0], parts[1]-1, parts[2]));
+    return dt.toLocaleDateString('en-US', { day:'2-digit', month:'short', year:'numeric', timeZone:'UTC' });
+  }
+  function fmt12(t) {
+    if (!t) return '';
+    const p = t.split(':').map(Number);
+    const period = p[0] >= 12 ? 'PM' : 'AM';
+    const h12 = ((p[0]+11)%12)+1;
+    return h12 + ':' + String(p[1]).padStart(2,'0') + ' ' + period;
+  }
+
+  function validateDraft(d) {
+    const errors = {};
+    if (d.mainExamStart && d.mainExamEnd && timeToMinutes(d.mainExamEnd) <= timeToMinutes(d.mainExamStart)) errors.mainExam = 'End must be after start.';
+    if (d.mockRequired && d.mockStart && d.mockEnd && timeToMinutes(d.mockEnd) <= timeToMinutes(d.mockStart)) errors.mock = 'End must be after start.';
+    if (d.nextStart && d.nextEnd && timeToMinutes(d.nextEnd) <= timeToMinutes(d.nextStart)) errors.next = 'End must be after start.';
+    return errors;
+  }
+
+  const root = document.body;
+  root.innerHTML = `
+    <div class="page">
+      <div id="access-banner" class="access-banner" hidden>You have read-only access to this ledger &mdash; changes here won't be saved.</div>
+      <div class="app-header">
+        <div>
+          <h1 class="app-title">Cohort Ledger</h1>
+          <div class="app-subtitle">Syllabus coverage, exam windows, and mock schedules across every batch.</div>
+        </div>
+        <div class="header-right">
+          <div class="stats">
+            <div class="stat"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Batches</div></div>
+            <div class="stat"><div class="stat-value" id="stat-mock">0</div><div class="stat-label">Mocks set</div></div>
+            <div class="stat"><div class="stat-value" id="stat-next">&mdash;</div><div class="stat-label">Next interview</div></div>
+          </div>
+          <button type="button" class="btn btn--primary" id="add-batch-btn" data-action="add-batch">+ Add Batch</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr class="thead-groups">
+              <th colspan="4">Syllabus Details</th>
+              <th colspan="5" class="grp-blue">Main Exam</th>
+              <th colspan="4" class="grp-amber">Mock Assessment</th>
+              <th colspan="3" class="grp-teal">Next Mock Interview</th>
+              <th class="col-actions" rowspan="2">Actions</th>
+            </tr>
+            <tr class="thead-fields">
+              <th class="col-syllabus">Syllabus</th>
+              <th>Subjects</th>
+              <th>Topics</th>
+              <th>Sub-Topics</th>
+              <th class="grp-blue">First Batch</th>
+              <th class="grp-blue">Week</th>
+              <th class="grp-blue">Date</th>
+              <th class="grp-blue">Start</th>
+              <th class="grp-blue">End</th>
+              <th class="grp-amber">Required</th>
+              <th class="grp-amber">Date</th>
+              <th class="grp-amber">Start</th>
+              <th class="grp-amber">End</th>
+              <th class="grp-teal">Date</th>
+              <th class="grp-teal">Start</th>
+              <th class="grp-teal">End</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="footnote">Times shown in each editor's local wall-clock. Deleting a batch cannot be undone.</div>
+    </div>
+    <div class="toast" id="toast"></div>
+  `;
+
+  function chipsCell(field, values, editing) {
+    if (!editing) {
+      return '<div class="chips">' + (values.length ? values.map(v => '<span class="chip">'+esc(v)+'</span>').join('') : dash()) + '</div>';
+    }
+    const label = field === 'subjects' ? 'subject' : (field === 'topics' ? 'topic' : 'sub-topic');
+    return '<div class="chips">' + values.map((v,i) => '<span class="chip">'+esc(v)+'<button type="button" class="chip-x" data-action="remove-chip" data-field="'+field+'" data-index="'+i+'" aria-label="Remove '+esc(v)+'">&times;</button></span>').join('') + '</div>' +
+      '<input type="text" class="cell-input chip-input" data-field="'+field+'" data-chip-input="1" placeholder="Add '+label+'&hellip;">';
+  }
+  function toggleCell(d, editing) {
+    if (!editing) return '<span class="badge '+(d.mockRequired?'badge--yes':'badge--no')+'">'+(d.mockRequired?'Yes':'No')+'</span>';
+    return '<label class="switch"><input type="checkbox" data-action="toggle-mock" '+(d.mockRequired?'checked':'')+'><span class="switch-track"><span class="switch-thumb"></span></span></label>';
+  }
+  function dateCell(field, d, editing) {
+    if (!editing) return d[field] ? '<span class="mono">'+fmtDate(d[field])+'</span>' : dash();
+    return '<input type="date" class="cell-input cell-input--date" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
+  }
+  function timeCell(field, d, editing) {
+    if (!editing) return d[field] ? '<span class="mono">'+fmt12(d[field])+'</span>' : dash();
+    return '<input type="time" class="cell-input cell-input--time" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
+  }
+  function actionsCell(id, editing) {
+    if (!canWrite) return '<span class="muted-cell">Locked</span>';
+    if (editing) {
+      return '<div class="actions"><button type="button" class="btn btn--primary btn--sm" data-action="save">Save</button><button type="button" class="btn btn--ghost btn--sm" data-action="cancel">Cancel</button></div>';
+    }
+    return '<div class="actions"><button type="button" class="btn btn--ghost btn--sm" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
+  }
+
+  function rowHTML(b) {
+    const editing = editingId === b.id;
+    const d = editing ? draft : b;
+    const errors = editing ? validateDraft(d) : {};
+    const mockCols = d.mockRequired
+      ? '<td>'+dateCell('mockDate', d, editing)+'</td>' +
+        '<td>'+timeCell('mockStart', d, editing)+'</td>' +
+        '<td>'+timeCell('mockEnd', d, editing)+(errors.mock?'<div class="field-error" id="err-mock-'+b.id+'">'+errors.mock+'</div>':'<div class="field-error" id="err-mock-'+b.id+'" hidden></div>')+'</td>'
+      : '<td class="muted-cell" colspan="3">Not scheduled</td>';
+    return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+b.id+'" data-id="'+b.id+'">'
+      + '<td class="col-syllabus">' + (editing ? '<input type="text" class="cell-input" data-field="syllabus" value="'+esc(d.syllabus)+'" placeholder="Syllabus name">' : (d.syllabus ? '<span class="cell-strong">'+esc(d.syllabus)+'</span>' : dash())) + '</td>'
+      + '<td>' + chipsCell('subjects', d.subjects, editing) + '</td>'
+      + '<td>' + chipsCell('topics', d.topics, editing) + '</td>'
+      + '<td>' + chipsCell('subTopics', d.subTopics, editing) + '</td>'
+      + '<td>' + (editing ? '<input type="text" class="cell-input" data-field="firstBatch" value="'+esc(d.firstBatch)+'" placeholder="e.g. CS24-B07">' : (esc(d.firstBatch)||dash())) + '</td>'
+      + '<td>' + (editing ? '<input type="text" class="cell-input cell-input--narrow" data-field="week" value="'+esc(d.week)+'" placeholder="Week 1">' : (esc(d.week)||dash())) + '</td>'
+      + '<td>' + dateCell('mainExamDate', d, editing) + '</td>'
+      + '<td>' + timeCell('mainExamStart', d, editing) + '</td>'
+      + '<td>' + timeCell('mainExamEnd', d, editing) + (errors.mainExam?'<div class="field-error" id="err-mainExam-'+b.id+'">'+errors.mainExam+'</div>':'<div class="field-error" id="err-mainExam-'+b.id+'" hidden></div>') + '</td>'
+      + '<td>' + toggleCell(d, editing) + '</td>'
+      + mockCols
+      + '<td>' + dateCell('nextDate', d, editing) + '</td>'
+      + '<td>' + timeCell('nextStart', d, editing) + '</td>'
+      + '<td>' + timeCell('nextEnd', d, editing) + (errors.next?'<div class="field-error" id="err-next-'+b.id+'">'+errors.next+'</div>':'<div class="field-error" id="err-next-'+b.id+'" hidden></div>') + '</td>'
+      + '<td class="col-actions">' + actionsCell(b.id, editing) + '</td>'
+      + '</tr>';
+  }
+
+  function updateAccessBanner() {
+    const el = document.getElementById('access-banner');
+    if (el) el.hidden = canWrite;
+    const addBtn = document.getElementById('add-batch-btn');
+    if (addBtn) addBtn.disabled = !canWrite;
+  }
+
+  function updateStats() {
+    const total = batches.length;
+    const mockCount = batches.filter(b => b.mockRequired).length;
+    const upcoming = batches.map(b => b.nextDate).filter(Boolean).sort()[0];
+    const elT = document.getElementById('stat-total'); if (elT) elT.textContent = String(total);
+    const elM = document.getElementById('stat-mock'); if (elM) elM.textContent = String(mockCount);
+    const elN = document.getElementById('stat-next'); if (elN) elN.textContent = upcoming ? fmtDate(upcoming) : '—';
+  }
+
+  function render() {
+    const tbody = document.getElementById('tbody');
+    if (!batches.length) {
+      tbody.innerHTML = '<tr><td colspan="17"><div class="empty-state">No batches yet.<br>Add one to start tracking syllabus and schedule.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
+    } else {
+      tbody.innerHTML = batches.map(rowHTML).join('');
+    }
+    updateStats();
+    updateAccessBanner();
+  }
+
+  function updateErrorDisplays() {
+    if (!draft) return;
+    const errors = validateDraft(draft);
+    const map = { mainExam: 'err-mainExam-', mock: 'err-mock-', next: 'err-next-' };
+    Object.keys(map).forEach(k => {
+      const el = document.getElementById(map[k] + editingId);
+      if (el) { el.textContent = errors[k] || ''; el.hidden = !errors[k]; }
+    });
+  }
+
+  function flashToast(msg, kind) {
+    const el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'toast show' + (kind === 'error' ? ' error' : '');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = 'toast'; }, 2600);
+  }
+
+  function persist() {
+    if (artifactAPI) {
+      artifactAPI.publish(fullDocumentHTML(batches)).catch(err => {
+        const code = err && err.code;
+        if (code === 'not_writer' || code === 'not_granted') {
+          canWrite = false; render();
+          flashToast('This view is read-only — changes are not saved.', 'error');
+        } else if (code === 'conflict') {
+          /* the view is being reloaded to the newer version */
+        } else if (code === 'rate_limited') {
+          flashToast('Saving too fast — please wait a moment and try again.', 'error');
+        } else {
+          try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
+        }
+      });
+    } else {
+      try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
+    }
+  }
+
+  function startEdit(id) {
+    if (!canWrite) return;
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    editingId = id; isNewRow = false;
+    draft = { ...b, subjects: [...b.subjects], topics: [...b.topics], subTopics: [...b.subTopics] };
+    render();
+  }
+
+  function startAdd() {
+    if (!canWrite) return;
+    const id = uid();
+    const blank = { id, syllabus:'', subjects:[], topics:[], subTopics:[], firstBatch:'', week:'', mainExamDate:'', mainExamStart:'', mainExamEnd:'', mockRequired:false, mockDate:'', mockStart:'', mockEnd:'', nextDate:'', nextStart:'', nextEnd:'' };
+    batches.unshift(blank);
+    editingId = id; isNewRow = true;
+    draft = { ...blank, subjects:[], topics:[], subTopics:[] };
+    render();
+    requestAnimationFrame(() => {
+      const el = document.querySelector('#row-' + id + ' .cell-input[data-field="syllabus"]');
+      if (el) el.focus();
+      const rowEl = document.getElementById('row-' + id);
+      if (rowEl) rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+
+  function save() {
+    const errors = validateDraft(draft);
+    if (Object.keys(errors).length) { updateErrorDisplays(); flashToast('Fix the highlighted time ranges before saving.', 'error'); return; }
+    if (!draft.syllabus.trim()) { flashToast('Syllabus name is required.', 'error'); return; }
+    if (!draft.firstBatch.trim()) { flashToast('First batch is required.', 'error'); return; }
+    const idx = batches.findIndex(b => b.id === editingId);
+    if (idx > -1) batches[idx] = { ...draft };
+    editingId = null; draft = null; isNewRow = false;
+    render();
+    persist();
+    flashToast('Batch saved.', 'success');
+  }
+
+  function cancel() {
+    if (isNewRow) batches = batches.filter(b => b.id !== editingId);
+    editingId = null; draft = null; isNewRow = false;
+    render();
+  }
+
+  function removeBatch(id) {
+    if (!confirm('Delete this batch? This cannot be undone.')) return;
+    batches = batches.filter(b => b.id !== id);
+    if (editingId === id) { editingId = null; draft = null; isNewRow = false; }
+    render();
+    persist();
+    flashToast('Batch deleted.', 'success');
+  }
+
+  root.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const id = btn.dataset.id;
+    if (action === 'edit') startEdit(id);
+    else if (action === 'delete') removeBatch(id);
+    else if (action === 'save') save();
+    else if (action === 'cancel') cancel();
+    else if (action === 'add-batch') startAdd();
+    else if (action === 'remove-chip') {
+      if (!draft) return;
+      const field = btn.dataset.field, index = Number(btn.dataset.index);
+      draft[field].splice(index, 1);
+      render();
+    }
+  });
+
+  root.addEventListener('input', e => {
+    const t = e.target;
+    if (!draft) return;
+    if (t.matches('.cell-input[data-field]') && t.type !== 'date' && t.type !== 'time' && !t.dataset.chipInput) {
+      draft[t.dataset.field] = t.value;
+    }
+  });
+
+  root.addEventListener('change', e => {
+    const t = e.target;
+    if (!draft) return;
+    if (t.dataset.action === 'toggle-mock') {
+      draft.mockRequired = t.checked;
+      render();
+    } else if (t.matches('.cell-input[data-field]') && (t.type === 'date' || t.type === 'time')) {
+      draft[t.dataset.field] = t.value;
+      updateErrorDisplays();
+    }
+  });
+
+  root.addEventListener('keydown', e => {
+    if (e.target.matches('[data-chip-input]') && e.key === 'Enter') {
+      e.preventDefault();
+      if (!draft) return;
+      const field = e.target.dataset.field;
+      const val = e.target.value.trim();
+      if (val) {
+        draft[field].push(val);
+        render();
+        requestAnimationFrame(() => {
+          const el = root.querySelector('[data-chip-input][data-field="' + field + '"]');
+          if (el) el.focus();
+        });
+      } else {
+        e.target.value = '';
+      }
+    }
+  });
+
+  render();
+}
+
+const SEED_BATCHES = [
+  { id:'b1', syllabus:'DSA Foundations', subjects:['Arrays & Strings','Recursion'], topics:['Two Pointers','Backtracking'], subTopics:['Sliding Window','Fast-Slow Pointers','N-Queens'], firstBatch:'CS24-B07', week:'Week 3', mainExamDate:'2026-09-02', mainExamStart:'10:00', mainExamEnd:'12:00', mockRequired:true, mockDate:'2026-08-30', mockStart:'15:00', mockEnd:'16:00', nextDate:'2026-09-05', nextStart:'11:00', nextEnd:'11:30' },
+  { id:'b2', syllabus:'System Design Basics', subjects:['Scalability'], topics:['Load Balancing','Caching'], subTopics:['CDN Routing','Consistent Hashing'], firstBatch:'CS24-B09', week:'Week 6', mainExamDate:'2026-09-10', mainExamStart:'14:00', mainExamEnd:'16:00', mockRequired:false, mockDate:'', mockStart:'', mockEnd:'', nextDate:'2026-09-12', nextStart:'09:30', nextEnd:'10:00' },
+  { id:'b3', syllabus:'Aptitude & Reasoning', subjects:['Quantitative Aptitude','Logical Reasoning'], topics:['Time & Work','Puzzles'], subTopics:['Pipes & Cisterns','Seating Arrangement'], firstBatch:'CS24-B05', week:'Week 2', mainExamDate:'2026-08-28', mainExamStart:'09:00', mainExamEnd:'10:30', mockRequired:true, mockDate:'2026-08-27', mockStart:'17:00', mockEnd:'18:00', nextDate:'2026-08-29', nextStart:'16:00', nextEnd:'16:30' },
+  { id:'b4', syllabus:'Communication Skills', subjects:['Verbal Ability'], topics:['Group Discussion','Email Etiquette'], subTopics:['GD Strategies','Formal Tone'], firstBatch:'CS24-B12', week:'Week 1', mainExamDate:'2026-09-15', mainExamStart:'11:00', mainExamEnd:'12:00', mockRequired:false, mockDate:'', mockStart:'', mockEnd:'', nextDate:'2026-09-18', nextStart:'14:00', nextEnd:'14:30' }
+];
+
+boot(SEED_BATCHES);
+</script>
+</body>
+</html>
