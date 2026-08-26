@@ -110,6 +110,7 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 .cell-input{width:100%;min-width:104px;font-family:var(--font-body);font-size:12.5px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--ink);}
 .cell-input--narrow{min-width:68px;}
 .cell-input--date,.cell-input--time{font-family:var(--font-mono);min-width:120px;font-variant-numeric:tabular-nums;}
+.cell-input--datetime{font-family:var(--font-mono);min-width:190px;font-variant-numeric:tabular-nums;}
 .field-error{color:var(--danger);font-size:11px;margin-top:4px;font-family:var(--font-body);max-width:130px;}
 .actions{display:flex;gap:6px;}
 .empty-state{padding:56px 24px;text-align:center;color:var(--muted);font-family:var(--font-body);}
@@ -321,11 +322,15 @@ function boot(seedBatches) {
     return subjArr.map((s, i) => ({ subject: s, topics: i === 0 ? topicsJoined : '' }));
   }
 
+  function combineDT(date, time) {
+    return date ? (date + 'T' + (time || '00:00')) : '';
+  }
+
   function normalizeBatch(b) {
     const mockRequired = !!b.mockRequired;
     const inferredMockInterviewRequired = b.mockInterviewRequired != null
       ? !!b.mockInterviewRequired
-      : !!(b.mockInterviewDate || b.mockInterviewTitle || b.mockInterviewTag || b.nextDate);
+      : !!(b.mockInterviewStartAt || b.mockInterviewDate || b.mockInterviewTitle || b.mockInterviewTag || b.nextDate);
     return {
       id: b.id,
       batch: b.batch != null ? b.batch : (b.firstBatch || ''),
@@ -333,7 +338,7 @@ function boot(seedBatches) {
       syllabusItems: normalizeSyllabusItems(b),
       studentsHeaders: Array.isArray(b.studentsHeaders) ? b.studentsHeaders : [],
       studentsData: Array.isArray(b.studentsData) ? b.studentsData : [],
-      mainSebStatus: (b.mainSebStatus === 'SEB' || b.mainSebStatus === 'Non-SEB') ? b.mainSebStatus : 'Non-SEB',
+      mainSebStatus: (b.mainSebStatus === 'SEB' || b.mainSebStatus === 'Non-SEB') ? b.mainSebStatus : '',
       mockRequired: mockRequired,
       mockTitle: b.mockTitle || '',
       mockDate: b.mockDate || '',
@@ -342,18 +347,16 @@ function boot(seedBatches) {
       mockTag: b.mockTag || '',
       mockInterviewRequired: mockRequired ? inferredMockInterviewRequired : false,
       mockInterviewTitle: b.mockInterviewTitle || '',
-      mockInterviewDate: b.mockInterviewDate != null ? b.mockInterviewDate : (b.nextDate || ''),
-      mockInterviewStart: b.mockInterviewStart != null ? b.mockInterviewStart : (b.nextStart || ''),
-      mockInterviewEnd: b.mockInterviewEnd != null ? b.mockInterviewEnd : (b.nextEnd || ''),
+      mockInterviewStartAt: b.mockInterviewStartAt != null ? b.mockInterviewStartAt : combineDT(b.mockInterviewDate || b.nextDate, b.mockInterviewStart || b.nextStart),
+      mockInterviewEndAt: b.mockInterviewEndAt != null ? b.mockInterviewEndAt : combineDT(b.mockInterviewDate || b.nextDate, b.mockInterviewEnd || b.nextEnd),
       mockInterviewTag: b.mockInterviewTag || '',
-      mainDate: b.mainDate != null ? b.mainDate : (b.mainExamDate || ''),
-      mainStart: b.mainStart != null ? b.mainStart : (b.mainExamStart || ''),
-      mainEnd: b.mainEnd != null ? b.mainEnd : (b.mainExamEnd || ''),
+      mainTitle: b.mainTitle || '',
+      mainStartAt: b.mainStartAt != null ? b.mainStartAt : combineDT(b.mainDate || b.mainExamDate, b.mainStart || b.mainExamStart),
+      mainEndAt: b.mainEndAt != null ? b.mainEndAt : combineDT(b.mainDate || b.mainExamDate, b.mainEnd || b.mainExamEnd),
       mainTag: b.mainTag || '',
       mainInterviewTitle: b.mainInterviewTitle || '',
-      mainInterviewDate: b.mainInterviewDate || '',
-      mainInterviewStart: b.mainInterviewStart || '',
-      mainInterviewEnd: b.mainInterviewEnd || '',
+      mainInterviewStartAt: b.mainInterviewStartAt != null ? b.mainInterviewStartAt : combineDT(b.mainInterviewDate, b.mainInterviewStart),
+      mainInterviewEndAt: b.mainInterviewEndAt != null ? b.mainInterviewEndAt : combineDT(b.mainInterviewDate, b.mainInterviewEnd),
       mainInterviewTag: b.mainInterviewTag || ''
     };
   }
@@ -409,9 +412,9 @@ function boot(seedBatches) {
   function validateDraft(d) {
     const errors = {};
     if (d.mockRequired && d.mockStart && d.mockEnd && timeToMinutes(d.mockEnd) <= timeToMinutes(d.mockStart)) errors.mock = 'End must be after start.';
-    if (d.mockInterviewRequired && d.mockInterviewStart && d.mockInterviewEnd && timeToMinutes(d.mockInterviewEnd) <= timeToMinutes(d.mockInterviewStart)) errors.mockInterview = 'End must be after start.';
-    if (d.mainStart && d.mainEnd && timeToMinutes(d.mainEnd) <= timeToMinutes(d.mainStart)) errors.main = 'End must be after start.';
-    if (d.mainInterviewStart && d.mainInterviewEnd && timeToMinutes(d.mainInterviewEnd) <= timeToMinutes(d.mainInterviewStart)) errors.mainInterview = 'End must be after start.';
+    if (d.mockInterviewRequired && d.mockInterviewStartAt && d.mockInterviewEndAt && d.mockInterviewEndAt <= d.mockInterviewStartAt) errors.mockInterview = 'End must be after start.';
+    if (d.mainStartAt && d.mainEndAt && d.mainEndAt <= d.mainStartAt) errors.main = 'End must be after start.';
+    if (d.mainInterviewStartAt && d.mainInterviewEndAt && d.mainInterviewEndAt <= d.mainInterviewStartAt) errors.mainInterview = 'End must be after start.';
     return errors;
   }
 
@@ -462,7 +465,7 @@ function boot(seedBatches) {
                     <th rowspan="2">Main Assessment SEB Status</th>
                     <th colspan="6" class="grp-amber">Mock Assessment</th>
                     <th colspan="6" class="grp-teal">Mock Interview</th>
-                    <th colspan="4" class="grp-blue">Main Assessment</th>
+                    <th colspan="5" class="grp-blue">Main Assessment</th>
                     <th colspan="5" class="grp-rose">Main Interview</th>
                     <th class="col-actions" rowspan="2">Actions</th>
                   </tr>
@@ -477,19 +480,20 @@ function boot(seedBatches) {
                     <th class="grp-amber">Tag</th>
                     <th class="grp-teal">Required</th>
                     <th class="grp-teal">Title</th>
-                    <th class="grp-teal">Date</th>
-                    <th class="grp-teal">Start</th>
-                    <th class="grp-teal">End</th>
+                    <th class="grp-teal">Start Date &amp; Time</th>
+                    <th class="grp-teal">End Date &amp; Time</th>
                     <th class="grp-teal">Tag</th>
-                    <th class="grp-blue">Date</th>
-                    <th class="grp-blue">Start</th>
-                    <th class="grp-blue">End</th>
+                    <th class="grp-teal"></th>
+                    <th class="grp-blue">Title</th>
+                    <th class="grp-blue">Start Date &amp; Time</th>
+                    <th class="grp-blue">End Date &amp; Time</th>
                     <th class="grp-blue">Tag</th>
+                    <th class="grp-blue"></th>
                     <th class="grp-rose">Title</th>
-                    <th class="grp-rose">Date</th>
-                    <th class="grp-rose">Start</th>
-                    <th class="grp-rose">End</th>
+                    <th class="grp-rose">Start Date &amp; Time</th>
+                    <th class="grp-rose">End Date &amp; Time</th>
                     <th class="grp-rose">Tag</th>
+                    <th class="grp-rose"></th>
                   </tr>
                 </thead>
                 <tbody id="tbody"></tbody>
@@ -553,8 +557,9 @@ function boot(seedBatches) {
       + '</div>';
   }
   function sebCell(d, editing) {
-    if (!editing) return '<span class="badge '+(d.mainSebStatus === 'SEB' ? 'badge--yes' : 'badge--no')+'">'+esc(d.mainSebStatus)+'</span>';
+    if (!editing) return d.mainSebStatus ? '<span class="badge '+(d.mainSebStatus === 'SEB' ? 'badge--yes' : 'badge--no')+'">'+esc(d.mainSebStatus)+'</span>' : dash();
     return '<select class="cell-input" data-field="mainSebStatus">'
+      + '<option value=""'+(d.mainSebStatus ? '' : ' selected')+'>&mdash; Select &mdash;</option>'
       + '<option value="Non-SEB"'+(d.mainSebStatus === 'Non-SEB' ? ' selected' : '')+'>Non-SEB</option>'
       + '<option value="SEB"'+(d.mainSebStatus === 'SEB' ? ' selected' : '')+'>SEB</option>'
       + '</select>';
@@ -573,6 +578,19 @@ function boot(seedBatches) {
   function timeCell(field, d, editing) {
     if (!editing) return d[field] ? '<span class="mono">'+fmt12(d[field])+'</span>' : dash();
     return '<input type="time" class="cell-input cell-input--time" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
+  }
+  function fmtDateTime(dt) {
+    if (!dt) return '';
+    const parts = dt.split('T');
+    return fmtDate(parts[0]) + (parts[1] ? ', ' + fmt12(parts[1]) : '');
+  }
+  function dateTimeCell(field, d, editing) {
+    if (!editing) return d[field] ? '<span class="mono">'+fmtDateTime(d[field])+'</span>' : dash();
+    return '<input type="datetime-local" class="cell-input cell-input--datetime" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
+  }
+  function clearDateBtn(group, editing) {
+    if (!editing) return '';
+    return '<button type="button" class="btn btn--ghost btn--sm" data-action="clear-dates" data-group="'+group+'">Remove Date</button>';
   }
   function actionsCell(id, editing) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
@@ -598,24 +616,25 @@ function boot(seedBatches) {
 
     const mockInterviewCols = d.mockInterviewRequired
       ? '<td>'+textCell('mockInterviewTitle', d.mockInterviewTitle, editing, 'Title')+'</td>'
-        + '<td>'+dateCell('mockInterviewDate', d, editing)+'</td>'
-        + '<td>'+timeCell('mockInterviewStart', d, editing)+'</td>'
-        + '<td>'+timeCell('mockInterviewEnd', d, editing)+errSpan('mockInterview', id, errors.mockInterview)+'</td>'
+        + '<td>'+dateTimeCell('mockInterviewStartAt', d, editing)+'</td>'
+        + '<td>'+dateTimeCell('mockInterviewEndAt', d, editing)+errSpan('mockInterview', id, errors.mockInterview)+'</td>'
         + '<td>'+textCell('mockInterviewTag', d.mockInterviewTag, editing, 'Tag')+'</td>'
+        + '<td>'+clearDateBtn('mockInterview', editing)+'</td>'
       : '<td class="muted-cell">Not Required</td>'.repeat(5);
 
     const mainCols =
-        '<td>'+dateCell('mainDate', d, editing)+'</td>'
-      + '<td>'+timeCell('mainStart', d, editing)+'</td>'
-      + '<td>'+timeCell('mainEnd', d, editing)+errSpan('main', id, errors.main)+'</td>'
-      + '<td>'+textCell('mainTag', d.mainTag, editing, 'Tag')+'</td>';
+        '<td>'+textCell('mainTitle', d.mainTitle, editing, 'Title')+'</td>'
+      + '<td>'+dateTimeCell('mainStartAt', d, editing)+'</td>'
+      + '<td>'+dateTimeCell('mainEndAt', d, editing)+errSpan('main', id, errors.main)+'</td>'
+      + '<td>'+textCell('mainTag', d.mainTag, editing, 'Tag')+'</td>'
+      + '<td>'+clearDateBtn('main', editing)+'</td>';
 
     const mainInterviewCols =
         '<td>'+textCell('mainInterviewTitle', d.mainInterviewTitle, editing, 'Title')+'</td>'
-      + '<td>'+dateCell('mainInterviewDate', d, editing)+'</td>'
-      + '<td>'+timeCell('mainInterviewStart', d, editing)+'</td>'
-      + '<td>'+timeCell('mainInterviewEnd', d, editing)+errSpan('mainInterview', id, errors.mainInterview)+'</td>'
-      + '<td>'+textCell('mainInterviewTag', d.mainInterviewTag, editing, 'Tag')+'</td>';
+      + '<td>'+dateTimeCell('mainInterviewStartAt', d, editing)+'</td>'
+      + '<td>'+dateTimeCell('mainInterviewEndAt', d, editing)+errSpan('mainInterview', id, errors.mainInterview)+'</td>'
+      + '<td>'+textCell('mainInterviewTag', d.mainInterviewTag, editing, 'Tag')+'</td>'
+      + '<td>'+clearDateBtn('mainInterview', editing)+'</td>';
 
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus">' + textCell('batch', d.batch, editing, 'Batch name') + '</td>'
@@ -658,10 +677,10 @@ function boot(seedBatches) {
   function buildEvents() {
     const events = [];
     batches.forEach(b => {
-      if (b.mainDate) events.push({ type:'Main Assessment', cls:'blue', date:b.mainDate, start:b.mainStart, end:b.mainEnd, batch:b.batch, sub:b.mainTag });
+      if (b.mainStartAt) events.push({ type:'Main Assessment', cls:'blue', date:b.mainStartAt.split('T')[0], startAt:b.mainStartAt, endAt:b.mainEndAt, batch:b.batch, sub:b.mainTitle||b.mainTag });
       if (b.mockRequired && b.mockDate) events.push({ type:'Mock Assessment', cls:'amber', date:b.mockDate, start:b.mockStart, end:b.mockEnd, batch:b.batch, sub:b.mockTitle||b.mockTag });
-      if (b.mockInterviewRequired && b.mockInterviewDate) events.push({ type:'Mock Interview', cls:'teal', date:b.mockInterviewDate, start:b.mockInterviewStart, end:b.mockInterviewEnd, batch:b.batch, sub:b.mockInterviewTitle||b.mockInterviewTag });
-      if (b.mainInterviewDate) events.push({ type:'Main Interview', cls:'rose', date:b.mainInterviewDate, start:b.mainInterviewStart, end:b.mainInterviewEnd, batch:b.batch, sub:b.mainInterviewTitle||b.mainInterviewTag });
+      if (b.mockInterviewRequired && b.mockInterviewStartAt) events.push({ type:'Mock Interview', cls:'teal', date:b.mockInterviewStartAt.split('T')[0], startAt:b.mockInterviewStartAt, endAt:b.mockInterviewEndAt, batch:b.batch, sub:b.mockInterviewTitle||b.mockInterviewTag });
+      if (b.mainInterviewStartAt) events.push({ type:'Main Interview', cls:'rose', date:b.mainInterviewStartAt.split('T')[0], startAt:b.mainInterviewStartAt, endAt:b.mainInterviewEndAt, batch:b.batch, sub:b.mainInterviewTitle||b.mainInterviewTag });
     });
     events.sort((a, b) => a.date.localeCompare(b.date) || (a.start||'').localeCompare(b.start||''));
     return events;
@@ -676,15 +695,24 @@ function boot(seedBatches) {
     if (!el) return;
     const t = todayISO();
     const totalBatches = batches.length;
-    const mainCount = batches.filter(b => b.mainDate).length;
+    const mainCount = batches.filter(b => b.mainStartAt).length;
     const mockCount = batches.filter(b => b.mockRequired).length;
-    const upcomingInterviews = batches.filter(b => b.mockInterviewRequired && b.mockInterviewDate && b.mockInterviewDate >= t);
-    const nextDate = upcomingInterviews.map(b => b.mockInterviewDate).sort()[0];
+    const upcomingInterviews = batches.filter(b => b.mockInterviewRequired && b.mockInterviewStartAt && b.mockInterviewStartAt >= t);
+    const nextDate = upcomingInterviews.map(b => b.mockInterviewStartAt.split('T')[0]).sort()[0];
     el.innerHTML =
       kpiCard('Batches', totalBatches, 'Across all records') +
       kpiCard('Main Assessments', mainCount, mainCount === 1 ? 'Exam scheduled' : 'Exams scheduled') +
       kpiCard('Mock Assessments', mockCount, mockCount === 1 ? 'Batch requires a mock' : 'Batches require a mock') +
       kpiCard('Next Mock Interviews', upcomingInterviews.length, nextDate ? ('Next: ' + fmtDate(nextDate)) : 'None scheduled');
+  }
+
+  function eventTimeRange(e) {
+    if (e.startAt) {
+      const st = e.startAt.split('T')[1];
+      const et = e.endAt ? e.endAt.split('T')[1] : '';
+      return st ? (fmt12(st) + (et ? '–' + fmt12(et) : '')) : '';
+    }
+    return e.start ? (fmt12(e.start) + (e.end ? '–' + fmt12(e.end) : '')) : '';
   }
 
   function renderTimeline() {
@@ -698,7 +726,7 @@ function boot(seedBatches) {
         + '<span class="mono">' + fmtDate(e.date) + '</span>'
         + '<span class="type-tag type-tag--' + e.cls + '">' + esc(e.type) + '</span>'
         + '<span>' + esc(e.batch) + (e.sub ? '<span class="timeline-batch">' + esc(e.sub) + '</span>' : '') + '</span>'
-        + '<span class="mono">' + (e.start ? (fmt12(e.start) + (e.end ? '–' + fmt12(e.end) : '')) : '') + '</span>'
+        + '<span class="mono">' + eventTimeRange(e) + '</span>'
         + '<span class="rel-label">' + relLabel(e.date) + '</span>'
       + '</div>'
     ).join('');
@@ -706,7 +734,12 @@ function boot(seedBatches) {
 
   function batchMatchesDateRange(b, from, to) {
     if (!from && !to) return true;
-    const dates = [b.mainDate, (b.mockRequired ? b.mockDate : ''), (b.mockInterviewRequired ? b.mockInterviewDate : ''), b.mainInterviewDate].filter(Boolean);
+    const dates = [
+      b.mainStartAt ? b.mainStartAt.split('T')[0] : '',
+      b.mockRequired ? b.mockDate : '',
+      b.mockInterviewRequired && b.mockInterviewStartAt ? b.mockInterviewStartAt.split('T')[0] : '',
+      b.mainInterviewStartAt ? b.mainInterviewStartAt.split('T')[0] : ''
+    ].filter(Boolean);
     if (!dates.length) return false;
     return dates.some(d => (!from || d >= from) && (!to || d <= to));
   }
@@ -718,7 +751,7 @@ function boot(seedBatches) {
     let filtered = batches.filter(b => {
       if (q) {
         const syllabusText = b.syllabusItems.map(it => it.subject + ' ' + it.topics).join(' ');
-        const hay = [b.batch, b.week, syllabusText, b.mockTitle, b.mockTag, b.mockInterviewTitle, b.mockInterviewTag, b.mainTag, b.mainInterviewTitle, b.mainInterviewTag].join(' ').toLowerCase();
+        const hay = [b.batch, b.week, syllabusText, b.mockTitle, b.mockTag, b.mockInterviewTitle, b.mockInterviewTag, b.mainTitle, b.mainTag, b.mainInterviewTitle, b.mainInterviewTag].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return batchMatchesDateRange(b, dateFilter.from, dateFilter.to);
@@ -728,7 +761,7 @@ function boot(seedBatches) {
       if (editingBatch) filtered = [editingBatch].concat(filtered);
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="28"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="29"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
@@ -1010,6 +1043,13 @@ function boot(seedBatches) {
       render();
       flashToast('Student data imported.', 'success');
     }
+    else if (action === 'clear-dates') {
+      if (!draft) return;
+      const group = btn.dataset.group;
+      draft[group + 'StartAt'] = '';
+      draft[group + 'EndAt'] = '';
+      render();
+    }
   });
 
   root.addEventListener('input', e => {
@@ -1049,7 +1089,7 @@ function boot(seedBatches) {
       render();
     } else if (t.tagName === 'SELECT' && t.dataset.field) {
       draft[t.dataset.field] = t.value;
-    } else if (t.matches('.cell-input[data-field]') && (t.type === 'date' || t.type === 'time')) {
+    } else if (t.matches('.cell-input[data-field]') && (t.type === 'date' || t.type === 'time' || t.type === 'datetime-local')) {
       draft[t.dataset.field] = t.value;
       updateErrorDisplays();
     }
