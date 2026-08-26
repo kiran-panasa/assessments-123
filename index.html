@@ -157,6 +157,18 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 .item-edit-row .cell-input{flex:1;min-width:0;}
 .item-add-input{opacity:.85;}
 .item-row.paragraph-row{white-space:pre-wrap;}
+.syllabus-pair-cell{padding:0 !important;min-width:340px;}
+.syllabus-pairs{display:flex;flex-direction:column;}
+.syllabus-pair-row{display:grid;grid-template-columns:150px 1fr;gap:16px;padding:10px 12px;border-bottom:1px solid var(--border-soft);}
+.syllabus-pair-row:last-child{border-bottom:none;}
+.syllabus-pair-subject{font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--ink);padding-top:1px;}
+.syllabus-pair-topics{white-space:pre-wrap;font-size:12.5px;color:var(--ink-2);line-height:1.55;}
+.syllabus-pairs-editing{gap:0;}
+.syllabus-pair-row-edit{display:grid;grid-template-columns:150px 1fr 26px;gap:8px;align-items:start;padding:10px 12px;border-bottom:1px solid var(--border-soft);}
+.syllabus-pairs-editing .btn{margin:10px 12px;align-self:flex-start;}
+tbody td{border-right:1px solid var(--border-soft);}
+tbody td:last-child{border-right:none;}
+tbody td.col-syllabus{border-right:1px solid var(--border);}
 .switch--disabled{opacity:.45;cursor:not-allowed;}
 .switch input:disabled+.switch-track{cursor:not-allowed;}
 .students-cell{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
@@ -511,24 +523,25 @@ function boot(seedBatches) {
     if (!editing) return esc(value) || dash();
     return '<input type="text" class="cell-input" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'">';
   }
-  function subjectColumnCell(items, editing) {
+  function syllabusPairCell(items, editing) {
     if (!editing) {
       if (!items.length) return dash();
-      return '<div class="item-list">' + items.map(it => '<div class="item-row">'+(esc(it.subject)||'<span class="empty-dash">&mdash;</span>')+'</div>').join('') + '</div>';
+      return '<div class="syllabus-pairs">' + items.map(it =>
+        '<div class="syllabus-pair-row">'
+          + '<div class="syllabus-pair-subject">' + (esc(it.subject) || '<span class="empty-dash">&mdash;</span>') + '</div>'
+          + '<div class="syllabus-pair-topics">' + (it.topics ? esc(it.topics) : '<span class="empty-dash">&mdash;</span>') + '</div>'
+        + '</div>'
+      ).join('') + '</div>';
     }
-    return '<div class="item-list-editor">'
-      + items.map((it, i) => '<div class="item-edit-row"><input type="text" class="cell-input syllabus-subject-input" data-index="'+i+'" value="'+esc(it.subject)+'" placeholder="Subject name"><button type="button" class="chip-x" data-action="remove-syllabus-item" data-index="'+i+'" aria-label="Remove subject">&times;</button></div>').join('')
+    return '<div class="syllabus-pairs syllabus-pairs-editing">'
+      + items.map((it, i) =>
+        '<div class="syllabus-pair-row-edit">'
+          + '<input type="text" class="cell-input syllabus-subject-input" data-index="'+i+'" value="'+esc(it.subject)+'" placeholder="Subject name">'
+          + '<textarea class="cell-input cell-textarea syllabus-topics-input" data-index="'+i+'" placeholder="Topics, in sequence">'+esc(it.topics)+'</textarea>'
+          + '<button type="button" class="chip-x" data-action="remove-syllabus-item" data-index="'+i+'" aria-label="Remove subject">&times;</button>'
+        + '</div>'
+      ).join('')
       + '<button type="button" class="btn btn--ghost btn--sm" data-action="add-syllabus-item">+ Add Subject</button>'
-      + '</div>';
-  }
-  function topicsColumnCell(items, editing) {
-    if (!editing) {
-      if (!items.length) return dash();
-      return '<div class="item-list">' + items.map(it => '<div class="item-row paragraph-row">'+(it.topics ? esc(it.topics) : '<span class="empty-dash">&mdash;</span>')+'</div>').join('') + '</div>';
-    }
-    if (!items.length) return '<span class="muted-cell">Add a subject first</span>';
-    return '<div class="item-list-editor">'
-      + items.map((it, i) => '<textarea class="cell-input cell-textarea syllabus-topics-input" data-index="'+i+'" placeholder="Topics, in sequence">'+esc(it.topics)+'</textarea>').join('')
       + '</div>';
   }
   function studentsCell(d, editing) {
@@ -607,8 +620,7 @@ function boot(seedBatches) {
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus">' + textCell('batch', d.batch, editing, 'Batch name') + '</td>'
       + '<td>' + textCell('week', d.week, editing, 'Week 1') + '</td>'
-      + '<td>' + subjectColumnCell(d.syllabusItems, editing) + '</td>'
-      + '<td>' + topicsColumnCell(d.syllabusItems, editing) + '</td>'
+      + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing) + '</td>'
       + '<td>' + studentsCell(d, editing) + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
       + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
