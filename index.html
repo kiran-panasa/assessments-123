@@ -156,6 +156,20 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 .item-edit-row{display:flex;gap:4px;align-items:center;}
 .item-edit-row .cell-input{flex:1;min-width:0;}
 .item-add-input{opacity:.85;}
+.item-row.paragraph-row{white-space:pre-wrap;}
+.switch--disabled{opacity:.45;cursor:not-allowed;}
+.switch input:disabled+.switch-track{cursor:not-allowed;}
+.students-cell{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
+.modal-overlay{position:fixed;inset:0;background:rgba(10,14,10,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
+.modal-overlay[hidden]{display:none;}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:min(640px,100%);max-height:85vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3);}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
+.modal-header h3{margin:0;font-family:var(--font-display);font-size:16px;color:var(--ink);}
+.modal-close{background:none;border:none;font-size:20px;line-height:1;color:var(--muted);cursor:pointer;padding:4px;}
+.modal-close:hover{color:var(--danger);}
+.modal-body{padding:16px 20px;overflow:auto;display:flex;flex-direction:column;gap:14px;}
+.modal-footer{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid var(--border);}
+#students-file-input{font-family:var(--font-body);font-size:12.5px;}
 .rel-label{color:var(--muted);font-size:11.5px;white-space:nowrap;text-align:right;}
 .badge--today{background:var(--amber-soft);color:var(--amber);}
 .badge--upcoming{background:var(--accent-soft);color:var(--accent-ink);}
@@ -235,6 +249,7 @@ function boot(seedBatches) {
   let activeSection = 'overview';
   let searchQuery = '';
   let dateFilter = { from: '', to: '' };
+  let uploadPreview = null;
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
   const firebaseConfigured = ['apiKey','projectId','appId'].every(isConfigured);
 
@@ -282,19 +297,38 @@ function boot(seedBatches) {
     return [];
   }
 
+  function normalizeSyllabusItems(b) {
+    if (Array.isArray(b.syllabusItems)) {
+      return b.syllabusItems.map(it => ({ subject: (it && it.subject) || '', topics: (it && it.topics) || '' }));
+    }
+    const subjArr = normalizeList(b.subject, b.subjects);
+    const topicArr = normalizeList(b.topic, b.topics);
+    if (!subjArr.length && !topicArr.length) return [];
+    const topicsJoined = topicArr.join(' | ');
+    if (subjArr.length <= 1) return [{ subject: subjArr[0] || '', topics: topicsJoined }];
+    return subjArr.map((s, i) => ({ subject: s, topics: i === 0 ? topicsJoined : '' }));
+  }
+
   function normalizeBatch(b) {
+    const mockRequired = !!b.mockRequired;
+    const inferredMockInterviewRequired = b.mockInterviewRequired != null
+      ? !!b.mockInterviewRequired
+      : !!(b.mockInterviewDate || b.mockInterviewTitle || b.mockInterviewTag || b.nextDate);
     return {
       id: b.id,
       batch: b.batch != null ? b.batch : (b.firstBatch || ''),
       week: b.week || '',
-      subject: normalizeList(b.subject, b.subjects),
-      topic: normalizeList(b.topic, b.topics),
-      mockRequired: !!b.mockRequired,
+      syllabusItems: normalizeSyllabusItems(b),
+      studentsHeaders: Array.isArray(b.studentsHeaders) ? b.studentsHeaders : [],
+      studentsData: Array.isArray(b.studentsData) ? b.studentsData : [],
+      mainSebStatus: (b.mainSebStatus === 'SEB' || b.mainSebStatus === 'Non-SEB') ? b.mainSebStatus : 'Non-SEB',
+      mockRequired: mockRequired,
       mockTitle: b.mockTitle || '',
       mockDate: b.mockDate || '',
       mockStart: b.mockStart || '',
       mockEnd: b.mockEnd || '',
       mockTag: b.mockTag || '',
+      mockInterviewRequired: mockRequired ? inferredMockInterviewRequired : false,
       mockInterviewTitle: b.mockInterviewTitle || '',
       mockInterviewDate: b.mockInterviewDate != null ? b.mockInterviewDate : (b.nextDate || ''),
       mockInterviewStart: b.mockInterviewStart != null ? b.mockInterviewStart : (b.nextStart || ''),
@@ -363,7 +397,7 @@ function boot(seedBatches) {
   function validateDraft(d) {
     const errors = {};
     if (d.mockRequired && d.mockStart && d.mockEnd && timeToMinutes(d.mockEnd) <= timeToMinutes(d.mockStart)) errors.mock = 'End must be after start.';
-    if (d.mockInterviewStart && d.mockInterviewEnd && timeToMinutes(d.mockInterviewEnd) <= timeToMinutes(d.mockInterviewStart)) errors.mockInterview = 'End must be after start.';
+    if (d.mockInterviewRequired && d.mockInterviewStart && d.mockInterviewEnd && timeToMinutes(d.mockInterviewEnd) <= timeToMinutes(d.mockInterviewStart)) errors.mockInterview = 'End must be after start.';
     if (d.mainStart && d.mainEnd && timeToMinutes(d.mainEnd) <= timeToMinutes(d.mainStart)) errors.main = 'End must be after start.';
     if (d.mainInterviewStart && d.mainInterviewEnd && timeToMinutes(d.mainInterviewEnd) <= timeToMinutes(d.mainInterviewStart)) errors.mainInterview = 'End must be after start.';
     return errors;
@@ -412,21 +446,24 @@ function boot(seedBatches) {
                     <th class="col-syllabus" rowspan="2">Batch</th>
                     <th rowspan="2">Week</th>
                     <th colspan="2">Syllabus</th>
+                    <th rowspan="2">Students Data</th>
+                    <th rowspan="2">Main Assessment SEB Status</th>
                     <th colspan="6" class="grp-amber">Mock Assessment</th>
-                    <th colspan="5" class="grp-teal">Mock Interview</th>
+                    <th colspan="6" class="grp-teal">Mock Interview</th>
                     <th colspan="4" class="grp-blue">Main Assessment</th>
                     <th colspan="5" class="grp-rose">Main Interview</th>
                     <th class="col-actions" rowspan="2">Actions</th>
                   </tr>
                   <tr class="thead-fields">
                     <th>Subject</th>
-                    <th>Topic</th>
+                    <th>Topics</th>
                     <th class="grp-amber">Required</th>
                     <th class="grp-amber">Title</th>
                     <th class="grp-amber">Date</th>
                     <th class="grp-amber">Start</th>
                     <th class="grp-amber">End</th>
                     <th class="grp-amber">Tag</th>
+                    <th class="grp-teal">Required</th>
                     <th class="grp-teal">Title</th>
                     <th class="grp-teal">Date</th>
                     <th class="grp-teal">Start</th>
@@ -452,28 +489,69 @@ function boot(seedBatches) {
       </div>
     </div>
     <div class="toast" id="toast"></div>
+    <div class="modal-overlay" id="upload-modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
+        <div class="modal-header">
+          <h3 id="upload-modal-title">Upload Student Data</h3>
+          <button type="button" class="modal-close" data-action="close-upload" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <input type="file" id="students-file-input" accept=".csv">
+          <div id="upload-preview"><p class="section-desc">Choose a CSV file to preview its rows before importing.</p></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-upload">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" id="confirm-upload-btn" data-action="confirm-upload" disabled>Confirm Import</button>
+        </div>
+      </div>
+    </div>
   `;
 
   function textCell(field, value, editing, placeholder) {
     if (!editing) return esc(value) || dash();
     return '<input type="text" class="cell-input" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'">';
   }
-  function listCell(field, values, editing, placeholder) {
+  function subjectColumnCell(items, editing) {
     if (!editing) {
-      if (!values.length) return dash();
-      return '<div class="item-list">' + values.map(v => '<div class="item-row">'+esc(v)+'</div>').join('') + '</div>';
+      if (!items.length) return dash();
+      return '<div class="item-list">' + items.map(it => '<div class="item-row">'+(esc(it.subject)||'<span class="empty-dash">&mdash;</span>')+'</div>').join('') + '</div>';
     }
     return '<div class="item-list-editor">'
-      + values.map((v, i) => '<div class="item-edit-row"><input type="text" class="cell-input item-edit-input" data-field="'+field+'" data-index="'+i+'" value="'+esc(v)+'"><button type="button" class="chip-x" data-action="remove-item" data-field="'+field+'" data-index="'+i+'" aria-label="Remove">&times;</button></div>').join('')
-      + '<input type="text" class="cell-input item-add-input" data-field="'+field+'" data-item-add="1" placeholder="'+esc(placeholder||'Add…')+'">'
+      + items.map((it, i) => '<div class="item-edit-row"><input type="text" class="cell-input syllabus-subject-input" data-index="'+i+'" value="'+esc(it.subject)+'" placeholder="Subject name"><button type="button" class="chip-x" data-action="remove-syllabus-item" data-index="'+i+'" aria-label="Remove subject">&times;</button></div>').join('')
+      + '<button type="button" class="btn btn--ghost btn--sm" data-action="add-syllabus-item">+ Add Subject</button>'
       + '</div>';
+  }
+  function topicsColumnCell(items, editing) {
+    if (!editing) {
+      if (!items.length) return dash();
+      return '<div class="item-list">' + items.map(it => '<div class="item-row paragraph-row">'+(it.topics ? esc(it.topics) : '<span class="empty-dash">&mdash;</span>')+'</div>').join('') + '</div>';
+    }
+    if (!items.length) return '<span class="muted-cell">Add a subject first</span>';
+    return '<div class="item-list-editor">'
+      + items.map((it, i) => '<textarea class="cell-input cell-textarea syllabus-topics-input" data-index="'+i+'" placeholder="Topics, in sequence">'+esc(it.topics)+'</textarea>').join('')
+      + '</div>';
+  }
+  function studentsCell(d, editing) {
+    const count = d.studentsData.length;
+    if (!editing) return count ? (count + (count === 1 ? ' student' : ' students')) : dash();
+    return '<div class="students-cell">'
+      + '<span class="mono">' + (count ? (count + ' rows') : 'No data') + '</span>'
+      + '<button type="button" class="btn btn--ghost btn--sm" data-action="open-upload">' + (count ? 'Replace' : 'Upload') + '</button>'
+      + '</div>';
+  }
+  function sebCell(d, editing) {
+    if (!editing) return '<span class="badge '+(d.mainSebStatus === 'SEB' ? 'badge--yes' : 'badge--no')+'">'+esc(d.mainSebStatus)+'</span>';
+    return '<select class="cell-input" data-field="mainSebStatus">'
+      + '<option value="Non-SEB"'+(d.mainSebStatus === 'Non-SEB' ? ' selected' : '')+'>Non-SEB</option>'
+      + '<option value="SEB"'+(d.mainSebStatus === 'SEB' ? ' selected' : '')+'>SEB</option>'
+      + '</select>';
   }
   function errSpan(key, id, msg) {
     return '<div class="field-error" id="err-'+key+'-'+id+'"'+(msg?'':' hidden')+'>'+(msg||'')+'</div>';
   }
-  function toggleCell(d, editing) {
-    if (!editing) return '<span class="badge '+(d.mockRequired?'badge--yes':'badge--no')+'">'+(d.mockRequired?'Yes':'No')+'</span>';
-    return '<label class="switch"><input type="checkbox" data-action="toggle-mock" '+(d.mockRequired?'checked':'')+'><span class="switch-track"><span class="switch-thumb"></span></span></label>';
+  function toggleCell(value, editing, action, disabled) {
+    if (!editing) return '<span class="badge '+(value?'badge--yes':'badge--no')+'">'+(value?'Yes':'No')+'</span>';
+    return '<label class="switch'+(disabled?' switch--disabled':'')+'"><input type="checkbox" data-action="'+action+'" '+(value?'checked':'')+(disabled?' disabled':'')+'><span class="switch-track"><span class="switch-thumb"></span></span></label>';
   }
   function dateCell(field, d, editing) {
     if (!editing) return d[field] ? '<span class="mono">'+fmtDate(d[field])+'</span>' : dash();
@@ -505,12 +583,13 @@ function boot(seedBatches) {
         + '<td>'+textCell('mockTag', d.mockTag, editing, 'Tag')+'</td>'
       : '<td class="muted-cell">Not Required</td>'.repeat(5);
 
-    const mockInterviewCols =
-        '<td>'+textCell('mockInterviewTitle', d.mockInterviewTitle, editing, 'Title')+'</td>'
-      + '<td>'+dateCell('mockInterviewDate', d, editing)+'</td>'
-      + '<td>'+timeCell('mockInterviewStart', d, editing)+'</td>'
-      + '<td>'+timeCell('mockInterviewEnd', d, editing)+errSpan('mockInterview', id, errors.mockInterview)+'</td>'
-      + '<td>'+textCell('mockInterviewTag', d.mockInterviewTag, editing, 'Tag')+'</td>';
+    const mockInterviewCols = d.mockInterviewRequired
+      ? '<td>'+textCell('mockInterviewTitle', d.mockInterviewTitle, editing, 'Title')+'</td>'
+        + '<td>'+dateCell('mockInterviewDate', d, editing)+'</td>'
+        + '<td>'+timeCell('mockInterviewStart', d, editing)+'</td>'
+        + '<td>'+timeCell('mockInterviewEnd', d, editing)+errSpan('mockInterview', id, errors.mockInterview)+'</td>'
+        + '<td>'+textCell('mockInterviewTag', d.mockInterviewTag, editing, 'Tag')+'</td>'
+      : '<td class="muted-cell">Not Required</td>'.repeat(5);
 
     const mainCols =
         '<td>'+dateCell('mainDate', d, editing)+'</td>'
@@ -528,10 +607,13 @@ function boot(seedBatches) {
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus">' + textCell('batch', d.batch, editing, 'Batch name') + '</td>'
       + '<td>' + textCell('week', d.week, editing, 'Week 1') + '</td>'
-      + '<td>' + listCell('subject', d.subject, editing, 'Add subject…') + '</td>'
-      + '<td>' + listCell('topic', d.topic, editing, 'Add topic…') + '</td>'
-      + '<td>' + toggleCell(d, editing) + '</td>'
+      + '<td>' + subjectColumnCell(d.syllabusItems, editing) + '</td>'
+      + '<td>' + topicsColumnCell(d.syllabusItems, editing) + '</td>'
+      + '<td>' + studentsCell(d, editing) + '</td>'
+      + '<td>' + sebCell(d, editing) + '</td>'
+      + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
       + mockCols
+      + '<td>' + toggleCell(d.mockInterviewRequired, editing, 'toggle-mock-interview', !d.mockRequired) + '</td>'
       + mockInterviewCols
       + mainCols
       + mainInterviewCols
@@ -566,7 +648,7 @@ function boot(seedBatches) {
     batches.forEach(b => {
       if (b.mainDate) events.push({ type:'Main Assessment', cls:'blue', date:b.mainDate, start:b.mainStart, end:b.mainEnd, batch:b.batch, sub:b.mainTag });
       if (b.mockRequired && b.mockDate) events.push({ type:'Mock Assessment', cls:'amber', date:b.mockDate, start:b.mockStart, end:b.mockEnd, batch:b.batch, sub:b.mockTitle||b.mockTag });
-      if (b.mockInterviewDate) events.push({ type:'Mock Interview', cls:'teal', date:b.mockInterviewDate, start:b.mockInterviewStart, end:b.mockInterviewEnd, batch:b.batch, sub:b.mockInterviewTitle||b.mockInterviewTag });
+      if (b.mockInterviewRequired && b.mockInterviewDate) events.push({ type:'Mock Interview', cls:'teal', date:b.mockInterviewDate, start:b.mockInterviewStart, end:b.mockInterviewEnd, batch:b.batch, sub:b.mockInterviewTitle||b.mockInterviewTag });
       if (b.mainInterviewDate) events.push({ type:'Main Interview', cls:'rose', date:b.mainInterviewDate, start:b.mainInterviewStart, end:b.mainInterviewEnd, batch:b.batch, sub:b.mainInterviewTitle||b.mainInterviewTag });
     });
     events.sort((a, b) => a.date.localeCompare(b.date) || (a.start||'').localeCompare(b.start||''));
@@ -584,7 +666,7 @@ function boot(seedBatches) {
     const totalBatches = batches.length;
     const mainCount = batches.filter(b => b.mainDate).length;
     const mockCount = batches.filter(b => b.mockRequired).length;
-    const upcomingInterviews = batches.filter(b => b.mockInterviewDate && b.mockInterviewDate >= t);
+    const upcomingInterviews = batches.filter(b => b.mockInterviewRequired && b.mockInterviewDate && b.mockInterviewDate >= t);
     const nextDate = upcomingInterviews.map(b => b.mockInterviewDate).sort()[0];
     el.innerHTML =
       kpiCard('Batches', totalBatches, 'Across all records') +
@@ -612,7 +694,7 @@ function boot(seedBatches) {
 
   function batchMatchesDateRange(b, from, to) {
     if (!from && !to) return true;
-    const dates = [b.mainDate, (b.mockRequired ? b.mockDate : ''), b.mockInterviewDate, b.mainInterviewDate].filter(Boolean);
+    const dates = [b.mainDate, (b.mockRequired ? b.mockDate : ''), (b.mockInterviewRequired ? b.mockInterviewDate : ''), b.mainInterviewDate].filter(Boolean);
     if (!dates.length) return false;
     return dates.some(d => (!from || d >= from) && (!to || d <= to));
   }
@@ -623,7 +705,8 @@ function boot(seedBatches) {
     const q = searchQuery.trim().toLowerCase();
     let filtered = batches.filter(b => {
       if (q) {
-        const hay = [b.batch, b.week, b.subject, b.topic, b.mockTitle, b.mockTag, b.mockInterviewTitle, b.mockInterviewTag, b.mainTag, b.mainInterviewTitle, b.mainInterviewTag].join(' ').toLowerCase();
+        const syllabusText = b.syllabusItems.map(it => it.subject + ' ' + it.topics).join(' ');
+        const hay = [b.batch, b.week, syllabusText, b.mockTitle, b.mockTag, b.mockInterviewTitle, b.mockInterviewTag, b.mainTag, b.mainInterviewTitle, b.mainInterviewTag].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return batchMatchesDateRange(b, dateFilter.from, dateFilter.to);
@@ -633,7 +716,7 @@ function boot(seedBatches) {
       if (editingBatch) filtered = [editingBatch].concat(filtered);
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="25"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="28"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
@@ -720,8 +803,17 @@ function boot(seedBatches) {
     const b = batches.find(x => x.id === id);
     if (!b) return;
     editingId = id; isNewRow = false;
-    draft = { ...b, subject: [...b.subject], topic: [...b.topic] };
+    draft = cloneForEdit(b);
     render();
+  }
+
+  function cloneForEdit(b) {
+    return {
+      ...b,
+      syllabusItems: b.syllabusItems.map(it => ({ ...it })),
+      studentsHeaders: [...b.studentsHeaders],
+      studentsData: b.studentsData.map(r => ({ ...r }))
+    };
   }
 
   function startAdd() {
@@ -731,7 +823,7 @@ function boot(seedBatches) {
     const blank = normalizeBatch({ id });
     batches.unshift(blank);
     editingId = id; isNewRow = true;
-    draft = { ...blank, subject: [...blank.subject], topic: [...blank.topic] };
+    draft = cloneForEdit(blank);
     render();
     requestAnimationFrame(() => {
       const el = document.querySelector('#row-' + id + ' .cell-input[data-field="batch"]');
@@ -770,6 +862,95 @@ function boot(seedBatches) {
     flashToast('Batch deleted.', 'success');
   }
 
+  function openUploadModal() {
+    uploadPreview = null;
+    const overlay = document.getElementById('upload-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    const fileInput = document.getElementById('students-file-input');
+    if (fileInput) fileInput.value = '';
+    renderUploadPreview();
+  }
+
+  function closeUploadModal() {
+    const overlay = document.getElementById('upload-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    uploadPreview = null;
+  }
+
+  function parseCSV(text) {
+    const rows = [];
+    let row = [], field = '', inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { field += '"'; i++; }
+          else inQuotes = false;
+        } else field += c;
+      } else if (c === '"') {
+        inQuotes = true;
+      } else if (c === ',') {
+        row.push(field); field = '';
+      } else if (c === '\n') {
+        row.push(field); rows.push(row); row = []; field = '';
+      } else if (c === '\r') {
+        /* skip */
+      } else {
+        field += c;
+      }
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    const nonEmpty = rows.filter(r => r.some(c => c.trim() !== ''));
+    if (!nonEmpty.length) return { headers: [], rows: [] };
+    const headers = nonEmpty[0].map(h => h.trim());
+    const dataRows = nonEmpty.slice(1).map(r => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = (r[i] || '').trim(); });
+      return obj;
+    });
+    return { headers, rows: dataRows };
+  }
+
+  function handleStudentsFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = parseCSV(String(reader.result));
+        if (!parsed.rows.length) { flashToast('No rows found in that file.', 'error'); }
+        uploadPreview = parsed;
+      } catch (err) {
+        uploadPreview = null;
+        flashToast('Could not read that file — make sure it’s a CSV.', 'error');
+      }
+      renderUploadPreview();
+    };
+    reader.onerror = () => {
+      uploadPreview = null;
+      renderUploadPreview();
+      flashToast('Could not read that file.', 'error');
+    };
+    reader.readAsText(file);
+  }
+
+  function renderUploadPreview() {
+    const el = document.getElementById('upload-preview');
+    const confirmBtn = document.getElementById('confirm-upload-btn');
+    if (!el) return;
+    if (!uploadPreview || !uploadPreview.rows.length) {
+      el.innerHTML = '<p class="section-desc">Choose a CSV file to preview its rows before importing.</p>';
+      if (confirmBtn) confirmBtn.disabled = true;
+      return;
+    }
+    const previewRows = uploadPreview.rows.slice(0, 20);
+    el.innerHTML = '<div class="table-wrap" style="max-height:280px;"><table><thead><tr>'
+      + uploadPreview.headers.map(h => '<th>' + esc(h) + '</th>').join('')
+      + '</tr></thead><tbody>'
+      + previewRows.map(r => '<tr>' + uploadPreview.headers.map(h => '<td>' + (esc(r[h]) || dash()) + '</td>').join('') + '</tr>').join('')
+      + '</tbody></table></div>'
+      + '<p class="footnote">Showing ' + previewRows.length + ' of ' + uploadPreview.rows.length + ' rows.</p>';
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+
   root.addEventListener('click', e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
@@ -787,11 +968,35 @@ function boot(seedBatches) {
       const toEl = document.getElementById('syllabus-filter-to'); if (toEl) toEl.value = '';
       renderRecordsTable();
     }
-    else if (action === 'remove-item') {
+    else if (action === 'add-syllabus-item') {
       if (!draft) return;
-      const field = btn.dataset.field, index = Number(btn.dataset.index);
-      draft[field].splice(index, 1);
+      draft.syllabusItems.push({ subject: '', topics: '' });
       render();
+      requestAnimationFrame(() => {
+        const inputs = root.querySelectorAll('.syllabus-subject-input');
+        const last = inputs[inputs.length - 1];
+        if (last) last.focus();
+      });
+    }
+    else if (action === 'remove-syllabus-item') {
+      if (!draft) return;
+      draft.syllabusItems.splice(Number(btn.dataset.index), 1);
+      render();
+    }
+    else if (action === 'open-upload') {
+      if (!draft) return;
+      openUploadModal();
+    }
+    else if (action === 'close-upload') {
+      closeUploadModal();
+    }
+    else if (action === 'confirm-upload') {
+      if (!draft || !uploadPreview || !uploadPreview.rows.length) return;
+      draft.studentsHeaders = uploadPreview.headers;
+      draft.studentsData = uploadPreview.rows;
+      closeUploadModal();
+      render();
+      flashToast('Student data imported.', 'success');
     }
   });
 
@@ -799,40 +1004,39 @@ function boot(seedBatches) {
     const t = e.target;
     if (t.id === 'syllabus-search') { searchQuery = t.value; renderRecordsTable(); return; }
     if (!draft) return;
-    if (t.matches('.item-edit-input')) {
-      draft[t.dataset.field][Number(t.dataset.index)] = t.value;
+    if (t.matches('.syllabus-subject-input')) {
+      draft.syllabusItems[Number(t.dataset.index)].subject = t.value;
       return;
     }
-    if (t.matches('.item-add-input')) return;
+    if (t.matches('.syllabus-topics-input')) {
+      draft.syllabusItems[Number(t.dataset.index)].topics = t.value;
+      return;
+    }
     if (t.matches('.cell-input[data-field]') && t.type !== 'date' && t.type !== 'time') {
       draft[t.dataset.field] = t.value;
     }
-  });
-
-  root.addEventListener('keydown', e => {
-    const t = e.target;
-    if (!t.matches('.item-add-input') || e.key !== 'Enter') return;
-    e.preventDefault();
-    if (!draft) return;
-    const field = t.dataset.field;
-    const val = t.value.trim();
-    if (!val) { t.value = ''; return; }
-    draft[field].push(val);
-    render();
-    requestAnimationFrame(() => {
-      const el = root.querySelector('.item-add-input[data-field="' + field + '"]');
-      if (el) el.focus();
-    });
   });
 
   root.addEventListener('change', e => {
     const t = e.target;
     if (t.id === 'syllabus-filter-from') { dateFilter.from = t.value; renderRecordsTable(); return; }
     if (t.id === 'syllabus-filter-to') { dateFilter.to = t.value; renderRecordsTable(); return; }
+    if (t.id === 'students-file-input') {
+      const file = t.files && t.files[0];
+      if (file) handleStudentsFile(file);
+      return;
+    }
     if (!draft) return;
     if (t.dataset.action === 'toggle-mock') {
       draft.mockRequired = t.checked;
+      if (!draft.mockRequired) draft.mockInterviewRequired = false;
       render();
+    } else if (t.dataset.action === 'toggle-mock-interview') {
+      if (!draft.mockRequired) return;
+      draft.mockInterviewRequired = t.checked;
+      render();
+    } else if (t.tagName === 'SELECT' && t.dataset.field) {
+      draft[t.dataset.field] = t.value;
     } else if (t.matches('.cell-input[data-field]') && (t.type === 'date' || t.type === 'time')) {
       draft[t.dataset.field] = t.value;
       updateErrorDisplays();
