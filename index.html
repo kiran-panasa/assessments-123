@@ -766,7 +766,7 @@ function boot(seedBatches) {
   }
 
   function kpiCard(label, value, sub, type) {
-    return '<button type="button" class="kpi-card" data-action="kpi-nav" data-type="'+type+'"><div class="kpi-value">'+value+'</div><div class="kpi-label">'+esc(label)+'</div><div class="kpi-sub">'+esc(sub)+'</div></button>';
+    return '<button type="button" class="kpi-card" data-action="kpi-nav" data-type="'+type+'"><div class="kpi-value">'+value+'</div><div class="kpi-label">'+esc(label)+'</div>'+(sub?'<div class="kpi-sub">'+esc(sub)+'</div>':'')+'</button>';
   }
 
   function syncOverviewFilterInputs() {
@@ -779,13 +779,12 @@ function boot(seedBatches) {
     if (!el) return;
     syncOverviewFilterInputs();
     const c = computeOverviewCounts(overviewDateRange.from, overviewDateRange.to);
-    const rangeLabel = fmtDate(overviewDateRange.from) + ' – ' + fmtDate(overviewDateRange.to);
     el.innerHTML =
-      kpiCard('Batch', c.batch, rangeLabel, 'batch') +
-      kpiCard('Mock Assessment', c.mock, rangeLabel, 'mock') +
-      kpiCard('Mock Interview', c.mockInterview, rangeLabel, 'mockInterview') +
-      kpiCard('Main Assessment', c.main, rangeLabel, 'main') +
-      kpiCard('Main Interview', c.mainInterview, rangeLabel, 'mainInterview');
+      kpiCard('Batch', c.batch, '', 'batch') +
+      kpiCard('Mock Assessment', c.mock, '', 'mock') +
+      kpiCard('Mock Interview', c.mockInterview, '', 'mockInterview') +
+      kpiCard('Main Assessment', c.main, '', 'main') +
+      kpiCard('Main Interview', c.mainInterview, '', 'mainInterview');
     const assignedEl = document.getElementById('ov-assigned');
     if (assignedEl) assignedEl.textContent = 'Assigned: ' + c.assigned;
   }
