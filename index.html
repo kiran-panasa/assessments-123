@@ -131,10 +131,18 @@ td.col-actions{padding-left:8px;padding-right:8px;}
 .content-section{display:none;}
 .content-section.active{display:block;}
 .cards-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;}
+.cards-grid--5{grid-template-columns:repeat(5,1fr);}
+@media (max-width: 1100px){ .cards-grid--5{grid-template-columns:repeat(3,1fr);} }
+@media (max-width: 640px){ .cards-grid--5{grid-template-columns:repeat(2,1fr);} }
+@media (max-width: 420px){ .cards-grid--5{grid-template-columns:1fr;} }
 .kpi-card{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;}
+button.kpi-card{all:unset;box-sizing:border-box;display:block;width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;cursor:pointer;transition:border-color .15s ease;}
+button.kpi-card:hover{border-color:var(--accent);}
+button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 .kpi-value{font-family:var(--font-mono);font-size:28px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.1;}
 .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:6px;}
 .kpi-sub{font-size:11.5px;color:var(--ink-2);margin-top:5px;}
+.filter-bar-assigned{margin-left:auto;font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);align-self:center;}
 .section-heading{font-family:var(--font-display);font-weight:700;font-size:17px;color:var(--ink);margin:0 0 4px;}
 .section-desc{font-size:12.5px;color:var(--muted);margin:0 0 16px;}
 .filter-bar{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;}
@@ -143,7 +151,7 @@ td.col-actions{padding-left:8px;padding-right:8px;}
 .filter-field input,.filter-field select{font-family:var(--font-body);font-size:12.5px;padding:6px 9px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--ink);min-width:150px;}
 .filter-field input[type="date"]{font-family:var(--font-mono);min-width:130px;}
 .timeline{display:flex;flex-direction:column;}
-.timeline-row{display:grid;grid-template-columns:96px 128px 1fr auto auto;gap:14px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--border-soft);font-size:12.5px;}
+.timeline-row{display:grid;grid-template-columns:128px 150px 1fr auto;gap:14px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--border-soft);font-size:12.5px;}
 .timeline-batch{color:var(--muted);font-size:11.5px;margin-left:6px;}
 .type-tag{font-family:var(--font-display);font-weight:600;font-size:10.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;display:inline-block;}
 .type-tag--blue{background:var(--blue-soft);color:var(--blue);}
@@ -280,6 +288,8 @@ function boot(seedBatches) {
   let uploadPreview = null;
   let expandedTopics = new Set();
   let importPreview = null;
+  let overviewDateRange = getWeekRange(new Date());
+  let whatsNextDate = todayISO();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
   const firebaseConfigured = ['apiKey','projectId','appId'].every(isConfigured);
 
@@ -456,9 +466,19 @@ function boot(seedBatches) {
 
         <div class="content">
           <section class="content-section" id="section-overview">
-            <div class="cards-grid" id="kpi-cards"></div>
+            <h2 class="section-heading">Overview</h2>
+            <div class="filter-bar">
+              <div class="filter-field"><label for="ov-from">From</label><input type="date" id="ov-from"></div>
+              <div class="filter-field"><label for="ov-to">To</label><input type="date" id="ov-to"></div>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-overview-filter">Clear</button>
+              <div class="filter-bar-assigned" id="ov-assigned">Assigned: 0</div>
+            </div>
+            <div class="cards-grid cards-grid--5" id="kpi-cards"></div>
             <h2 class="section-heading">What's next</h2>
-            <p class="section-desc">Upcoming main exams, mock assessments, and mock interviews across every batch.</p>
+            <div class="filter-bar">
+              <div class="filter-field"><label for="wn-date">Date</label><input type="date" id="wn-date"></div>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-whatsnext-filter">Clear</button>
+            </div>
             <div class="timeline" id="timeline"></div>
           </section>
 
@@ -705,6 +725,21 @@ function boot(seedBatches) {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
 
+  function fmtISO(d) {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  function getWeekRange(d) {
+    const day = d.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d);
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(d.getDate() + diffToMonday);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return { from: fmtISO(monday), to: fmtISO(sunday) };
+  }
+
   function relLabel(iso) {
     const today = new Date(); today.setHours(0,0,0,0);
     const d = new Date(iso + 'T00:00:00');
@@ -715,6 +750,8 @@ function boot(seedBatches) {
     return diff < 0 ? (Math.abs(diff) + ' days ago') : ('In ' + diff + ' days');
   }
 
+  function eventTime(e) { return e.startAt ? e.startAt.split('T')[1] : (e.start || ''); }
+
   function buildEvents() {
     const events = [];
     batches.forEach(b => {
@@ -723,28 +760,52 @@ function boot(seedBatches) {
       if (b.mockInterviewRequired && b.mockInterviewStartAt) events.push({ type:'Mock Interview', cls:'teal', date:b.mockInterviewStartAt.split('T')[0], startAt:b.mockInterviewStartAt, endAt:b.mockInterviewEndAt, batch:b.batch, sub:b.mockInterviewTitle||b.mockInterviewTag });
       if (b.mainInterviewStartAt) events.push({ type:'Main Interview', cls:'rose', date:b.mainInterviewStartAt.split('T')[0], startAt:b.mainInterviewStartAt, endAt:b.mainInterviewEndAt, batch:b.batch, sub:b.mainInterviewTitle||b.mainInterviewTag });
     });
-    events.sort((a, b) => a.date.localeCompare(b.date) || (a.start||'').localeCompare(b.start||''));
+    events.sort((a, b) => a.date.localeCompare(b.date) || eventTime(a).localeCompare(eventTime(b)));
     return events;
   }
 
-  function kpiCard(label, value, sub) {
-    return '<div class="kpi-card"><div class="kpi-value">'+value+'</div><div class="kpi-label">'+esc(label)+'</div><div class="kpi-sub">'+esc(sub)+'</div></div>';
+  function inDateRange(dateOnly, from, to) {
+    if (!dateOnly) return false;
+    return (!from || dateOnly >= from) && (!to || dateOnly <= to);
+  }
+
+  function computeOverviewCounts(from, to) {
+    let mock = 0, mockInterview = 0, main = 0, mainInterview = 0;
+    const batchIds = new Set();
+    batches.forEach(b => {
+      let matched = false;
+      if (b.mockRequired && inDateRange(b.mockDate, from, to)) { mock++; matched = true; }
+      if (b.mockInterviewRequired && b.mockInterviewStartAt && inDateRange(b.mockInterviewStartAt.split('T')[0], from, to)) { mockInterview++; matched = true; }
+      if (b.mainStartAt && inDateRange(b.mainStartAt.split('T')[0], from, to)) { main++; matched = true; }
+      if (b.mainInterviewStartAt && inDateRange(b.mainInterviewStartAt.split('T')[0], from, to)) { mainInterview++; matched = true; }
+      if (matched) batchIds.add(b.id);
+    });
+    return { batch: batchIds.size, mock: mock, mockInterview: mockInterview, main: main, mainInterview: mainInterview, assigned: mock + mockInterview + main + mainInterview };
+  }
+
+  function kpiCard(label, value, sub, type) {
+    return '<button type="button" class="kpi-card" data-action="kpi-nav" data-type="'+type+'"><div class="kpi-value">'+value+'</div><div class="kpi-label">'+esc(label)+'</div><div class="kpi-sub">'+esc(sub)+'</div></button>';
+  }
+
+  function syncOverviewFilterInputs() {
+    const fromEl = document.getElementById('ov-from'); if (fromEl) fromEl.value = overviewDateRange.from;
+    const toEl = document.getElementById('ov-to'); if (toEl) toEl.value = overviewDateRange.to;
   }
 
   function renderKPICards() {
     const el = document.getElementById('kpi-cards');
     if (!el) return;
-    const t = todayISO();
-    const totalBatches = batches.length;
-    const mainCount = batches.filter(b => b.mainStartAt).length;
-    const mockCount = batches.filter(b => b.mockRequired).length;
-    const upcomingInterviews = batches.filter(b => b.mockInterviewRequired && b.mockInterviewStartAt && b.mockInterviewStartAt >= t);
-    const nextDate = upcomingInterviews.map(b => b.mockInterviewStartAt.split('T')[0]).sort()[0];
+    syncOverviewFilterInputs();
+    const c = computeOverviewCounts(overviewDateRange.from, overviewDateRange.to);
+    const rangeLabel = fmtDate(overviewDateRange.from) + ' – ' + fmtDate(overviewDateRange.to);
     el.innerHTML =
-      kpiCard('Batches', totalBatches, 'Across all records') +
-      kpiCard('Main Assessments', mainCount, mainCount === 1 ? 'Exam scheduled' : 'Exams scheduled') +
-      kpiCard('Mock Assessments', mockCount, mockCount === 1 ? 'Batch requires a mock' : 'Batches require a mock') +
-      kpiCard('Next Mock Interviews', upcomingInterviews.length, nextDate ? ('Next: ' + fmtDate(nextDate)) : 'None scheduled');
+      kpiCard('Batch', c.batch, rangeLabel, 'batch') +
+      kpiCard('Mock Assessment', c.mock, rangeLabel, 'mock') +
+      kpiCard('Mock Interview', c.mockInterview, rangeLabel, 'mockInterview') +
+      kpiCard('Main Assessment', c.main, rangeLabel, 'main') +
+      kpiCard('Main Interview', c.mainInterview, rangeLabel, 'mainInterview');
+    const assignedEl = document.getElementById('ov-assigned');
+    if (assignedEl) assignedEl.textContent = 'Assigned: ' + c.assigned;
   }
 
   function eventTimeRange(e) {
@@ -756,18 +817,21 @@ function boot(seedBatches) {
     return e.start ? (fmt12(e.start) + (e.end ? '–' + fmt12(e.end) : '')) : '';
   }
 
+  function syncWhatsNextInput() {
+    const wnEl = document.getElementById('wn-date'); if (wnEl) wnEl.value = whatsNextDate;
+  }
+
   function renderTimeline() {
     const el = document.getElementById('timeline');
     if (!el) return;
-    const t = todayISO();
-    const upcoming = buildEvents().filter(e => e.date >= t).slice(0, 8);
-    if (!upcoming.length) { el.innerHTML = '<div class="muted-cell">Nothing scheduled.</div>'; return; }
-    el.innerHTML = upcoming.map(e =>
+    syncWhatsNextInput();
+    const dayEvents = buildEvents().filter(e => e.date === whatsNextDate);
+    if (!dayEvents.length) { el.innerHTML = '<div class="muted-cell">Nothing scheduled for ' + fmtDate(whatsNextDate) + '.</div>'; return; }
+    el.innerHTML = dayEvents.map(e =>
       '<div class="timeline-row">'
-        + '<span class="mono">' + fmtDate(e.date) + '</span>'
+        + '<span class="mono">' + eventTimeRange(e) + '</span>'
         + '<span class="type-tag type-tag--' + e.cls + '">' + esc(e.type) + '</span>'
         + '<span>' + esc(e.batch) + (e.sub ? '<span class="timeline-batch">' + esc(e.sub) + '</span>' : '') + '</span>'
-        + '<span class="mono">' + eventTimeRange(e) + '</span>'
         + '<span class="rel-label">' + relLabel(e.date) + '</span>'
       + '</div>'
     ).join('');
@@ -815,6 +879,8 @@ function boot(seedBatches) {
     document.querySelectorAll('.content-section').forEach(sec => {
       sec.classList.toggle('active', sec.id === 'section-' + activeSection);
     });
+    const addBtn0 = document.getElementById('add-batch-btn');
+    if (addBtn0) addBtn0.hidden = activeSection === 'overview';
 
     renderKPICards();
     renderTimeline();
@@ -1276,6 +1342,21 @@ function boot(seedBatches) {
     else if (action === 'cancel') cancel();
     else if (action === 'add-batch') startAdd();
     else if (action === 'nav') { activeSection = btn.dataset.section; render(); }
+    else if (action === 'clear-overview-filter') {
+      overviewDateRange = getWeekRange(new Date());
+      renderKPICards();
+    }
+    else if (action === 'clear-whatsnext-filter') {
+      whatsNextDate = todayISO();
+      renderTimeline();
+    }
+    else if (action === 'kpi-nav') {
+      dateFilter = { from: overviewDateRange.from, to: overviewDateRange.to };
+      activeSection = 'records';
+      render();
+      const fromEl = document.getElementById('syllabus-filter-from'); if (fromEl) fromEl.value = dateFilter.from;
+      const toEl = document.getElementById('syllabus-filter-to'); if (toEl) toEl.value = dateFilter.to;
+    }
     else if (action === 'clear-syllabus-filter') {
       dateFilter = { from: '', to: '' };
       searchQuery = '';
@@ -1367,6 +1448,9 @@ function boot(seedBatches) {
     const t = e.target;
     if (t.id === 'syllabus-filter-from') { dateFilter.from = t.value; renderRecordsTable(); return; }
     if (t.id === 'syllabus-filter-to') { dateFilter.to = t.value; renderRecordsTable(); return; }
+    if (t.id === 'ov-from') { overviewDateRange.from = t.value; renderKPICards(); return; }
+    if (t.id === 'ov-to') { overviewDateRange.to = t.value; renderKPICards(); return; }
+    if (t.id === 'wn-date') { whatsNextDate = t.value; renderTimeline(); return; }
     if (t.id === 'students-file-input') {
       const file = t.files && t.files[0];
       if (file) handleStudentsFile(file);
