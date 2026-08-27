@@ -67,9 +67,6 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-body);-webkit-
 .btn--primary:disabled{opacity:.5;cursor:not-allowed;}
 .btn--ghost{background:transparent;border-color:var(--border);color:var(--ink-2);}
 .btn--ghost:hover{background:var(--surface-2);}
-.btn--danger{background:transparent;border-color:var(--danger);color:var(--danger);}
-.btn--danger:hover{background:var(--danger-soft);}
-.btn--danger:disabled{opacity:.5;cursor:not-allowed;}
 .btn--icon-danger{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 8px;display:inline-flex;align-items:center;}
 .btn--icon-danger:hover{color:var(--danger);background:var(--danger-soft);border-color:var(--danger-soft);}
 .btn:focus-visible,.cell-input:focus-visible,.chip-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
@@ -199,10 +196,6 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .import-help .section-desc{margin:8px 0 0;}
 .import-help code{font-family:var(--font-mono);background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:11.5px;}
 .filter-bar-import{margin-left:auto;}
-.batch-count-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
-.batch-count-chip{display:flex;align-items:baseline;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:6px 12px 6px 8px;}
-.batch-count-value{font-family:var(--font-mono);font-weight:600;font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums;background:var(--accent-soft);color:var(--accent-ink);border-radius:999px;padding:1px 8px;}
-.batch-count-label{font-family:var(--font-display);font-weight:600;font-size:11.5px;color:var(--ink-2);}
 .tab-row{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--border);}
 .tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--muted);cursor:pointer;margin-bottom:-1px;}
 .tab-btn:hover{color:var(--ink);}
@@ -312,6 +305,7 @@ function boot(seedBatches, seedStudents) {
   let studentIsNewRow = false;
   let studentSearchQuery = '';
   let studentBatchFilter = '';
+  let selectedStudentIds = new Set();
   let studentImportPreview = null;
   let configEditingId = null;
   let configDraft = null;
@@ -633,16 +627,16 @@ function boot(seedBatches, seedStudents) {
               <div class="filter-field"><label for="student-filter-batch">Batch</label><select id="student-filter-batch"><option value="">All Batches</option></select></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-student-filter">Clear</button>
               <button type="button" class="btn btn--ghost btn--sm" data-action="download-students">Download CSV</button>
-              <button type="button" class="btn btn--danger btn--sm" id="delete-filtered-students-btn" data-action="delete-filtered-students">Delete Filtered</button>
+              <button type="button" class="btn btn--ghost btn--sm" id="delete-selected-students-btn" data-action="delete-selected-students" disabled>Delete Selected</button>
               <button type="button" class="btn btn--ghost btn--sm" id="import-students-btn" data-action="open-student-import">Import Students</button>
               <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="add-student-btn" data-action="add-student">+ Add Student</button>
             </div>
-            <div class="batch-count-row" id="student-batch-counts"></div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr class="thead-single">
-                    <th class="col-syllabus">Batch</th>
+                    <th class="col-syllabus"><input type="checkbox" id="student-select-all" aria-label="Select all"></th>
+                    <th>Batch</th>
                     <th>UID</th>
                     <th>Student ID</th>
                     <th>Name</th>
@@ -827,6 +821,17 @@ function boot(seedBatches, seedStudents) {
     return '<input type="text" class="cell-input student-cell-input" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'">';
   }
 
+  function studentBatchSelect(value, editing) {
+    if (!editing) return esc(value) || dash();
+    const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
+    const options = ['<option value=""'+(value?'':' selected')+'>&mdash; Select Batch &mdash;</option>']
+      .concat(names.map(n => '<option value="'+esc(n)+'"'+(n===value?' selected':'')+'>'+esc(n)+'</option>'));
+    if (value && names.indexOf(value) === -1) {
+      options.push('<option value="'+esc(value)+'" selected>'+esc(value)+' (not in Batch &amp; Syllabus Details)</option>');
+    }
+    return '<select class="cell-input student-cell-input" data-field="batch">' + options.join('') + '</select>';
+  }
+
   function studentActionsCell(id, editing) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
     if (editing) {
@@ -839,7 +844,8 @@ function boot(seedBatches, seedStudents) {
     const editing = studentEditingId === s.id;
     const d = editing ? studentDraft : s;
     return '<tr class="'+(editing?'row-editing':'')+'" id="srow-'+s.id+'" data-id="'+s.id+'">'
-      + '<td class="col-syllabus">' + studentField('batch', d.batch, editing, 'Batch') + '</td>'
+      + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox" data-action="toggle-student-select" data-id="'+s.id+'"'+(selectedStudentIds.has(s.id)?' checked':'')+'></td>'
+      + '<td>' + studentBatchSelect(d.batch, editing) + '</td>'
       + '<td>' + studentField('uid', d.uid, editing, 'UID') + '</td>'
       + '<td>' + studentField('studentId', d.studentId, editing, 'Student ID') + '</td>'
       + '<td>' + studentField('name', d.name, editing, 'Full name') + '</td>'
@@ -1117,19 +1123,6 @@ function boot(seedBatches, seedStudents) {
     tbody.innerHTML = filtered.map(rowHTML).join('');
   }
 
-  function renderStudentBatchCounts() {
-    const el = document.getElementById('student-batch-counts');
-    if (!el) return;
-    const counts = {};
-    students.forEach(s => {
-      const b = s.batch.trim() || 'Unassigned';
-      counts[b] = (counts[b] || 0) + 1;
-    });
-    const names = Object.keys(counts).sort();
-    if (!names.length) { el.innerHTML = '<div class="muted-cell">No students yet.</div>'; return; }
-    el.innerHTML = names.map(n => '<div class="batch-count-chip"><span class="batch-count-value">'+counts[n]+'</span><span class="batch-count-label">'+esc(n)+'</span></div>').join('');
-  }
-
   function getFilteredStudents() {
     const q = studentSearchQuery.trim().toLowerCase();
     return students.filter(s => {
@@ -1149,20 +1142,31 @@ function boot(seedBatches, seedStudents) {
     sel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===studentBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
   }
 
+  function updateStudentSelectionUI(filtered) {
+    const btn = document.getElementById('delete-selected-students-btn');
+    if (btn) {
+      btn.disabled = !canWrite || selectedStudentIds.size === 0;
+      btn.textContent = 'Delete Selected' + (selectedStudentIds.size ? ' (' + selectedStudentIds.size + ')' : '');
+    }
+    const selectAll = document.getElementById('student-select-all');
+    if (selectAll) {
+      const visibleIds = filtered.map(s => s.id);
+      selectAll.checked = visibleIds.length > 0 && visibleIds.every(id => selectedStudentIds.has(id));
+    }
+  }
+
   function renderStudentsTable() {
     const tbody = document.getElementById('students-tbody');
     if (!tbody) return;
-    renderStudentBatchCounts();
     populateStudentFilterOptions();
     let filtered = getFilteredStudents();
     if (studentEditingId && !filtered.some(s => s.id === studentEditingId)) {
       const editingStudent = students.find(s => s.id === studentEditingId);
       if (editingStudent) filtered = [editingStudent].concat(filtered);
     }
-    const deleteBtn = document.getElementById('delete-filtered-students-btn');
-    if (deleteBtn) deleteBtn.disabled = !canWrite || !filtered.length;
+    updateStudentSelectionUI(filtered);
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No students match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-student">+ Add Student</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No students match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-student">+ Add Student</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(studentRowHTML).join('');
@@ -1451,22 +1455,23 @@ function boot(seedBatches, seedStudents) {
     if (!confirm('Delete this student record? This cannot be undone.')) return;
     students = students.filter(s => s.id !== id);
     if (studentEditingId === id) { studentEditingId = null; studentDraft = null; studentIsNewRow = false; }
+    selectedStudentIds.delete(id);
     render();
     persistStudentDelete(id);
     flashToast('Student deleted.', 'success');
   }
 
-  function deleteFilteredStudents() {
-    if (!canWrite) return;
-    const list = getFilteredStudents();
-    if (!list.length) { flashToast('No students match the current filters.', 'error'); return; }
-    if (!confirm('Delete ' + list.length + (list.length === 1 ? ' student record' : ' student records') + ' matching the current filters? This cannot be undone.')) return;
-    const ids = new Set(list.map(s => s.id));
-    students = students.filter(s => !ids.has(s.id));
-    if (studentEditingId && ids.has(studentEditingId)) { studentEditingId = null; studentDraft = null; studentIsNewRow = false; }
+  function deleteSelectedStudents() {
+    if (!canWrite || !selectedStudentIds.size) return;
+    const count = selectedStudentIds.size;
+    if (!confirm('Delete ' + count + (count === 1 ? ' selected student record' : ' selected student records') + '? This cannot be undone.')) return;
+    const ids = Array.from(selectedStudentIds);
+    students = students.filter(s => !selectedStudentIds.has(s.id));
+    if (studentEditingId && selectedStudentIds.has(studentEditingId)) { studentEditingId = null; studentDraft = null; studentIsNewRow = false; }
+    selectedStudentIds = new Set();
     render();
     ids.forEach(persistStudentDelete);
-    flashToast(list.length + (list.length === 1 ? ' student deleted.' : ' students deleted.'), 'success');
+    flashToast(count + (count === 1 ? ' student deleted.' : ' students deleted.'), 'success');
   }
 
   function buildStudentsExportCSV(list) {
@@ -2016,7 +2021,7 @@ function boot(seedBatches, seedStudents) {
       renderStudentsTable();
     }
     else if (action === 'download-students') downloadStudentsCSV();
-    else if (action === 'delete-filtered-students') deleteFilteredStudents();
+    else if (action === 'delete-selected-students') deleteSelectedStudents();
     else if (action === 'open-student-import') {
       if (!canWrite) return;
       openStudentImportModal();
@@ -2186,6 +2191,23 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     if (t.id === 'student-filter-batch') { studentBatchFilter = t.value; renderStudentsTable(); return; }
+    if (t.matches('.row-checkbox')) {
+      const id = t.dataset.id;
+      if (t.checked) selectedStudentIds.add(id); else selectedStudentIds.delete(id);
+      updateStudentSelectionUI(getFilteredStudents());
+      return;
+    }
+    if (t.id === 'student-select-all') {
+      const filtered = getFilteredStudents();
+      if (t.checked) filtered.forEach(s => selectedStudentIds.add(s.id));
+      else filtered.forEach(s => selectedStudentIds.delete(s.id));
+      renderStudentsTable();
+      return;
+    }
+    if (t.matches('.student-cell-input') && t.tagName === 'SELECT') {
+      if (studentDraft) studentDraft[t.dataset.field] = t.value;
+      return;
+    }
     if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-week') { configWeekFilter = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-from') { configDateFilter.from = t.value; renderConfigsTable(); return; }
