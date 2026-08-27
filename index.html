@@ -1329,6 +1329,7 @@ function boot(seedBatches, seedStudents) {
 
   function startAdd() {
     if (!canWrite) return;
+    if (editingId && isNewRow) batches = batches.filter(b => b.id !== editingId);
     activeSection = 'records';
     const id = uid();
     const blank = normalizeBatch({ id });
@@ -1336,6 +1337,7 @@ function boot(seedBatches, seedStudents) {
     editingId = id; isNewRow = true;
     draft = cloneForEdit(blank);
     render();
+    const wrap = document.querySelector('#section-records .table-wrap'); if (wrap) wrap.scrollLeft = 0;
     requestAnimationFrame(() => {
       const el = document.querySelector('#row-' + id + ' .cell-input[data-field="batch"]');
       if (el) el.focus();
@@ -1385,6 +1387,7 @@ function boot(seedBatches, seedStudents) {
 
   function startAddStudent() {
     if (!canWrite) return;
+    if (studentEditingId && studentIsNewRow) students = students.filter(s => s.id !== studentEditingId);
     activeSection = 'students';
     const id = uid();
     const blank = normalizeStudent({ id });
@@ -1392,6 +1395,7 @@ function boot(seedBatches, seedStudents) {
     studentEditingId = id; studentIsNewRow = true;
     studentDraft = { ...blank };
     render();
+    const wrap = document.querySelector('#section-students .table-wrap'); if (wrap) wrap.scrollLeft = 0;
     requestAnimationFrame(() => {
       const el = document.querySelector('#srow-' + id + ' .student-cell-input[data-field="batch"]');
       if (el) el.focus();
@@ -1637,8 +1641,9 @@ function boot(seedBatches, seedStudents) {
       const syllabusItems = rowsForBatch
         .filter(r => r.subject || r.topics)
         .map(r => ({ subject: (r.subject || '').trim(), topics: (r.topics || '').trim() }));
+      const existingBatch = batches.find(b => b.batch === first.batch && (b.week || '') === (first.week || '').trim());
       const raw = {
-        id: uid(),
+        id: existingBatch ? existingBatch.id : uid(),
         batch: first.batch,
         week: first.week || '',
         syllabusItems: syllabusItems,
@@ -1728,9 +1733,13 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     const preview = importPreview.batches.slice(0, 20);
-    el.innerHTML = '<p class="import-summary">' + importPreview.batches.length + (importPreview.batches.length === 1 ? ' batch' : ' batches') + ' will be created.</p>'
-      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th>Batch</th><th>Week</th><th>Subjects</th><th>Mock Required</th><th>SEB Status</th></tr></thead><tbody>'
+    const existingIds = new Set(batches.map(b => b.id));
+    const newCount = importPreview.batches.filter(b => !existingIds.has(b.id)).length;
+    const updCount = importPreview.batches.length - newCount;
+    el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new batch' : ' new batches') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'batch' : 'batches') + ' updated' : '') + ' (matched by Batch + Week).</p>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Batch</th><th>Week</th><th>Subjects</th><th>Mock Required</th><th>SEB Status</th></tr></thead><tbody>'
       + preview.map(b => '<tr>'
+          + '<td><span class="badge '+(existingIds.has(b.id)?'badge--no':'badge--yes')+'">'+(existingIds.has(b.id)?'Update':'New')+'</span></td>'
           + '<td class="cell-strong">' + esc(b.batch) + '</td>'
           + '<td>' + (esc(b.week) || dash()) + '</td>'
           + '<td>' + (b.syllabusItems.map(it => esc(it.subject)).filter(Boolean).join(', ') || dash()) + '</td>'
@@ -1738,7 +1747,7 @@ function boot(seedBatches, seedStudents) {
           + '<td>' + (esc(b.mainSebStatus) || dash()) + '</td>'
         + '</tr>').join('')
       + '</tbody></table></div>'
-      + '<p class="footnote">Showing ' + preview.length + ' of ' + importPreview.batches.length + ' batches.</p>'
+      + '<p class="footnote">Showing ' + preview.length + ' of ' + importPreview.batches.length + '.</p>'
       + (importPreview.skipped ? '<p class="import-skip">Skipped ' + importPreview.skipped + ' row' + (importPreview.skipped === 1 ? '' : 's') + ' with no Batch value.</p>' : '')
       + (importPreview.dateWarnings ? '<p class="import-skip">' + importPreview.dateWarnings + ' date/time value' + (importPreview.dateWarnings === 1 ? '' : 's') + " couldn't be understood and " + (importPreview.dateWarnings === 1 ? 'was' : 'were') + ' left blank. Use YYYY-MM-DD HH:MM or DD-MM-YYYY HH:MM.</p>' : '');
     if (confirmBtn) confirmBtn.disabled = false;
@@ -1798,11 +1807,11 @@ function boot(seedBatches, seedStudents) {
   }
 
   const STUDENT_IMPORT_FIELD_MAP = {
-    batch: 'batch', batchname: 'batch',
-    uid: 'uid',
-    studentid: 'studentId', studentidno: 'studentId', studentidnumber: 'studentId', id: 'studentId',
+    batch: 'batch', batchname: 'batch', studentbatch: 'batch', batchcode: 'batch', batchid: 'batch', cohort: 'batch', cohortname: 'batch',
+    uid: 'uid', userid: 'uid',
+    studentid: 'studentId', studentidno: 'studentId', studentidnumber: 'studentId', id: 'studentId', rollnumber: 'studentId', rollno: 'studentId',
     name: 'name', studentname: 'name', fullname: 'name',
-    mobilenumber: 'mobile', mobile: 'mobile', mobileno: 'mobile', phone: 'mobile', phonenumber: 'mobile',
+    mobilenumber: 'mobile', mobile: 'mobile', mobileno: 'mobile', phone: 'mobile', phonenumber: 'mobile', contactnumber: 'mobile',
     emailid: 'email', email: 'email', emailaddress: 'email'
   };
 
@@ -1821,7 +1830,12 @@ function boot(seedBatches, seedStudents) {
     rows.forEach(r => {
       const mapped = mapStudentImportRow(r, headers);
       if (!mapped.name && !mapped.studentId && !mapped.uid) { skipped++; return; }
-      built.push(normalizeStudent({ id: uid(), ...mapped }));
+      const existing = students.find(s =>
+        (mapped.uid && s.uid && s.uid === mapped.uid) ||
+        (mapped.studentId && s.studentId && s.studentId === mapped.studentId)
+      );
+      const id = existing ? existing.id : uid();
+      built.push(normalizeStudent({ ...(existing || {}), ...mapped, id: id }));
     });
     return { students: built, skipped: skipped };
   }
@@ -1872,9 +1886,13 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     const preview = studentImportPreview.students.slice(0, 20);
-    el.innerHTML = '<p class="import-summary">' + studentImportPreview.students.length + (studentImportPreview.students.length === 1 ? ' student' : ' students') + ' will be added.</p>'
-      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th>Batch</th><th>UID</th><th>Student ID</th><th>Name</th><th>Mobile Number</th><th>Email ID</th></tr></thead><tbody>'
+    const existingIds = new Set(students.map(s => s.id));
+    const newCount = studentImportPreview.students.filter(s => !existingIds.has(s.id)).length;
+    const updCount = studentImportPreview.students.length - newCount;
+    el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new student' : ' new students') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'student' : 'students') + ' updated' : '') + ' (matched by UID or Student ID).</p>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Batch</th><th>UID</th><th>Student ID</th><th>Name</th><th>Mobile Number</th><th>Email ID</th></tr></thead><tbody>'
       + preview.map(s => '<tr>'
+          + '<td><span class="badge '+(existingIds.has(s.id)?'badge--no':'badge--yes')+'">'+(existingIds.has(s.id)?'Update':'New')+'</span></td>'
           + '<td class="cell-strong">' + (esc(s.batch) || dash()) + '</td>'
           + '<td>' + (esc(s.uid) || dash()) + '</td>'
           + '<td>' + (esc(s.studentId) || dash()) + '</td>'
@@ -1883,7 +1901,7 @@ function boot(seedBatches, seedStudents) {
           + '<td>' + (esc(s.email) || dash()) + '</td>'
         + '</tr>').join('')
       + '</tbody></table></div>'
-      + '<p class="footnote">Showing ' + preview.length + ' of ' + studentImportPreview.students.length + ' students.</p>'
+      + '<p class="footnote">Showing ' + preview.length + ' of ' + studentImportPreview.students.length + '.</p>'
       + (studentImportPreview.skipped ? '<p class="import-skip">Skipped ' + studentImportPreview.skipped + ' row' + (studentImportPreview.skipped === 1 ? '' : 's') + ' with no Name, Student ID, or UID.</p>' : '');
     if (confirmBtn) confirmBtn.disabled = false;
   }
@@ -1971,12 +1989,19 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'confirm-student-import') {
       if (!canWrite || !studentImportPreview || !studentImportPreview.students.length) return;
       const imported = studentImportPreview.students;
-      students = imported.concat(students);
+      const existingIds = new Set(students.map(s => s.id));
+      const newOnes = imported.filter(s => !existingIds.has(s.id));
+      const updatedOnes = imported.filter(s => existingIds.has(s.id));
+      students = newOnes.concat(students.map(ex => updatedOnes.find(u => u.id === ex.id) || ex));
       closeStudentImportModal();
       activeSection = 'students';
       render();
       imported.forEach(persistStudentSave);
-      flashToast(imported.length + (imported.length === 1 ? ' student imported.' : ' students imported.'), 'success');
+      let msg;
+      if (newOnes.length && updatedOnes.length) msg = newOnes.length + ' added, ' + updatedOnes.length + ' updated.';
+      else if (newOnes.length) msg = newOnes.length + (newOnes.length === 1 ? ' student imported.' : ' students imported.');
+      else msg = updatedOnes.length + (updatedOnes.length === 1 ? ' student updated.' : ' students updated.');
+      flashToast(msg, 'success');
     }
     else if (action === 'download-student-sample') {
       downloadStudentSampleCSV();
@@ -2060,13 +2085,20 @@ function boot(seedBatches, seedStudents) {
     }
     else if (action === 'confirm-import') {
       if (!canWrite || !importPreview || !importPreview.batches.length) return;
-      batches = importPreview.batches.concat(batches);
       const imported = importPreview.batches;
+      const existingIds = new Set(batches.map(b => b.id));
+      const newOnes = imported.filter(b => !existingIds.has(b.id));
+      const updatedOnes = imported.filter(b => existingIds.has(b.id));
+      batches = newOnes.concat(batches.map(ex => updatedOnes.find(u => u.id === ex.id) || ex));
       closeImportModal();
       activeSection = 'records';
       render();
       imported.forEach(persistSave);
-      flashToast(imported.length + (imported.length === 1 ? ' batch imported.' : ' batches imported.'), 'success');
+      let msg;
+      if (newOnes.length && updatedOnes.length) msg = newOnes.length + ' added, ' + updatedOnes.length + ' updated.';
+      else if (newOnes.length) msg = newOnes.length + (newOnes.length === 1 ? ' batch imported.' : ' batches imported.');
+      else msg = updatedOnes.length + (updatedOnes.length === 1 ? ' batch updated.' : ' batches updated.');
+      flashToast(msg, 'success');
     }
   });
 
