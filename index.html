@@ -577,7 +577,6 @@ function boot(seedBatches, seedStudents) {
 
           <section class="content-section" id="section-records">
             <h2 class="section-heading">Batch &amp; Syllabus Details</h2>
-            <p class="section-desc">Subject and topic coverage plus the mock assessment, mock interview, main assessment, and main interview schedule for every batch. Editable inline.</p>
             <div class="filter-bar">
               <div class="filter-field"><label for="syllabus-search">Search</label><input type="text" id="syllabus-search" placeholder="Search batch, subject, topic&hellip;"></div>
               <div class="filter-field"><label for="syllabus-filter-from">From</label><input type="date" id="syllabus-filter-from"></div>
@@ -626,12 +625,10 @@ function boot(seedBatches, seedStudents) {
                 <tbody id="tbody"></tbody>
               </table>
             </div>
-            <div class="footnote">Times shown in each editor's local wall-clock. Deleting a batch cannot be undone.</div>
           </section>
 
           <section class="content-section" id="section-students">
             <h2 class="section-heading">Students Data</h2>
-            <p class="section-desc">Student roster across every batch. Editable inline.</p>
             <div class="filter-bar">
               <div class="filter-field"><label for="student-search">Search</label><input type="text" id="student-search" placeholder="Search batch, name, email&hellip;"></div>
               <div class="filter-field"><label for="student-filter-batch">Batch</label><select id="student-filter-batch"><option value="">All Batches</option></select></div>
@@ -659,12 +656,10 @@ function boot(seedBatches, seedStudents) {
                 <tbody id="students-tbody"></tbody>
               </table>
             </div>
-            <div class="footnote">Deleting a student record cannot be undone.</div>
           </section>
 
           <section class="content-section" id="section-topin">
             <h2 class="section-heading">Topin Configs</h2>
-            <p class="section-desc">Config links for each batch's main and mock assessments and interviews, pulled live from Batch &amp; Syllabus Details.</p>
             <div class="tab-row">
               <button type="button" class="tab-btn active" data-action="config-tab" data-tab="all">All</button>
               <button type="button" class="tab-btn" data-action="config-tab" data-tab="pending">Pending</button>
@@ -699,12 +694,10 @@ function boot(seedBatches, seedStudents) {
                 <tbody id="configs-tbody"></tbody>
               </table>
             </div>
-            <div class="footnote">Batch, Week, and SEB Status come from Batch &amp; Syllabus Details &mdash; edit them there. "Clear" only resets the config links on this row.</div>
           </section>
 
           <section class="content-section" id="section-assessments">
             <h2 class="section-heading">Assessments</h2>
-            <p class="section-desc">Review config readiness, publish each batch's main and mock assessments, then invite students once live. Interview scheduling isn't part of this view.</p>
             <div class="cards-grid" id="assess-cards"></div>
             <div class="tab-row">
               <button type="button" class="tab-btn" data-action="assess-tab" data-tab="ready">Ready to Publish</button>
@@ -742,7 +735,6 @@ function boot(seedBatches, seedStudents) {
                 <tbody id="assess-tbody"></tbody>
               </table>
             </div>
-            <div class="footnote">Config links come from Topin Configs. Publishing and inviting here only mark a status in this app &mdash; they don't yet trigger anything in Topin or send real emails/notifications.</div>
           </section>
         </div>
       </div>
