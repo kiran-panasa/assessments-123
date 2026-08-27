@@ -1273,7 +1273,9 @@ function boot(seedBatches, seedStudents) {
     const mainDone = !!b.mainPublished;
     const mockDone = !b.mockRequired || !!b.mockPublished;
     if (mainDone && mockDone) return 'published';
-    if (configStatus(b) === 'submitted') return 'ready';
+    const mainReady = !!b.mainConfigUrl;
+    const mockReady = !b.mockRequired || !!b.mockConfigUrl;
+    if (mainReady && mockReady) return 'ready';
     return 'not-ready';
   }
 
@@ -1305,10 +1307,10 @@ function boot(seedBatches, seedStudents) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
     const parts = [];
     if (b.mainPublished) parts.push('<span class="badge badge--yes">Main Published</span>');
-    else parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="main">Publish Main</button>');
+    else parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="main"'+(b.mainConfigUrl?'':' disabled title="Add a main config link in Topin Configs first"')+'>Publish Main</button>');
     if (b.mockRequired) {
       if (b.mockPublished) parts.push('<span class="badge badge--yes">Mock Published</span>');
-      else parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="mock">Publish Mock</button>');
+      else parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="mock"'+(b.mockConfigUrl?'':' disabled title="Add a mock config link in Topin Configs first"')+'>Publish Mock</button>');
     }
     return '<div class="actions">' + parts.join('') + '</div>';
   }
@@ -1356,6 +1358,8 @@ function boot(seedBatches, seedStudents) {
     const idx = batches.findIndex(b => b.id === id);
     if (idx === -1) return;
     const label = type === 'main' ? 'Main' : 'Mock';
+    const linkField = type === 'main' ? 'mainConfigUrl' : 'mockConfigUrl';
+    if (!batches[idx][linkField]) { flashToast('Add a ' + label.toLowerCase() + ' config link in Topin Configs first.', 'error'); return; }
     if (!confirm('Publish the ' + label + ' assessment for ' + batches[idx].batch + '?')) return;
     const field = type === 'main' ? 'mainPublished' : 'mockPublished';
     const updated = { ...batches[idx], [field]: true, updatedAt: new Date().toISOString() };
