@@ -315,6 +315,9 @@ function boot(seedBatches, seedStudents) {
   let configWeekFilter = '';
   let configStatusTab = 'all';
   let configDateFilter = { from: '', to: '' };
+  let assessStatusTab = 'all';
+  let assessSearchQuery = '';
+  let assessBatchFilter = '';
   let overviewDateRange = getWeekRange(new Date());
   let whatsNextDate = todayISO();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
@@ -451,6 +454,8 @@ function boot(seedBatches, seedStudents) {
       mockInterviewConfigUrl: b.mockInterviewConfigUrl || '',
       mainConfigUrl: b.mainConfigUrl || '',
       mainInterviewConfigUrl: b.mainInterviewConfigUrl || '',
+      mainPublished: !!b.mainPublished,
+      mockPublished: !!b.mockPublished,
       updatedAt: b.updatedAt || ''
     };
   }
@@ -546,6 +551,7 @@ function boot(seedBatches, seedStudents) {
           <button type="button" class="sidebar-link" data-action="nav" data-section="records">Batch &amp; Syllabus Details</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="students">Students Data</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="topin">Topin Configs</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="assessments">Assessments</button>
         </nav>
 
         <div class="content">
@@ -691,6 +697,40 @@ function boot(seedBatches, seedStudents) {
               </table>
             </div>
             <div class="footnote">Batch, Week, and SEB Status come from Batch &amp; Syllabus Details &mdash; edit them there. "Clear" only resets the config links on this row.</div>
+          </section>
+
+          <section class="content-section" id="section-assessments">
+            <h2 class="section-heading">Assessments</h2>
+            <p class="section-desc">Review config readiness and publish each batch's main and mock assessments. Interview scheduling isn't part of this view.</p>
+            <div class="cards-grid" id="assess-cards"></div>
+            <div class="tab-row">
+              <button type="button" class="tab-btn active" data-action="assess-tab" data-tab="all">All</button>
+              <button type="button" class="tab-btn" data-action="assess-tab" data-tab="ready">Ready to Publish</button>
+              <button type="button" class="tab-btn" data-action="assess-tab" data-tab="published">Published</button>
+            </div>
+            <div class="filter-bar">
+              <div class="filter-field"><label for="assess-search">Search</label><input type="text" id="assess-search" placeholder="Search batch or week&hellip;"></div>
+              <div class="filter-field"><label for="assess-filter-batch">Batch</label><select id="assess-filter-batch"><option value="">All Batches</option></select></div>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-assess-filter">Clear</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr class="thead-single">
+                    <th>#</th>
+                    <th class="col-syllabus">Batch</th>
+                    <th>Week</th>
+                    <th>Assessment Type</th>
+                    <th>Main Config Link</th>
+                    <th>Mock Config Link</th>
+                    <th>Status</th>
+                    <th class="col-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="assess-tbody"></tbody>
+              </table>
+            </div>
+            <div class="footnote">Config links come from Topin Configs. Publishing here only marks a status in this app &mdash; it doesn't yet trigger anything in Topin.</div>
           </section>
         </div>
       </div>
@@ -1229,6 +1269,102 @@ function boot(seedBatches, seedStudents) {
     tbody.innerHTML = filtered.map((b, i) => configRowHTML(b, i + 1)).join('');
   }
 
+  function assessStatus(b) {
+    const mainDone = !!b.mainPublished;
+    const mockDone = !b.mockRequired || !!b.mockPublished;
+    if (mainDone && mockDone) return 'published';
+    if (configStatus(b) === 'submitted') return 'ready';
+    return 'not-ready';
+  }
+
+  function assessCard(label, value, tab) {
+    return '<button type="button" class="kpi-card" data-action="assess-card-nav" data-tab="'+tab+'"><div class="kpi-value">'+value+'</div><div class="kpi-label">'+esc(label)+'</div></button>';
+  }
+
+  function renderAssessmentCards() {
+    const el = document.getElementById('assess-cards');
+    if (!el) return;
+    let ready = 0, published = 0, notReady = 0;
+    batches.forEach(b => {
+      const s = assessStatus(b);
+      if (s === 'ready') ready++;
+      else if (s === 'published') published++;
+      else notReady++;
+    });
+    el.innerHTML = assessCard('Ready to Publish', ready, 'ready') + assessCard('Published', published, 'published') + assessCard('Not Configured', notReady, 'all');
+  }
+
+  function populateAssessFilterOptions() {
+    const sel = document.getElementById('assess-filter-batch');
+    if (!sel) return;
+    const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
+    sel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===assessBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
+  }
+
+  function assessActionsCell(b) {
+    if (!canWrite) return '<span class="muted-cell">Locked</span>';
+    const parts = [];
+    if (b.mainPublished) parts.push('<span class="badge badge--yes">Main Published</span>');
+    else parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="main">Publish Main</button>');
+    if (b.mockRequired) {
+      if (b.mockPublished) parts.push('<span class="badge badge--yes">Mock Published</span>');
+      else parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="mock">Publish Mock</button>');
+    }
+    return '<div class="actions">' + parts.join('') + '</div>';
+  }
+
+  function assessRowHTML(b, index) {
+    const status = assessStatus(b);
+    const statusLabel = status === 'published' ? 'Published' : (status === 'ready' ? 'Ready' : 'Not Configured');
+    const statusClass = status === 'published' ? 'badge--yes' : 'badge--no';
+    return '<tr id="arow-'+b.id+'" data-id="'+b.id+'">'
+      + '<td class="mono">' + index + '</td>'
+      + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
+      + '<td>' + (esc(b.week) || dash()) + '</td>'
+      + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
+      + '<td>' + configField('mainConfigUrl', b.mainConfigUrl, false) + '</td>'
+      + '<td>' + (b.mockRequired ? configField('mockConfigUrl', b.mockConfigUrl, false) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td><span class="badge '+statusClass+'">'+statusLabel+'</span></td>'
+      + '<td class="col-actions">' + assessActionsCell(b) + '</td>'
+      + '</tr>';
+  }
+
+  function renderAssessmentsTable() {
+    const tbody = document.getElementById('assess-tbody');
+    if (!tbody) return;
+    renderAssessmentCards();
+    populateAssessFilterOptions();
+    const q = assessSearchQuery.trim().toLowerCase();
+    const filtered = batches.filter(b => {
+      if (q) {
+        const hay = [b.batch, b.week].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (assessBatchFilter && b.batch !== assessBatchFilter) return false;
+      if (assessStatusTab !== 'all' && assessStatus(b) !== assessStatusTab) return false;
+      return true;
+    });
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map((b, i) => assessRowHTML(b, i + 1)).join('');
+  }
+
+  function publishAssessment(id, type) {
+    if (!canWrite) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const label = type === 'main' ? 'Main' : 'Mock';
+    if (!confirm('Publish the ' + label + ' assessment for ' + batches[idx].batch + '?')) return;
+    const field = type === 'main' ? 'mainPublished' : 'mockPublished';
+    const updated = { ...batches[idx], [field]: true, updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    render();
+    persistSave(updated);
+    flashToast(label + ' assessment published.', 'success');
+  }
+
   function render() {
     document.querySelectorAll('.sidebar-link').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.section === activeSection);
@@ -1244,6 +1380,7 @@ function boot(seedBatches, seedStudents) {
     renderRecordsTable();
     renderStudentsTable();
     renderConfigsTable();
+    renderAssessmentsTable();
     updateAccessBanner();
     updateSyncBadge();
   }
@@ -2068,7 +2205,7 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'view-syllabus') viewSyllabus(id);
     else if (action === 'config-tab') {
       configStatusTab = btn.dataset.tab;
-      document.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === configStatusTab));
+      btn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === configStatusTab));
       renderConfigsTable();
     }
     else if (action === 'clear-config-filter') {
@@ -2077,6 +2214,26 @@ function boot(seedBatches, seedStudents) {
       const fromEl = document.getElementById('config-filter-from'); if (fromEl) fromEl.value = '';
       const toEl = document.getElementById('config-filter-to'); if (toEl) toEl.value = '';
       renderConfigsTable();
+    }
+    else if (action === 'assess-tab') {
+      assessStatusTab = btn.dataset.tab;
+      btn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === assessStatusTab));
+      renderAssessmentsTable();
+    }
+    else if (action === 'clear-assess-filter') {
+      assessSearchQuery = ''; assessBatchFilter = '';
+      const searchEl = document.getElementById('assess-search'); if (searchEl) searchEl.value = '';
+      const batchEl = document.getElementById('assess-filter-batch'); if (batchEl) batchEl.value = '';
+      renderAssessmentsTable();
+    }
+    else if (action === 'assess-card-nav') {
+      assessStatusTab = btn.dataset.tab;
+      renderAssessmentsTable();
+      const tabBtn = document.querySelector('#section-assessments .tab-btn[data-tab="' + assessStatusTab + '"]');
+      if (tabBtn) tabBtn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb === tabBtn));
+    }
+    else if (action === 'publish-assessment') {
+      publishAssessment(id, btn.dataset.type);
     }
     else if (action === 'nav') { activeSection = btn.dataset.section; render(); }
     else if (action === 'clear-overview-filter') {
@@ -2166,6 +2323,7 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     if (t.id === 'config-search') { configSearchQuery = t.value; renderConfigsTable(); return; }
+    if (t.id === 'assess-search') { assessSearchQuery = t.value; renderAssessmentsTable(); return; }
     if (t.matches('.config-cell-input')) {
       if (!configDraft) return;
       configDraft[t.dataset.field] = t.value;
@@ -2221,6 +2379,7 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
+    if (t.id === 'assess-filter-batch') { assessBatchFilter = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'config-filter-week') { configWeekFilter = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-from') { configDateFilter.from = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-to') { configDateFilter.to = t.value; renderConfigsTable(); return; }
