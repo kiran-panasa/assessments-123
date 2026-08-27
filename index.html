@@ -1143,7 +1143,7 @@ function boot(seedBatches, seedStudents) {
   function populateStudentFilterOptions() {
     const sel = document.getElementById('student-filter-batch');
     if (!sel) return;
-    const names = allKnownBatchNames();
+    const names = Array.from(new Set(students.map(s => s.batch).filter(Boolean))).sort();
     sel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===studentBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
   }
 
