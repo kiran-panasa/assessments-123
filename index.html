@@ -187,6 +187,7 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .import-help summary{cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--ink);}
 .import-help .section-desc{margin:8px 0 0;}
 .filter-bar-import{margin-left:auto;}
+.import-file-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .import-summary{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);margin:0 0 10px;}
 .import-skip{color:var(--danger);font-size:11.5px;margin-top:6px;}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
@@ -541,7 +542,10 @@ function boot(seedBatches) {
           <button type="button" class="modal-close" data-action="close-import" aria-label="Close">&times;</button>
         </div>
         <div class="modal-body">
-          <input type="file" id="import-file-input" accept=".csv">
+          <div class="import-file-row">
+            <input type="file" id="import-file-input" accept=".csv">
+            <button type="button" class="btn btn--ghost btn--sm" data-action="download-sample">Download sample sheet</button>
+          </div>
           <details class="import-help">
             <summary>Which columns can I use?</summary>
             <p class="section-desc">One CSV row per subject. Repeat the same <strong>Batch</strong> (and Week) on multiple rows to add several subjects to one batch &mdash; everything else is read from the first row for that batch.</p>
@@ -1186,6 +1190,59 @@ function boot(seedBatches) {
     if (confirmBtn) confirmBtn.disabled = false;
   }
 
+  function buildSampleCSV() {
+    const headers = ['Batch','Week','Subject','Topics','Mock Assessment Required','Mock Assessment Title','Mock Assessment Date','Mock Assessment Start','Mock Assessment End','Mock Assessment Tag','Mock Interview Required','Mock Interview Title','Mock Interview Date','Mock Interview Start','Mock Interview End','Mock Interview Tag','Main Assessment Title','Main Assessment Date','Main Assessment Start','Main Assessment End','Main Assessment Tag','Main Interview Title','Main Interview Date','Main Interview Start','Main Interview End','Main Interview Tag','SEB Status'];
+    const rows = [
+      ['CS25-B10','Week 1','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Yes','Frontend Mock Test','2026-09-10','10:00','12:00','Mock','Yes','Frontend Mock Interview','2026-09-12','11:00','11:30','Mock Interview','Frontend Main Exam','2026-09-15','09:00','11:00','Main Exam','Frontend Final Interview','2026-09-18','10:00','10:30','Final','Non-SEB'],
+      ['CS25-B10','Week 1','Backend Development','Intro to Node.js | REST APIs | Databases','','','','','','','','','','','','','','','','','','','','','','',''],
+      ['CS25-B11','Week 2','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','No','','','','','','No','','','','','','DSA Main Exam','2026-09-20','09:00','11:00','Main Exam','','','','','','SEB']
+    ];
+    const escCsv = v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lines = [headers.map(escCsv).join(',')].concat(rows.map(r => r.map(escCsv).join(',')));
+    return lines.join('\r\n');
+  }
+
+  async function downloadSampleCSV() {
+    const sample = buildSampleCSV();
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        try {
+          await downloads.save({ filename: 'batch-import-sample.csv', data: sample });
+          flashToast('Sample sheet downloaded.', 'success');
+        } catch (err) {
+          const code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rejected_extension' || code === 'extension_not_enabled') {
+            try {
+              await downloads.save({ filename: 'batch-import-sample.txt', data: sample });
+              flashToast('Downloaded as .txt — rename to .csv before importing.', 'success');
+            } catch (e2) { flashToast('Could not download the sample sheet.', 'error'); }
+          } else {
+            flashToast('Could not download the sample sheet.', 'error');
+          }
+        }
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([sample], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'batch-import-sample.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      flashToast('Could not download the sample sheet.', 'error');
+    }
+  }
+
   root.addEventListener('click', e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
@@ -1244,6 +1301,9 @@ function boot(seedBatches) {
       closeUploadModal();
       render();
       flashToast('Student data imported.', 'success');
+    }
+    else if (action === 'download-sample') {
+      downloadSampleCSV();
     }
     else if (action === 'open-import') {
       if (!canWrite) return;
