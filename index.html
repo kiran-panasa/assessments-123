@@ -67,6 +67,9 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-body);-webkit-
 .btn--primary:disabled{opacity:.5;cursor:not-allowed;}
 .btn--ghost{background:transparent;border-color:var(--border);color:var(--ink-2);}
 .btn--ghost:hover{background:var(--surface-2);}
+.btn--danger{background:transparent;border-color:var(--danger);color:var(--danger);}
+.btn--danger:hover{background:var(--danger-soft);}
+.btn--danger:disabled{opacity:.5;cursor:not-allowed;}
 .btn--icon-danger{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 8px;display:inline-flex;align-items:center;}
 .btn--icon-danger:hover{color:var(--danger);background:var(--danger-soft);border-color:var(--danger-soft);}
 .btn:focus-visible,.cell-input:focus-visible,.chip-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
@@ -308,6 +311,7 @@ function boot(seedBatches, seedStudents) {
   let studentDraft = null;
   let studentIsNewRow = false;
   let studentSearchQuery = '';
+  let studentBatchFilter = '';
   let studentImportPreview = null;
   let configEditingId = null;
   let configDraft = null;
@@ -626,7 +630,10 @@ function boot(seedBatches, seedStudents) {
             <p class="section-desc">Student roster across every batch. Editable inline.</p>
             <div class="filter-bar">
               <div class="filter-field"><label for="student-search">Search</label><input type="text" id="student-search" placeholder="Search batch, name, email&hellip;"></div>
+              <div class="filter-field"><label for="student-filter-batch">Batch</label><select id="student-filter-batch"><option value="">All Batches</option></select></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-student-filter">Clear</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="download-students">Download CSV</button>
+              <button type="button" class="btn btn--danger btn--sm" id="delete-filtered-students-btn" data-action="delete-filtered-students">Delete Filtered</button>
               <button type="button" class="btn btn--ghost btn--sm" id="import-students-btn" data-action="open-student-import">Import Students</button>
               <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="add-student-btn" data-action="add-student">+ Add Student</button>
             </div>
@@ -1123,22 +1130,39 @@ function boot(seedBatches, seedStudents) {
     el.innerHTML = names.map(n => '<div class="batch-count-chip"><span class="batch-count-value">'+counts[n]+'</span><span class="batch-count-label">'+esc(n)+'</span></div>').join('');
   }
 
+  function getFilteredStudents() {
+    const q = studentSearchQuery.trim().toLowerCase();
+    return students.filter(s => {
+      if (q) {
+        const hay = [s.batch, s.uid, s.studentId, s.name, s.mobile, s.email].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (studentBatchFilter && s.batch !== studentBatchFilter) return false;
+      return true;
+    });
+  }
+
+  function populateStudentFilterOptions() {
+    const sel = document.getElementById('student-filter-batch');
+    if (!sel) return;
+    const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
+    sel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===studentBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
+  }
+
   function renderStudentsTable() {
     const tbody = document.getElementById('students-tbody');
     if (!tbody) return;
     renderStudentBatchCounts();
-    const q = studentSearchQuery.trim().toLowerCase();
-    let filtered = students.filter(s => {
-      if (!q) return true;
-      const hay = [s.batch, s.uid, s.studentId, s.name, s.mobile, s.email].join(' ').toLowerCase();
-      return hay.includes(q);
-    });
+    populateStudentFilterOptions();
+    let filtered = getFilteredStudents();
     if (studentEditingId && !filtered.some(s => s.id === studentEditingId)) {
       const editingStudent = students.find(s => s.id === studentEditingId);
       if (editingStudent) filtered = [editingStudent].concat(filtered);
     }
+    const deleteBtn = document.getElementById('delete-filtered-students-btn');
+    if (deleteBtn) deleteBtn.disabled = !canWrite || !filtered.length;
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No students match your search.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-student">+ Add Student</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No students match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-student">+ Add Student</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(studentRowHTML).join('');
@@ -1423,12 +1447,77 @@ function boot(seedBatches, seedStudents) {
   }
 
   function removeStudent(id) {
+    if (!canWrite) return;
     if (!confirm('Delete this student record? This cannot be undone.')) return;
     students = students.filter(s => s.id !== id);
     if (studentEditingId === id) { studentEditingId = null; studentDraft = null; studentIsNewRow = false; }
     render();
     persistStudentDelete(id);
     flashToast('Student deleted.', 'success');
+  }
+
+  function deleteFilteredStudents() {
+    if (!canWrite) return;
+    const list = getFilteredStudents();
+    if (!list.length) { flashToast('No students match the current filters.', 'error'); return; }
+    if (!confirm('Delete ' + list.length + (list.length === 1 ? ' student record' : ' student records') + ' matching the current filters? This cannot be undone.')) return;
+    const ids = new Set(list.map(s => s.id));
+    students = students.filter(s => !ids.has(s.id));
+    if (studentEditingId && ids.has(studentEditingId)) { studentEditingId = null; studentDraft = null; studentIsNewRow = false; }
+    render();
+    ids.forEach(persistStudentDelete);
+    flashToast(list.length + (list.length === 1 ? ' student deleted.' : ' students deleted.'), 'success');
+  }
+
+  function buildStudentsExportCSV(list) {
+    const headers = ['Batch', 'UID', 'Student ID', 'Name', 'Mobile Number', 'Email ID'];
+    const escCsv = v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const rows = list.map(s => [s.batch, s.uid, s.studentId, s.name, s.mobile, s.email]);
+    const lines = [headers.map(escCsv).join(',')].concat(rows.map(r => r.map(escCsv).join(',')));
+    return lines.join('\r\n');
+  }
+
+  async function downloadStudentsCSV() {
+    const list = getFilteredStudents();
+    if (!list.length) { flashToast('No students to download.', 'error'); return; }
+    const csv = buildStudentsExportCSV(list);
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        try {
+          await downloads.save({ filename: 'students-export.csv', data: csv });
+          flashToast('Download ready.', 'success');
+        } catch (err) {
+          const code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rejected_extension' || code === 'extension_not_enabled') {
+            try {
+              await downloads.save({ filename: 'students-export.txt', data: csv });
+              flashToast('Downloaded as .txt.', 'success');
+            } catch (e2) { flashToast('Could not download the file.', 'error'); }
+          } else {
+            flashToast('Could not download the file.', 'error');
+          }
+        }
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'students-export.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      flashToast('Could not download the file.', 'error');
+    }
   }
 
   function startConfigEdit(id) {
@@ -1922,10 +2011,12 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'cancel-student') cancelStudent();
     else if (action === 'add-student') startAddStudent();
     else if (action === 'clear-student-filter') {
-      studentSearchQuery = '';
+      studentSearchQuery = ''; studentBatchFilter = '';
       const el = document.getElementById('student-search'); if (el) el.value = '';
       renderStudentsTable();
     }
+    else if (action === 'download-students') downloadStudentsCSV();
+    else if (action === 'delete-filtered-students') deleteFilteredStudents();
     else if (action === 'open-student-import') {
       if (!canWrite) return;
       openStudentImportModal();
@@ -2094,6 +2185,7 @@ function boot(seedBatches, seedStudents) {
       if (file) handleStudentImportFile(file);
       return;
     }
+    if (t.id === 'student-filter-batch') { studentBatchFilter = t.value; renderStudentsTable(); return; }
     if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-week') { configWeekFilter = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-from') { configDateFilter.from = t.value; renderConfigsTable(); return; }
