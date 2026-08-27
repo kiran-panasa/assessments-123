@@ -76,6 +76,7 @@ table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%
 thead th{position:sticky;background:var(--surface-2);font-family:var(--font-display);font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;color:var(--ink-2);padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;text-align:left;line-height:16px;}
 .thead-groups th{top:0;z-index:4;}
 .thead-fields th{top:var(--group-row-h);z-index:3;}
+.thead-single th{top:0;z-index:4;}
 .grp-blue{background:var(--blue-soft);color:var(--blue);}
 .grp-amber{background:var(--amber-soft);color:var(--amber);}
 .grp-teal{background:var(--accent-soft);color:var(--accent-ink);}
@@ -633,7 +634,7 @@ function boot(seedBatches, seedStudents) {
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr class="thead-fields">
+                  <tr class="thead-single">
                     <th class="col-syllabus">Batch</th>
                     <th>UID</th>
                     <th>Student ID</th>
@@ -663,13 +664,12 @@ function boot(seedBatches, seedStudents) {
               <div class="filter-field"><label for="config-filter-week">Week</label><select id="config-filter-week"><option value="">All Weeks</option></select></div>
               <div class="filter-field"><label for="config-filter-from">From</label><input type="date" id="config-filter-from"></div>
               <div class="filter-field"><label for="config-filter-to">To</label><input type="date" id="config-filter-to"></div>
-              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-config-filter">Clear</button>
-              <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="export-configs">Export CSV</button>
+              <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="clear-config-filter">Clear</button>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr class="thead-fields">
+                  <tr class="thead-single">
                     <th>#</th>
                     <th class="col-syllabus">Batch</th>
                     <th>Week</th>
@@ -887,8 +887,8 @@ function boot(seedBatches, seedStudents) {
       + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
       + '<td>' + (esc(b.week) || dash()) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
-      + '<td>' + configField('mockConfigUrl', d.mockConfigUrl, editing) + '</td>'
-      + '<td>' + configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) + '</td>'
+      + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (b.mockInterviewRequired ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + configField('mainConfigUrl', d.mainConfigUrl, editing) + '</td>'
       + '<td>' + configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) + '</td>'
       + '<td>' + (b.mainSebStatus ? '<span class="badge '+(b.mainSebStatus==='SEB'?'badge--yes':'badge--no')+'">'+esc(b.mainSebStatus)+'</span>' : dash()) + '</td>'
@@ -1486,59 +1486,6 @@ function boot(seedBatches, seedStudents) {
     const searchEl = document.getElementById('syllabus-search'); if (searchEl) searchEl.value = b.batch;
   }
 
-  function buildConfigsExportCSV() {
-    const headers = ['Batch', 'Week', 'Mock Assessment Required', 'Mock Interview Required', 'Mock Assessment Config', 'Mock Interview Config', 'Main Assessment Config', 'Main Interview Config', 'SEB Status', 'Status', 'Updated'];
-    const escCsv = v => {
-      const s = String(v == null ? '' : v);
-      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
-    const rows = batches.map(b => [
-      b.batch, b.week, b.mockRequired ? 'Yes' : 'No', b.mockInterviewRequired ? 'Yes' : 'No',
-      b.mockConfigUrl, b.mockInterviewConfigUrl, b.mainConfigUrl, b.mainInterviewConfigUrl,
-      b.mainSebStatus, configStatus(b) === 'submitted' ? 'Submitted' : 'Pending', b.updatedAt
-    ]);
-    const lines = [headers.map(escCsv).join(',')].concat(rows.map(r => r.map(escCsv).join(',')));
-    return lines.join('\r\n');
-  }
-
-  async function exportConfigsCSV() {
-    const csv = buildConfigsExportCSV();
-    if (window.claude && typeof window.claude.use === 'function') {
-      const downloads = await window.claude.use('downloads');
-      if (downloads) {
-        try {
-          await downloads.save({ filename: 'topin-configs-export.csv', data: csv });
-          flashToast('Export downloaded.', 'success');
-        } catch (err) {
-          const code = err && err.code;
-          if (code === 'declined') return;
-          if (code === 'rejected_extension' || code === 'extension_not_enabled') {
-            try {
-              await downloads.save({ filename: 'topin-configs-export.txt', data: csv });
-              flashToast('Downloaded as .txt.', 'success');
-            } catch (e2) { flashToast('Could not download the export.', 'error'); }
-          } else {
-            flashToast('Could not download the export.', 'error');
-          }
-        }
-        return;
-      }
-    }
-    try {
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'topin-configs-export.csv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e) {
-      flashToast('Could not download the export.', 'error');
-    }
-  }
-
   function parseCSV(text) {
     const rows = [];
     let row = [], field = '', inQuotes = false;
@@ -2011,7 +1958,6 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'save-config') saveConfig();
     else if (action === 'clear-config') clearConfig(id);
     else if (action === 'view-syllabus') viewSyllabus(id);
-    else if (action === 'export-configs') exportConfigsCSV();
     else if (action === 'config-tab') {
       configStatusTab = btn.dataset.tab;
       document.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === configStatusTab));
