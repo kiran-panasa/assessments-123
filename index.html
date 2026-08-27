@@ -195,6 +195,10 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .import-help .section-desc{margin:8px 0 0;}
 .import-help code{font-family:var(--font-mono);background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:11.5px;}
 .filter-bar-import{margin-left:auto;}
+.batch-count-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
+.batch-count-chip{display:flex;align-items:baseline;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:6px 12px 6px 8px;}
+.batch-count-value{font-family:var(--font-mono);font-weight:600;font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums;background:var(--accent-soft);color:var(--accent-ink);border-radius:999px;padding:1px 8px;}
+.batch-count-label{font-family:var(--font-display);font-weight:600;font-size:11.5px;color:var(--ink-2);}
 .import-file-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .import-summary{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);margin:0 0 10px;}
 .import-skip{color:var(--danger);font-size:11.5px;margin-top:6px;}
@@ -224,6 +228,7 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 document.getElementById('app-style').textContent = CSS;
 
 const LS_KEY = 'cohort-ledger:batches:v1';
+const LS_KEY_STUDENTS = 'cohort-ledger:students:v1';
 const FIREBASE_SDK_VERSION = '12.18.0';
 const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyA-2dM3Tq7z5qv1tdlyhP0GTGVK2dKn4JU',
@@ -234,7 +239,7 @@ const FIREBASE_CONFIG = {
   appId: '1:23558688515:web:7d019cf5427675331ae336'
 };
 
-function fullDocumentHTML(batches) {
+function fullDocumentHTML(batches, students) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -252,23 +257,29 @@ function fullDocumentHTML(batches) {
 const CSS = ${JSON.stringify(CSS)};
 document.getElementById('app-style').textContent = CSS;
 const LS_KEY = ${JSON.stringify(LS_KEY)};
+const LS_KEY_STUDENTS = ${JSON.stringify(LS_KEY_STUDENTS)};
 const FIREBASE_SDK_VERSION = ${JSON.stringify(FIREBASE_SDK_VERSION)};
 const FIREBASE_CONFIG = ${JSON.stringify(FIREBASE_CONFIG)};
 ${fullDocumentHTML.toString()}
 ${boot.toString()}
-boot(${JSON.stringify(batches)});
+boot(${JSON.stringify(batches)}, ${JSON.stringify(students)});
 <\/script>
 </body>
 </html>`;
 }
 
-function boot(seedBatches) {
+function boot(seedBatches, seedStudents) {
   const ICON_TRASH = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 4H13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6 4V2.6C6 2.27 6.27 2 6.6 2H9.4C9.73 2 10 2.27 10 2.6V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M4.2 4L4.8 12.6C4.85 13.37 5.48 14 6.26 14H9.74C10.52 14 11.15 13.37 11.2 12.6L11.8 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   let stored = null;
   try { const raw = localStorage.getItem(LS_KEY); if (raw) stored = JSON.parse(raw); } catch (e) {}
   const base = (stored && Array.isArray(stored) && stored.length) ? stored : seedBatches;
   let batches = base.map(normalizeBatch);
+
+  let studentsStored = null;
+  try { const raw2 = localStorage.getItem(LS_KEY_STUDENTS); if (raw2) studentsStored = JSON.parse(raw2); } catch (e) {}
+  const studentsBase = (studentsStored && Array.isArray(studentsStored) && studentsStored.length) ? studentsStored : seedStudents;
+  let students = studentsBase.map(normalizeStudent);
 
   let editingId = null;
   let draft = null;
@@ -285,6 +296,12 @@ function boot(seedBatches) {
   let dateFilter = { from: '', to: '' };
   let expandedTopics = new Set();
   let importPreview = null;
+  let latestRemoteStudents = null;
+  let studentEditingId = null;
+  let studentDraft = null;
+  let studentIsNewRow = false;
+  let studentSearchQuery = '';
+  let studentImportPreview = null;
   let overviewDateRange = getWeekRange(new Date());
   let whatsNextDate = todayISO();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
@@ -318,6 +335,18 @@ function boot(seedBatches) {
         syncMode = 'local';
         updateSyncBadge();
         flashToast('Live sync unavailable — saving to this browser only.', 'error');
+      });
+      const studentsCol = fs.collection(db, 'students');
+      fs.onSnapshot(studentsCol, snap => {
+        if (snap.empty && !snap.metadata.fromCache) {
+          seedFirestoreStudents();
+          return;
+        }
+        const list = snap.docs.map(d => normalizeStudent({ id: d.id, ...d.data() }));
+        list.sort((a, b) => (a.batch || '').localeCompare(b.batch) || (a.name || '').localeCompare(b.name));
+        applyRemoteStudents(list);
+      }, err => {
+        console.error('Firestore students sync error', err);
       });
       updateSyncBadge();
     } catch (err) {
@@ -361,6 +390,18 @@ function boot(seedBatches) {
     m = /^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})[ T](\d{1,2})[:.](\d{2})/.exec(s);
     if (m) return m[3] + '-' + pad2(m[2]) + '-' + pad2(m[1]) + 'T' + pad2(m[4]) + ':' + m[5];
     return '';
+  }
+
+  function normalizeStudent(s) {
+    return {
+      id: s.id,
+      batch: s.batch || '',
+      uid: s.uid || '',
+      studentId: s.studentId || '',
+      name: s.name || '',
+      mobile: s.mobile || '',
+      email: s.email || ''
+    };
   }
 
   function normalizeBatch(b) {
@@ -409,6 +450,21 @@ function boot(seedBatches) {
   function applyRemoteBatches(list) {
     latestRemote = list;
     if (editingId === null) { batches = list; render(); }
+  }
+
+  let seededStudents = false;
+  function seedFirestoreStudents() {
+    if (seededStudents || !db || !fs) return;
+    seededStudents = true;
+    students.forEach(s => {
+      const { id, ...data } = s;
+      fs.setDoc(fs.doc(db, 'students', id), data).catch(e => console.error('Seed students failed', e));
+    });
+  }
+
+  function applyRemoteStudents(list) {
+    latestRemoteStudents = list;
+    if (studentEditingId === null) { students = list; render(); }
   }
 
   function updateSyncBadge() {
@@ -470,6 +526,7 @@ function boot(seedBatches) {
         <nav class="sidebar">
           <button type="button" class="sidebar-link" data-action="nav" data-section="overview">Overview</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="records">Batch &amp; Syllabus Details</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="students">Students Data</button>
         </nav>
 
         <div class="content">
@@ -543,10 +600,63 @@ function boot(seedBatches) {
             </div>
             <div class="footnote">Times shown in each editor's local wall-clock. Deleting a batch cannot be undone.</div>
           </section>
+
+          <section class="content-section" id="section-students">
+            <h2 class="section-heading">Students Data</h2>
+            <p class="section-desc">Student roster across every batch. Editable inline.</p>
+            <div class="filter-bar">
+              <div class="filter-field"><label for="student-search">Search</label><input type="text" id="student-search" placeholder="Search batch, name, email&hellip;"></div>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-student-filter">Clear</button>
+              <button type="button" class="btn btn--ghost btn--sm" id="import-students-btn" data-action="open-student-import">Import Students</button>
+              <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="add-student-btn" data-action="add-student">+ Add Student</button>
+            </div>
+            <div class="batch-count-row" id="student-batch-counts"></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr class="thead-fields">
+                    <th class="col-syllabus">Batch</th>
+                    <th>UID</th>
+                    <th>Student ID</th>
+                    <th>Name</th>
+                    <th>Mobile Number</th>
+                    <th>Email ID</th>
+                    <th class="col-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="students-tbody"></tbody>
+              </table>
+            </div>
+            <div class="footnote">Deleting a student record cannot be undone.</div>
+          </section>
         </div>
       </div>
     </div>
     <div class="toast" id="toast"></div>
+    <div class="modal-overlay" id="student-import-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="student-import-modal-title">
+        <div class="modal-header">
+          <h3 id="student-import-modal-title">Import Students</h3>
+          <button type="button" class="modal-close" data-action="close-student-import" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="import-file-row">
+            <input type="file" id="student-import-file-input" accept=".csv">
+            <button type="button" class="btn btn--ghost btn--sm" data-action="download-student-sample">Download sample sheet</button>
+          </div>
+          <details class="import-help">
+            <summary>Which columns can I use?</summary>
+            <p class="section-desc">One row per student.</p>
+            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Batch, UID, Student ID, Name, Mobile Number, Email ID. A row needs at least a Name, Student ID, or UID to be imported; unrecognized columns are ignored.</p>
+          </details>
+          <div id="student-import-preview"><p class="section-desc">Choose a CSV file to preview the students it will add before importing.</p></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-student-import">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" id="confirm-student-import-btn" data-action="confirm-student-import" disabled>Confirm Import</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-overlay" id="import-modal-overlay" hidden>
       <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
         <div class="modal-header">
@@ -645,6 +755,33 @@ function boot(seedBatches) {
     return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
   }
 
+  function studentField(field, value, editing, placeholder) {
+    if (!editing) return esc(value) || dash();
+    return '<input type="text" class="cell-input student-cell-input" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'">';
+  }
+
+  function studentActionsCell(id, editing) {
+    if (!canWrite) return '<span class="muted-cell">Locked</span>';
+    if (editing) {
+      return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save-student">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel-student">Cancel</button></div>';
+    }
+    return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit-student" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete-student" data-id="'+id+'" aria-label="Delete student" title="Delete student">'+ICON_TRASH+'</button></div>';
+  }
+
+  function studentRowHTML(s) {
+    const editing = studentEditingId === s.id;
+    const d = editing ? studentDraft : s;
+    return '<tr class="'+(editing?'row-editing':'')+'" id="srow-'+s.id+'" data-id="'+s.id+'">'
+      + '<td class="col-syllabus">' + studentField('batch', d.batch, editing, 'Batch') + '</td>'
+      + '<td>' + studentField('uid', d.uid, editing, 'UID') + '</td>'
+      + '<td>' + studentField('studentId', d.studentId, editing, 'Student ID') + '</td>'
+      + '<td>' + studentField('name', d.name, editing, 'Full name') + '</td>'
+      + '<td>' + studentField('mobile', d.mobile, editing, 'Mobile number') + '</td>'
+      + '<td>' + studentField('email', d.email, editing, 'Email address') + '</td>'
+      + '<td class="col-actions">' + studentActionsCell(s.id, editing) + '</td>'
+      + '</tr>';
+  }
+
   function rowHTML(b) {
     const editing = editingId === b.id;
     const d = editing ? draft : b;
@@ -700,6 +837,10 @@ function boot(seedBatches) {
     if (addBtn) addBtn.disabled = !canWrite;
     const importBtn = document.getElementById('import-batches-btn');
     if (importBtn) importBtn.disabled = !canWrite;
+    const addStudentBtn = document.getElementById('add-student-btn');
+    if (addStudentBtn) addStudentBtn.disabled = !canWrite;
+    const importStudentsBtn = document.getElementById('import-students-btn');
+    if (importStudentsBtn) importStudentsBtn.disabled = !canWrite;
   }
 
   function todayISO() {
@@ -853,6 +994,40 @@ function boot(seedBatches) {
     tbody.innerHTML = filtered.map(rowHTML).join('');
   }
 
+  function renderStudentBatchCounts() {
+    const el = document.getElementById('student-batch-counts');
+    if (!el) return;
+    const counts = {};
+    students.forEach(s => {
+      const b = s.batch.trim() || 'Unassigned';
+      counts[b] = (counts[b] || 0) + 1;
+    });
+    const names = Object.keys(counts).sort();
+    if (!names.length) { el.innerHTML = '<div class="muted-cell">No students yet.</div>'; return; }
+    el.innerHTML = names.map(n => '<div class="batch-count-chip"><span class="batch-count-value">'+counts[n]+'</span><span class="batch-count-label">'+esc(n)+'</span></div>').join('');
+  }
+
+  function renderStudentsTable() {
+    const tbody = document.getElementById('students-tbody');
+    if (!tbody) return;
+    renderStudentBatchCounts();
+    const q = studentSearchQuery.trim().toLowerCase();
+    let filtered = students.filter(s => {
+      if (!q) return true;
+      const hay = [s.batch, s.uid, s.studentId, s.name, s.mobile, s.email].join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+    if (studentEditingId && !filtered.some(s => s.id === studentEditingId)) {
+      const editingStudent = students.find(s => s.id === studentEditingId);
+      if (editingStudent) filtered = [editingStudent].concat(filtered);
+    }
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No students match your search.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-student">+ Add Student</button></div>':'')+'</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map(studentRowHTML).join('');
+  }
+
   function render() {
     document.querySelectorAll('.sidebar-link').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.section === activeSection);
@@ -861,11 +1036,12 @@ function boot(seedBatches) {
       sec.classList.toggle('active', sec.id === 'section-' + activeSection);
     });
     const addBtn0 = document.getElementById('add-batch-btn');
-    if (addBtn0) addBtn0.hidden = activeSection === 'overview';
+    if (addBtn0) addBtn0.hidden = activeSection !== 'records';
 
     renderKPICards();
     renderTimeline();
     renderRecordsTable();
+    renderStudentsTable();
     updateAccessBanner();
     updateSyncBadge();
   }
@@ -898,7 +1074,7 @@ function boot(seedBatches) {
         try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
       });
     } else if (artifactAPI) {
-      artifactAPI.publish(fullDocumentHTML(batches)).catch(err => {
+      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(err => {
         const code = err && err.code;
         if (code === 'not_writer' || code === 'not_granted') {
           canWrite = false; render();
@@ -923,11 +1099,53 @@ function boot(seedBatches) {
         flashToast('Live sync failed to delete.', 'error');
       });
     } else if (artifactAPI) {
-      artifactAPI.publish(fullDocumentHTML(batches)).catch(() => {
+      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(() => {
         try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
       });
     } else {
       try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
+    }
+  }
+
+  function persistStudentSave(studentObj) {
+    if (syncMode === 'firebase' && db && fs) {
+      const { id, ...data } = studentObj;
+      fs.setDoc(fs.doc(db, 'students', id), data).catch(err => {
+        console.error('Firestore student save failed', err);
+        flashToast('Live sync failed — saved to this browser only.', 'error');
+        try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
+      });
+    } else if (artifactAPI) {
+      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(err => {
+        const code = err && err.code;
+        if (code === 'not_writer' || code === 'not_granted') {
+          canWrite = false; render();
+          flashToast('This view is read-only — changes are not saved.', 'error');
+        } else if (code === 'conflict') {
+          /* the view is being reloaded to the newer version */
+        } else if (code === 'rate_limited') {
+          flashToast('Saving too fast — please wait a moment and try again.', 'error');
+        } else {
+          try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
+        }
+      });
+    } else {
+      try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
+    }
+  }
+
+  function persistStudentDelete(id) {
+    if (syncMode === 'firebase' && db && fs) {
+      fs.deleteDoc(fs.doc(db, 'students', id)).catch(err => {
+        console.error('Firestore student delete failed', err);
+        flashToast('Live sync failed to delete.', 'error');
+      });
+    } else if (artifactAPI) {
+      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(() => {
+        try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
+      });
+    } else {
+      try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
     }
   }
 
@@ -991,6 +1209,59 @@ function boot(seedBatches) {
     render();
     persistDelete(id);
     flashToast('Batch deleted.', 'success');
+  }
+
+  function startStudentEdit(id) {
+    if (!canWrite) return;
+    const s = students.find(x => x.id === id);
+    if (!s) return;
+    studentEditingId = id; studentIsNewRow = false;
+    studentDraft = { ...s };
+    render();
+  }
+
+  function startAddStudent() {
+    if (!canWrite) return;
+    activeSection = 'students';
+    const id = uid();
+    const blank = normalizeStudent({ id });
+    students.unshift(blank);
+    studentEditingId = id; studentIsNewRow = true;
+    studentDraft = { ...blank };
+    render();
+    requestAnimationFrame(() => {
+      const el = document.querySelector('#srow-' + id + ' .student-cell-input[data-field="batch"]');
+      if (el) el.focus();
+      const rowEl = document.getElementById('srow-' + id);
+      if (rowEl) rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+
+  function saveStudent() {
+    if (!studentDraft.name.trim()) { flashToast('Student name is required.', 'error'); return; }
+    const idx = students.findIndex(s => s.id === studentEditingId);
+    if (idx > -1) students[idx] = { ...studentDraft };
+    const saved = { ...studentDraft };
+    studentEditingId = null; studentDraft = null; studentIsNewRow = false;
+    render();
+    persistStudentSave(saved);
+    flashToast('Student saved.', 'success');
+  }
+
+  function cancelStudent() {
+    if (studentIsNewRow) students = students.filter(s => s.id !== studentEditingId);
+    studentEditingId = null; studentDraft = null; studentIsNewRow = false;
+    if (latestRemoteStudents) students = latestRemoteStudents;
+    render();
+  }
+
+  function removeStudent(id) {
+    if (!confirm('Delete this student record? This cannot be undone.')) return;
+    students = students.filter(s => s.id !== id);
+    if (studentEditingId === id) { studentEditingId = null; studentDraft = null; studentIsNewRow = false; }
+    render();
+    persistStudentDelete(id);
+    flashToast('Student deleted.', 'success');
   }
 
   function parseCSV(text) {
@@ -1255,6 +1526,150 @@ function boot(seedBatches) {
     }
   }
 
+  const STUDENT_IMPORT_FIELD_MAP = {
+    batch: 'batch', batchname: 'batch',
+    uid: 'uid',
+    studentid: 'studentId', studentidno: 'studentId', studentidnumber: 'studentId', id: 'studentId',
+    name: 'name', studentname: 'name', fullname: 'name',
+    mobilenumber: 'mobile', mobile: 'mobile', mobileno: 'mobile', phone: 'mobile', phonenumber: 'mobile',
+    emailid: 'email', email: 'email', emailaddress: 'email'
+  };
+
+  function mapStudentImportRow(row, headers) {
+    const out = {};
+    headers.forEach(h => {
+      const key = STUDENT_IMPORT_FIELD_MAP[normHeader(h)];
+      if (key && row[h]) out[key] = row[h];
+    });
+    return out;
+  }
+
+  function buildStudentsFromImport(headers, rows) {
+    let skipped = 0;
+    const built = [];
+    rows.forEach(r => {
+      const mapped = mapStudentImportRow(r, headers);
+      if (!mapped.name && !mapped.studentId && !mapped.uid) { skipped++; return; }
+      built.push(normalizeStudent({ id: uid(), ...mapped }));
+    });
+    return { students: built, skipped: skipped };
+  }
+
+  function openStudentImportModal() {
+    studentImportPreview = null;
+    const overlay = document.getElementById('student-import-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    const fileInput = document.getElementById('student-import-file-input');
+    if (fileInput) fileInput.value = '';
+    renderStudentImportPreview();
+  }
+
+  function closeStudentImportModal() {
+    const overlay = document.getElementById('student-import-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    studentImportPreview = null;
+  }
+
+  function handleStudentImportFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = parseCSV(String(reader.result));
+        if (!parsed.rows.length) { flashToast('No rows found in that file.', 'error'); studentImportPreview = null; }
+        else studentImportPreview = buildStudentsFromImport(parsed.headers, parsed.rows);
+      } catch (err) {
+        studentImportPreview = null;
+        flashToast('Could not read that file — make sure it’s a CSV.', 'error');
+      }
+      renderStudentImportPreview();
+    };
+    reader.onerror = () => {
+      studentImportPreview = null;
+      renderStudentImportPreview();
+      flashToast('Could not read that file.', 'error');
+    };
+    reader.readAsText(file);
+  }
+
+  function renderStudentImportPreview() {
+    const el = document.getElementById('student-import-preview');
+    const confirmBtn = document.getElementById('confirm-student-import-btn');
+    if (!el) return;
+    if (!studentImportPreview || !studentImportPreview.students.length) {
+      el.innerHTML = '<p class="section-desc">Choose a CSV file to preview the students it will add before importing.</p>';
+      if (confirmBtn) confirmBtn.disabled = true;
+      return;
+    }
+    const preview = studentImportPreview.students.slice(0, 20);
+    el.innerHTML = '<p class="import-summary">' + studentImportPreview.students.length + (studentImportPreview.students.length === 1 ? ' student' : ' students') + ' will be added.</p>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th>Batch</th><th>UID</th><th>Student ID</th><th>Name</th><th>Mobile Number</th><th>Email ID</th></tr></thead><tbody>'
+      + preview.map(s => '<tr>'
+          + '<td class="cell-strong">' + (esc(s.batch) || dash()) + '</td>'
+          + '<td>' + (esc(s.uid) || dash()) + '</td>'
+          + '<td>' + (esc(s.studentId) || dash()) + '</td>'
+          + '<td>' + (esc(s.name) || dash()) + '</td>'
+          + '<td>' + (esc(s.mobile) || dash()) + '</td>'
+          + '<td>' + (esc(s.email) || dash()) + '</td>'
+        + '</tr>').join('')
+      + '</tbody></table></div>'
+      + '<p class="footnote">Showing ' + preview.length + ' of ' + studentImportPreview.students.length + ' students.</p>'
+      + (studentImportPreview.skipped ? '<p class="import-skip">Skipped ' + studentImportPreview.skipped + ' row' + (studentImportPreview.skipped === 1 ? '' : 's') + ' with no Name, Student ID, or UID.</p>' : '');
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+
+  function buildStudentSampleCSV() {
+    const headers = ['Batch', 'UID', 'Student ID', 'Name', 'Mobile Number', 'Email ID'];
+    const rows = [
+      ['CS24-B07', 'UID20260001', 'STU1001', 'Aditi Sharma', '9876543210', 'aditi.sharma@example.com'],
+      ['CS24-B07', 'UID20260002', 'STU1002', 'Rohan Mehta', '9876543211', 'rohan.mehta@example.com'],
+      ['CS24-B09', 'UID20260003', 'STU1003', 'Priya Nair', '9876543212', 'priya.nair@example.com']
+    ];
+    const escCsv = v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lines = [headers.map(escCsv).join(',')].concat(rows.map(r => r.map(escCsv).join(',')));
+    return lines.join('\r\n');
+  }
+
+  async function downloadStudentSampleCSV() {
+    const sample = buildStudentSampleCSV();
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        try {
+          await downloads.save({ filename: 'student-import-sample.csv', data: sample });
+          flashToast('Sample sheet downloaded.', 'success');
+        } catch (err) {
+          const code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rejected_extension' || code === 'extension_not_enabled') {
+            try {
+              await downloads.save({ filename: 'student-import-sample.txt', data: sample });
+              flashToast('Downloaded as .txt — rename to .csv before importing.', 'success');
+            } catch (e2) { flashToast('Could not download the sample sheet.', 'error'); }
+          } else {
+            flashToast('Could not download the sample sheet.', 'error');
+          }
+        }
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([sample], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'student-import-sample.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      flashToast('Could not download the sample sheet.', 'error');
+    }
+  }
+
   root.addEventListener('click', e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
@@ -1265,6 +1680,36 @@ function boot(seedBatches) {
     else if (action === 'save') save();
     else if (action === 'cancel') cancel();
     else if (action === 'add-batch') startAdd();
+    else if (action === 'edit-student') startStudentEdit(id);
+    else if (action === 'delete-student') removeStudent(id);
+    else if (action === 'save-student') saveStudent();
+    else if (action === 'cancel-student') cancelStudent();
+    else if (action === 'add-student') startAddStudent();
+    else if (action === 'clear-student-filter') {
+      studentSearchQuery = '';
+      const el = document.getElementById('student-search'); if (el) el.value = '';
+      renderStudentsTable();
+    }
+    else if (action === 'open-student-import') {
+      if (!canWrite) return;
+      openStudentImportModal();
+    }
+    else if (action === 'close-student-import') {
+      closeStudentImportModal();
+    }
+    else if (action === 'confirm-student-import') {
+      if (!canWrite || !studentImportPreview || !studentImportPreview.students.length) return;
+      const imported = studentImportPreview.students;
+      students = imported.concat(students);
+      closeStudentImportModal();
+      activeSection = 'students';
+      render();
+      imported.forEach(persistStudentSave);
+      flashToast(imported.length + (imported.length === 1 ? ' student imported.' : ' students imported.'), 'success');
+    }
+    else if (action === 'download-student-sample') {
+      downloadStudentSampleCSV();
+    }
     else if (action === 'nav') { activeSection = btn.dataset.section; render(); }
     else if (action === 'clear-overview-filter') {
       overviewDateRange = getWeekRange(new Date());
@@ -1339,6 +1784,12 @@ function boot(seedBatches) {
   root.addEventListener('input', e => {
     const t = e.target;
     if (t.id === 'syllabus-search') { searchQuery = t.value; renderRecordsTable(); return; }
+    if (t.id === 'student-search') { studentSearchQuery = t.value; renderStudentsTable(); return; }
+    if (t.matches('.student-cell-input')) {
+      if (!studentDraft) return;
+      studentDraft[t.dataset.field] = t.value;
+      return;
+    }
     if (!draft) return;
     if (t.matches('.syllabus-subject-input')) {
       draft.syllabusItems[Number(t.dataset.index)].subject = t.value;
@@ -1363,6 +1814,11 @@ function boot(seedBatches) {
     if (t.id === 'import-file-input') {
       const file = t.files && t.files[0];
       if (file) handleImportFile(file);
+      return;
+    }
+    if (t.id === 'student-import-file-input') {
+      const file = t.files && t.files[0];
+      if (file) handleStudentImportFile(file);
       return;
     }
     if (!draft) return;
@@ -1408,7 +1864,14 @@ const SEED_BATCHES = [
     mainInterviewTitle:'Communication Final Interview', mainInterviewDate:'2026-09-20', mainInterviewStart:'10:00', mainInterviewEnd:'10:30', mainInterviewTag:'Final' }
 ];
 
-boot(SEED_BATCHES);
+const SEED_STUDENTS = [
+  { id:'s1', batch:'CS24-B07', uid:'UID20260001', studentId:'STU1001', name:'Aditi Sharma', mobile:'9876543210', email:'aditi.sharma@example.com' },
+  { id:'s2', batch:'CS24-B07', uid:'UID20260002', studentId:'STU1002', name:'Rohan Mehta', mobile:'9876543211', email:'rohan.mehta@example.com' },
+  { id:'s3', batch:'CS24-B09', uid:'UID20260003', studentId:'STU1003', name:'Priya Nair', mobile:'9876543212', email:'priya.nair@example.com' },
+  { id:'s4', batch:'CS24-B05', uid:'UID20260004', studentId:'STU1004', name:'Karthik Iyer', mobile:'9876543213', email:'karthik.iyer@example.com' }
+];
+
+boot(SEED_BATCHES, SEED_STUDENTS);
 </script>
 </body>
 </html>
