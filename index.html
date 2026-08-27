@@ -182,6 +182,13 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .modal-overlay{position:fixed;inset:0;background:rgba(10,14,10,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
 .modal-overlay[hidden]{display:none;}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:min(640px,100%);max-height:85vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3);}
+.modal--wide{width:min(820px,100%);}
+.import-help{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
+.import-help summary{cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--ink);}
+.import-help .section-desc{margin:8px 0 0;}
+.filter-bar-import{margin-left:auto;}
+.import-summary{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);margin:0 0 10px;}
+.import-skip{color:var(--danger);font-size:11.5px;margin-top:6px;}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
 .modal-header h3{margin:0;font-family:var(--font-display);font-size:16px;color:var(--ink);}
 .modal-close{background:none;border:none;font-size:20px;line-height:1;color:var(--muted);cursor:pointer;padding:4px;}
@@ -270,6 +277,7 @@ function boot(seedBatches) {
   let dateFilter = { from: '', to: '' };
   let uploadPreview = null;
   let expandedTopics = new Set();
+  let importPreview = null;
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
   const firebaseConfigured = ['apiKey','projectId','appId'].every(isConfigured);
 
@@ -460,6 +468,7 @@ function boot(seedBatches) {
               <div class="filter-field"><label for="syllabus-filter-from">From</label><input type="date" id="syllabus-filter-from"></div>
               <div class="filter-field"><label for="syllabus-filter-to">To</label><input type="date" id="syllabus-filter-to"></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-syllabus-filter">Clear</button>
+              <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="import-batches-btn" data-action="open-import">Import Batches</button>
             </div>
             <div class="table-wrap">
               <table>
@@ -522,6 +531,27 @@ function boot(seedBatches) {
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-upload">Cancel</button>
           <button type="button" class="btn btn--primary btn--sm" id="confirm-upload-btn" data-action="confirm-upload" disabled>Confirm Import</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="import-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+        <div class="modal-header">
+          <h3 id="import-modal-title">Import Batches</h3>
+          <button type="button" class="modal-close" data-action="close-import" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <input type="file" id="import-file-input" accept=".csv">
+          <details class="import-help">
+            <summary>Which columns can I use?</summary>
+            <p class="section-desc">One CSV row per subject. Repeat the same <strong>Batch</strong> (and Week) on multiple rows to add several subjects to one batch &mdash; everything else is read from the first row for that batch.</p>
+            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Batch, Week, Subject, Topics, Mock Assessment Required, Mock Assessment Title, Mock Assessment Date, Mock Assessment Start, Mock Assessment End, Mock Assessment Tag, Mock Interview Required, Mock Interview Title, Mock Interview Date, Mock Interview Start, Mock Interview End, Mock Interview Tag, Main Assessment Title, Main Assessment Date, Main Assessment Start, Main Assessment End, Main Assessment Tag, Main Interview Title, Main Interview Date, Main Interview Start, Main Interview End, Main Interview Tag, SEB Status. Required fields accept Yes/No; unrecognized columns are ignored.</p>
+          </details>
+          <div id="import-preview"><p class="section-desc">Choose a CSV file to preview the batches it will create before importing.</p></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-import">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" id="confirm-import-btn" data-action="confirm-import" disabled>Confirm Import</button>
         </div>
       </div>
     </div>
@@ -659,6 +689,8 @@ function boot(seedBatches) {
     if (el) el.hidden = canWrite;
     const addBtn = document.getElementById('add-batch-btn');
     if (addBtn) addBtn.disabled = !canWrite;
+    const importBtn = document.getElementById('import-batches-btn');
+    if (importBtn) importBtn.disabled = !canWrite;
   }
 
   function todayISO() {
@@ -998,6 +1030,162 @@ function boot(seedBatches) {
     if (confirmBtn) confirmBtn.disabled = false;
   }
 
+  const IMPORT_FIELD_MAP = {
+    batch: 'batch', batchname: 'batch',
+    week: 'week',
+    subject: 'subject',
+    topics: 'topics', topic: 'topics',
+    mockassessmentrequired: 'mockRequired', mockrequired: 'mockRequired',
+    mockassessmenttitle: 'mockTitle', mocktitle: 'mockTitle',
+    mockassessmentdate: 'mockDate', mockdate: 'mockDate',
+    mockassessmentstarttime: 'mockStart', mockassessmentstart: 'mockStart', mockstart: 'mockStart',
+    mockassessmentendtime: 'mockEnd', mockassessmentend: 'mockEnd', mockend: 'mockEnd',
+    mockassessmenttag: 'mockTag', mocktag: 'mockTag',
+    mockinterviewrequired: 'mockInterviewRequired',
+    mockinterviewtitle: 'mockInterviewTitle',
+    mockinterviewdate: 'mockInterviewDate',
+    mockinterviewstarttime: 'mockInterviewStart', mockinterviewstart: 'mockInterviewStart',
+    mockinterviewendtime: 'mockInterviewEnd', mockinterviewend: 'mockInterviewEnd',
+    mockinterviewtag: 'mockInterviewTag',
+    mainassessmenttitle: 'mainTitle', maintitle: 'mainTitle',
+    mainassessmentdate: 'mainDate', maindate: 'mainDate',
+    mainassessmentstarttime: 'mainStart', mainassessmentstart: 'mainStart', mainstart: 'mainStart',
+    mainassessmentendtime: 'mainEnd', mainassessmentend: 'mainEnd', mainend: 'mainEnd',
+    mainassessmenttag: 'mainTag', maintag: 'mainTag',
+    maininterviewtitle: 'mainInterviewTitle',
+    maininterviewdate: 'mainInterviewDate',
+    maininterviewstarttime: 'mainInterviewStart', maininterviewstart: 'mainInterviewStart',
+    maininterviewendtime: 'mainInterviewEnd', maininterviewend: 'mainInterviewEnd',
+    maininterviewtag: 'mainInterviewTag',
+    mainassessmentsebstatus: 'mainSebStatus', sebstatus: 'mainSebStatus'
+  };
+
+  function normHeader(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function truthyImport(v) { return /^(y|yes|true|1)$/i.test(String(v || '').trim()); }
+
+  function mapImportRow(row, headers) {
+    const out = {};
+    headers.forEach(h => {
+      const key = IMPORT_FIELD_MAP[normHeader(h)];
+      if (key && row[h]) out[key] = row[h];
+    });
+    return out;
+  }
+
+  function buildBatchesFromImport(headers, rows) {
+    const mapped = rows.map(r => mapImportRow(r, headers));
+    const groups = new Map();
+    const order = [];
+    let skipped = 0;
+    mapped.forEach(r => {
+      const batchName = (r.batch || '').trim();
+      if (!batchName) { skipped++; return; }
+      const key = batchName + '||' + (r.week || '').trim();
+      if (!groups.has(key)) { groups.set(key, []); order.push(key); }
+      groups.get(key).push(r);
+    });
+    const built = order.map(key => {
+      const rowsForBatch = groups.get(key);
+      const first = rowsForBatch[0];
+      const syllabusItems = rowsForBatch
+        .filter(r => r.subject || r.topics)
+        .map(r => ({ subject: (r.subject || '').trim(), topics: (r.topics || '').trim() }));
+      const raw = {
+        id: uid(),
+        batch: first.batch,
+        week: first.week || '',
+        syllabusItems: syllabusItems,
+        mockRequired: truthyImport(first.mockRequired),
+        mockTitle: first.mockTitle || '',
+        mockDate: first.mockDate || '',
+        mockStart: first.mockStart || '',
+        mockEnd: first.mockEnd || '',
+        mockTag: first.mockTag || '',
+        mockInterviewRequired: first.mockInterviewRequired != null ? truthyImport(first.mockInterviewRequired) : null,
+        mockInterviewTitle: first.mockInterviewTitle || '',
+        mockInterviewDate: first.mockInterviewDate || '',
+        mockInterviewStart: first.mockInterviewStart || '',
+        mockInterviewEnd: first.mockInterviewEnd || '',
+        mockInterviewTag: first.mockInterviewTag || '',
+        mainTitle: first.mainTitle || '',
+        mainDate: first.mainDate || '',
+        mainStart: first.mainStart || '',
+        mainEnd: first.mainEnd || '',
+        mainTag: first.mainTag || '',
+        mainInterviewTitle: first.mainInterviewTitle || '',
+        mainInterviewDate: first.mainInterviewDate || '',
+        mainInterviewStart: first.mainInterviewStart || '',
+        mainInterviewEnd: first.mainInterviewEnd || '',
+        mainInterviewTag: first.mainInterviewTag || '',
+        mainSebStatus: first.mainSebStatus || ''
+      };
+      if (raw.mockInterviewRequired === null) delete raw.mockInterviewRequired;
+      return normalizeBatch(raw);
+    });
+    return { batches: built, skipped: skipped };
+  }
+
+  function openImportModal() {
+    importPreview = null;
+    const overlay = document.getElementById('import-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    const fileInput = document.getElementById('import-file-input');
+    if (fileInput) fileInput.value = '';
+    renderImportPreview();
+  }
+
+  function closeImportModal() {
+    const overlay = document.getElementById('import-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    importPreview = null;
+  }
+
+  function handleImportFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = parseCSV(String(reader.result));
+        if (!parsed.rows.length) { flashToast('No rows found in that file.', 'error'); importPreview = null; }
+        else importPreview = buildBatchesFromImport(parsed.headers, parsed.rows);
+      } catch (err) {
+        importPreview = null;
+        flashToast('Could not read that file — make sure it’s a CSV.', 'error');
+      }
+      renderImportPreview();
+    };
+    reader.onerror = () => {
+      importPreview = null;
+      renderImportPreview();
+      flashToast('Could not read that file.', 'error');
+    };
+    reader.readAsText(file);
+  }
+
+  function renderImportPreview() {
+    const el = document.getElementById('import-preview');
+    const confirmBtn = document.getElementById('confirm-import-btn');
+    if (!el) return;
+    if (!importPreview || !importPreview.batches.length) {
+      el.innerHTML = '<p class="section-desc">Choose a CSV file to preview the batches it will create before importing.</p>';
+      if (confirmBtn) confirmBtn.disabled = true;
+      return;
+    }
+    const preview = importPreview.batches.slice(0, 20);
+    el.innerHTML = '<p class="import-summary">' + importPreview.batches.length + (importPreview.batches.length === 1 ? ' batch' : ' batches') + ' will be created.</p>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th>Batch</th><th>Week</th><th>Subjects</th><th>Mock Required</th><th>SEB Status</th></tr></thead><tbody>'
+      + preview.map(b => '<tr>'
+          + '<td class="cell-strong">' + esc(b.batch) + '</td>'
+          + '<td>' + (esc(b.week) || dash()) + '</td>'
+          + '<td>' + (b.syllabusItems.map(it => esc(it.subject)).filter(Boolean).join(', ') || dash()) + '</td>'
+          + '<td>' + (b.mockRequired ? 'Yes' : 'No') + '</td>'
+          + '<td>' + (esc(b.mainSebStatus) || dash()) + '</td>'
+        + '</tr>').join('')
+      + '</tbody></table></div>'
+      + '<p class="footnote">Showing ' + preview.length + ' of ' + importPreview.batches.length + ' batches.</p>'
+      + (importPreview.skipped ? '<p class="import-skip">Skipped ' + importPreview.skipped + ' row' + (importPreview.skipped === 1 ? '' : 's') + ' with no Batch value.</p>' : '');
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+
   root.addEventListener('click', e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
@@ -1057,6 +1245,23 @@ function boot(seedBatches) {
       render();
       flashToast('Student data imported.', 'success');
     }
+    else if (action === 'open-import') {
+      if (!canWrite) return;
+      openImportModal();
+    }
+    else if (action === 'close-import') {
+      closeImportModal();
+    }
+    else if (action === 'confirm-import') {
+      if (!canWrite || !importPreview || !importPreview.batches.length) return;
+      batches = importPreview.batches.concat(batches);
+      const imported = importPreview.batches;
+      closeImportModal();
+      activeSection = 'records';
+      render();
+      imported.forEach(persistSave);
+      flashToast(imported.length + (imported.length === 1 ? ' batch imported.' : ' batches imported.'), 'success');
+    }
   });
 
   root.addEventListener('input', e => {
@@ -1083,6 +1288,11 @@ function boot(seedBatches) {
     if (t.id === 'students-file-input') {
       const file = t.files && t.files[0];
       if (file) handleStudentsFile(file);
+      return;
+    }
+    if (t.id === 'import-file-input') {
+      const file = t.files && t.files[0];
+      if (file) handleImportFile(file);
       return;
     }
     if (!draft) return;
