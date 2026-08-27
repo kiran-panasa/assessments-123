@@ -456,6 +456,9 @@ function boot(seedBatches, seedStudents) {
       mainInterviewConfigUrl: b.mainInterviewConfigUrl || '',
       mainPublished: !!b.mainPublished,
       mockPublished: !!b.mockPublished,
+      publishedAt: b.publishedAt || '',
+      inviteSent: !!b.inviteSent,
+      inviteSentAt: b.inviteSentAt || '',
       updatedAt: b.updatedAt || ''
     };
   }
@@ -701,13 +704,15 @@ function boot(seedBatches, seedStudents) {
 
           <section class="content-section" id="section-assessments">
             <h2 class="section-heading">Assessments</h2>
-            <p class="section-desc">Review config readiness and publish each batch's main and mock assessments. Interview scheduling isn't part of this view.</p>
+            <p class="section-desc">Review config readiness, publish each batch's main and mock assessments, then invite students once live. Interview scheduling isn't part of this view.</p>
             <div class="cards-grid" id="assess-cards"></div>
             <div class="tab-row">
-              <button type="button" class="tab-btn active" data-action="assess-tab" data-tab="all">All</button>
               <button type="button" class="tab-btn" data-action="assess-tab" data-tab="ready">Ready to Publish</button>
               <button type="button" class="tab-btn" data-action="assess-tab" data-tab="published">Published</button>
+              <button type="button" class="tab-btn" data-action="assess-tab" data-tab="invites-pending">Invites Pending</button>
+              <button type="button" class="tab-btn" data-action="assess-tab" data-tab="invites-sent">Invites Sent</button>
               <button type="button" class="tab-btn" data-action="assess-tab" data-tab="not-ready">Not Configured</button>
+              <button type="button" class="tab-btn active" data-action="assess-tab" data-tab="all">All</button>
             </div>
             <div class="filter-bar">
               <div class="filter-field"><label for="assess-search">Search</label><input type="text" id="assess-search" placeholder="Search batch or week&hellip;"></div>
@@ -716,6 +721,8 @@ function boot(seedBatches, seedStudents) {
                 <option value="all">All</option>
                 <option value="ready">Ready to Publish</option>
                 <option value="published">Published</option>
+                <option value="invites-pending">Invites Pending</option>
+                <option value="invites-sent">Invites Sent</option>
                 <option value="not-ready">Not Configured</option>
               </select></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-assess-filter">Clear</button>
@@ -737,7 +744,7 @@ function boot(seedBatches, seedStudents) {
                 <tbody id="assess-tbody"></tbody>
               </table>
             </div>
-            <div class="footnote">Config links come from Topin Configs. Publishing here only marks a status in this app &mdash; it doesn't yet trigger anything in Topin.</div>
+            <div class="footnote">Config links come from Topin Configs. Publishing and inviting here only mark a status in this app &mdash; they don't yet trigger anything in Topin or send real emails/notifications.</div>
           </section>
         </div>
       </div>
@@ -1286,6 +1293,14 @@ function boot(seedBatches, seedStudents) {
     return 'not-ready';
   }
 
+  function assessMatchesTab(b, tab) {
+    if (tab === 'all') return true;
+    const s = assessStatus(b);
+    if (tab === 'invites-pending') return s === 'published' && !b.inviteSent;
+    if (tab === 'invites-sent') return s === 'published' && !!b.inviteSent;
+    return s === tab;
+  }
+
   function assessCard(label, value, tab) {
     return '<button type="button" class="kpi-card" data-action="assess-card-nav" data-tab="'+tab+'"><div class="kpi-value">'+value+'</div><div class="kpi-label">'+esc(label)+'</div></button>';
   }
@@ -1319,13 +1334,29 @@ function boot(seedBatches, seedStudents) {
       if (b.mockPublished) parts.push('<span class="badge badge--yes">Mock Published</span>');
       else parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="mock"'+(b.mockConfigUrl?'':' disabled title="Add a mock config link in Topin Configs first"')+'>Publish Mock</button>');
     }
+    if (assessStatus(b) === 'published') {
+      if (b.inviteSent) {
+        parts.push('<span class="badge badge--yes">&#10003; Invited</span>');
+      } else {
+        parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="invite-assessment" data-id="'+b.id+'" data-mode="invite">Invite Students</button>');
+        parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="invite-assessment" data-id="'+b.id+'" data-mode="mark">Mark Sent</button>');
+      }
+      parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="unpublish-assessment" data-id="'+b.id+'">Unpublish</button>');
+    }
     return '<div class="actions">' + parts.join('') + '</div>';
   }
 
   function assessRowHTML(b, index) {
     const status = assessStatus(b);
-    const statusLabel = status === 'published' ? 'Published' : (status === 'ready' ? 'Ready' : 'Not Configured');
+    const statusLabel = status === 'published' ? 'Live' : (status === 'ready' ? 'Ready' : 'Not Configured');
     const statusClass = status === 'published' ? 'badge--yes' : 'badge--no';
+    let statusCell = '<span class="badge '+statusClass+'">'+statusLabel+'</span>';
+    if (status === 'published') {
+      const inviteLine = b.inviteSent
+        ? '<div class="muted-cell">Invited' + (fmtUpdatedAt(b.inviteSentAt) ? ' &middot; ' + fmtUpdatedAt(b.inviteSentAt) : '') + '</div>'
+        : '<div class="muted-cell">Invites pending</div>';
+      statusCell = (fmtUpdatedAt(b.publishedAt) ? '<div class="muted-cell">Published ' + fmtUpdatedAt(b.publishedAt) + '</div>' : '') + statusCell + inviteLine;
+    }
     return '<tr id="arow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
@@ -1333,7 +1364,7 @@ function boot(seedBatches, seedStudents) {
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td>' + configField('mainConfigUrl', b.mainConfigUrl, false) + '</td>'
       + '<td>' + (b.mockRequired ? configField('mockConfigUrl', b.mockConfigUrl, false) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td><span class="badge '+statusClass+'">'+statusLabel+'</span></td>'
+      + '<td>' + statusCell + '</td>'
       + '<td class="col-actions">' + assessActionsCell(b) + '</td>'
       + '</tr>';
   }
@@ -1357,7 +1388,7 @@ function boot(seedBatches, seedStudents) {
         if (!hay.includes(q)) return false;
       }
       if (assessBatchFilter && b.batch !== assessBatchFilter) return false;
-      if (assessStatusTab !== 'all' && assessStatus(b) !== assessStatusTab) return false;
+      if (!assessMatchesTab(b, assessStatusTab)) return false;
       return true;
     });
     if (!filtered.length) {
@@ -1376,11 +1407,45 @@ function boot(seedBatches, seedStudents) {
     if (!batches[idx][linkField]) { flashToast('Add a ' + label.toLowerCase() + ' config link in Topin Configs first.', 'error'); return; }
     if (!confirm('Publish the ' + label + ' assessment for ' + batches[idx].batch + '?')) return;
     const field = type === 'main' ? 'mainPublished' : 'mockPublished';
-    const updated = { ...batches[idx], [field]: true, updatedAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+    let updated = { ...batches[idx], [field]: true, updatedAt: now };
+    const mainDone = !!updated.mainPublished;
+    const mockDone = !updated.mockRequired || !!updated.mockPublished;
+    if (mainDone && mockDone && !updated.publishedAt) updated = { ...updated, publishedAt: now };
     batches[idx] = updated;
     render();
     persistSave(updated);
     flashToast(label + ' assessment published.', 'success');
+  }
+
+  function inviteAssessment(id, mode) {
+    if (!canWrite) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const b = batches[idx];
+    if (assessStatus(b) !== 'published') return;
+    const question = mode === 'invite'
+      ? 'Send assessment invites to students in ' + b.batch + '? (This marks invites as sent in this app; the actual email/notification isn\'t wired up yet — that comes with the Topin integration.)'
+      : 'Mark invites as already sent for ' + b.batch + '?';
+    if (!confirm(question)) return;
+    const updated = { ...b, inviteSent: true, inviteSentAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    render();
+    persistSave(updated);
+    flashToast('Invites marked as sent for ' + b.batch + '.', 'success');
+  }
+
+  function unpublishAssessment(id) {
+    if (!canWrite) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const b = batches[idx];
+    if (!confirm('Unpublish the assessment for ' + b.batch + '? This resets its publish and invite status.')) return;
+    const updated = { ...b, mainPublished: false, mockPublished: false, publishedAt: '', inviteSent: false, inviteSentAt: '', updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    render();
+    persistSave(updated);
+    flashToast('Assessment unpublished for ' + b.batch + '.', 'success');
   }
 
   function render() {
@@ -2249,6 +2314,12 @@ function boot(seedBatches, seedStudents) {
     }
     else if (action === 'publish-assessment') {
       publishAssessment(id, btn.dataset.type);
+    }
+    else if (action === 'invite-assessment') {
+      inviteAssessment(id, btn.dataset.mode);
+    }
+    else if (action === 'unpublish-assessment') {
+      unpublishAssessment(id);
     }
     else if (action === 'nav') { activeSection = btn.dataset.section; render(); }
     else if (action === 'clear-overview-filter') {
