@@ -823,14 +823,17 @@ function boot(seedBatches, seedStudents) {
     return '<input type="text" class="cell-input student-cell-input" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'">';
   }
 
+  function allKnownBatchNames() {
+    const fromBatches = batches.map(b => b.batch);
+    const fromStudents = students.map(s => s.batch);
+    return Array.from(new Set(fromBatches.concat(fromStudents).filter(Boolean))).sort();
+  }
+
   function studentBatchSelect(value, editing) {
     if (!editing) return esc(value) || dash();
-    const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
+    const names = allKnownBatchNames();
     const options = ['<option value=""'+(value?'':' selected')+'>&mdash; Select Batch &mdash;</option>']
       .concat(names.map(n => '<option value="'+esc(n)+'"'+(n===value?' selected':'')+'>'+esc(n)+'</option>'));
-    if (value && names.indexOf(value) === -1) {
-      options.push('<option value="'+esc(value)+'" selected>'+esc(value)+' (not in Batch &amp; Syllabus Details)</option>');
-    }
     return '<select class="cell-input student-cell-input" data-field="batch">' + options.join('') + '</select>';
   }
 
@@ -1140,7 +1143,7 @@ function boot(seedBatches, seedStudents) {
   function populateStudentFilterOptions() {
     const sel = document.getElementById('student-filter-batch');
     if (!sel) return;
-    const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
+    const names = allKnownBatchNames();
     sel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===studentBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
   }
 
