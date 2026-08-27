@@ -199,6 +199,12 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .batch-count-chip{display:flex;align-items:baseline;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:6px 12px 6px 8px;}
 .batch-count-value{font-family:var(--font-mono);font-weight:600;font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums;background:var(--accent-soft);color:var(--accent-ink);border-radius:999px;padding:1px 8px;}
 .batch-count-label{font-family:var(--font-display);font-weight:600;font-size:11.5px;color:var(--ink-2);}
+.tab-row{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--border);}
+.tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--muted);cursor:pointer;margin-bottom:-1px;}
+.tab-btn:hover{color:var(--ink);}
+.tab-btn.active{color:var(--accent-ink);border-bottom-color:var(--accent);}
+.config-link{color:var(--accent-ink);font-size:12px;text-decoration:underline;text-decoration-color:var(--border);word-break:break-all;}
+.config-link:hover{text-decoration-color:currentColor;}
 .import-file-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .import-summary{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);margin:0 0 10px;}
 .import-skip{color:var(--danger);font-size:11.5px;margin-top:6px;}
@@ -302,6 +308,13 @@ function boot(seedBatches, seedStudents) {
   let studentIsNewRow = false;
   let studentSearchQuery = '';
   let studentImportPreview = null;
+  let configEditingId = null;
+  let configDraft = null;
+  let configSearchQuery = '';
+  let configBatchFilter = '';
+  let configWeekFilter = '';
+  let configStatusTab = 'all';
+  let configDateFilter = { from: '', to: '' };
   let overviewDateRange = getWeekRange(new Date());
   let whatsNextDate = todayISO();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
@@ -433,7 +446,12 @@ function boot(seedBatches, seedStudents) {
       mainInterviewTitle: b.mainInterviewTitle || '',
       mainInterviewStartAt: coerceDT(b.mainInterviewStartAt != null ? b.mainInterviewStartAt : combineDT(b.mainInterviewDate, b.mainInterviewStart)),
       mainInterviewEndAt: coerceDT(b.mainInterviewEndAt != null ? b.mainInterviewEndAt : combineDT(b.mainInterviewDate, b.mainInterviewEnd)),
-      mainInterviewTag: b.mainInterviewTag || ''
+      mainInterviewTag: b.mainInterviewTag || '',
+      mockConfigUrl: b.mockConfigUrl || '',
+      mockInterviewConfigUrl: b.mockInterviewConfigUrl || '',
+      mainConfigUrl: b.mainConfigUrl || '',
+      mainInterviewConfigUrl: b.mainInterviewConfigUrl || '',
+      updatedAt: b.updatedAt || ''
     };
   }
 
@@ -527,6 +545,7 @@ function boot(seedBatches, seedStudents) {
           <button type="button" class="sidebar-link" data-action="nav" data-section="overview">Overview</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="records">Batch &amp; Syllabus Details</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="students">Students Data</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="topin">Topin Configs</button>
         </nav>
 
         <div class="content">
@@ -628,6 +647,47 @@ function boot(seedBatches, seedStudents) {
               </table>
             </div>
             <div class="footnote">Deleting a student record cannot be undone.</div>
+          </section>
+
+          <section class="content-section" id="section-topin">
+            <h2 class="section-heading">Topin Configs</h2>
+            <p class="section-desc">Config links for each batch's main and mock assessments and interviews, pulled live from Batch &amp; Syllabus Details.</p>
+            <div class="tab-row">
+              <button type="button" class="tab-btn active" data-action="config-tab" data-tab="all">All</button>
+              <button type="button" class="tab-btn" data-action="config-tab" data-tab="pending">Pending</button>
+              <button type="button" class="tab-btn" data-action="config-tab" data-tab="submitted">Submitted</button>
+            </div>
+            <div class="filter-bar">
+              <div class="filter-field"><label for="config-search">Search</label><input type="text" id="config-search" placeholder="Search batch or week&hellip;"></div>
+              <div class="filter-field"><label for="config-filter-batch">Batch</label><select id="config-filter-batch"><option value="">All Batches</option></select></div>
+              <div class="filter-field"><label for="config-filter-week">Week</label><select id="config-filter-week"><option value="">All Weeks</option></select></div>
+              <div class="filter-field"><label for="config-filter-from">From</label><input type="date" id="config-filter-from"></div>
+              <div class="filter-field"><label for="config-filter-to">To</label><input type="date" id="config-filter-to"></div>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-config-filter">Clear</button>
+              <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="export-configs">Export CSV</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr class="thead-fields">
+                    <th>#</th>
+                    <th class="col-syllabus">Batch</th>
+                    <th>Week</th>
+                    <th>Assessment Type</th>
+                    <th>Mock Assessment Config</th>
+                    <th>Mock Interview Config</th>
+                    <th>Main Assessment Config</th>
+                    <th>Main Interview Config</th>
+                    <th>SEB Status</th>
+                    <th>Status</th>
+                    <th>Updated</th>
+                    <th class="col-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="configs-tbody"></tbody>
+              </table>
+            </div>
+            <div class="footnote">Batch, Week, and SEB Status come from Batch &amp; Syllabus Details &mdash; edit them there. "Clear" only resets the config links on this row.</div>
           </section>
         </div>
       </div>
@@ -779,6 +839,62 @@ function boot(seedBatches, seedStudents) {
       + '<td>' + studentField('mobile', d.mobile, editing, 'Mobile number') + '</td>'
       + '<td>' + studentField('email', d.email, editing, 'Email address') + '</td>'
       + '<td class="col-actions">' + studentActionsCell(s.id, editing) + '</td>'
+      + '</tr>';
+  }
+
+  function configStatus(b) {
+    const required = ['mainConfigUrl', 'mainInterviewConfigUrl'];
+    if (b.mockRequired) required.push('mockConfigUrl');
+    if (b.mockInterviewRequired) required.push('mockInterviewConfigUrl');
+    const filled = required.filter(f => b[f]);
+    return filled.length === required.length ? 'submitted' : 'pending';
+  }
+
+  function configField(field, value, editing) {
+    if (!editing) {
+      if (!value) return dash();
+      const short = value.length > 30 ? value.slice(0, 27) + '…' : value;
+      return '<a href="'+esc(value)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(value)+'">'+esc(short)+'</a>';
+    }
+    return '<input type="text" class="cell-input config-cell-input" data-field="'+field+'" value="'+esc(value||'')+'" placeholder="https://…">';
+  }
+
+  function fmtUpdatedAt(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-US', { day:'2-digit', month:'short', year:'numeric' }) + ', ' + d.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+  }
+
+  function configActionsCell(id, editing) {
+    if (!canWrite) return '<span class="muted-cell">Locked</span>';
+    if (editing) {
+      return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save-config">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel-config">Cancel</button></div>';
+    }
+    return '<div class="actions">'
+      + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit-config" data-id="'+id+'">Edit</button>'
+      + '<button type="button" class="btn btn--ghost btn--xs" data-action="view-syllabus" data-id="'+id+'">View Syllabus</button>'
+      + '<button type="button" class="btn--icon-danger" data-action="clear-config" data-id="'+id+'" aria-label="Clear config" title="Clear config">'+ICON_TRASH+'</button>'
+      + '</div>';
+  }
+
+  function configRowHTML(b, index) {
+    const editing = configEditingId === b.id;
+    const d = editing ? configDraft : b;
+    const status = configStatus(b);
+    return '<tr class="'+(editing?'row-editing':'')+'" id="crow-'+b.id+'" data-id="'+b.id+'">'
+      + '<td class="mono">' + index + '</td>'
+      + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
+      + '<td>' + (esc(b.week) || dash()) + '</td>'
+      + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
+      + '<td>' + configField('mockConfigUrl', d.mockConfigUrl, editing) + '</td>'
+      + '<td>' + configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) + '</td>'
+      + '<td>' + configField('mainConfigUrl', d.mainConfigUrl, editing) + '</td>'
+      + '<td>' + configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) + '</td>'
+      + '<td>' + (b.mainSebStatus ? '<span class="badge '+(b.mainSebStatus==='SEB'?'badge--yes':'badge--no')+'">'+esc(b.mainSebStatus)+'</span>' : dash()) + '</td>'
+      + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
+      + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
+      + '<td class="col-actions">' + configActionsCell(b.id, editing) + '</td>'
       + '</tr>';
   }
 
@@ -1028,6 +1144,51 @@ function boot(seedBatches, seedStudents) {
     tbody.innerHTML = filtered.map(studentRowHTML).join('');
   }
 
+  function populateConfigFilterOptions() {
+    const batchSel = document.getElementById('config-filter-batch');
+    if (batchSel) {
+      const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
+      batchSel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===configBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
+    }
+    const weekSel = document.getElementById('config-filter-week');
+    if (weekSel) {
+      const weeks = Array.from(new Set(batches.map(b => b.week).filter(Boolean))).sort();
+      weekSel.innerHTML = '<option value="">All Weeks</option>' + weeks.map(w => '<option value="'+esc(w)+'"'+(w===configWeekFilter?' selected':'')+'>'+esc(w)+'</option>').join('');
+    }
+  }
+
+  function renderConfigsTable() {
+    const tbody = document.getElementById('configs-tbody');
+    if (!tbody) return;
+    populateConfigFilterOptions();
+    const q = configSearchQuery.trim().toLowerCase();
+    let filtered = batches.filter(b => {
+      if (q) {
+        const hay = [b.batch, b.week].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (configBatchFilter && b.batch !== configBatchFilter) return false;
+      if (configWeekFilter && b.week !== configWeekFilter) return false;
+      if (configStatusTab !== 'all' && configStatus(b) !== configStatusTab) return false;
+      if (configDateFilter.from || configDateFilter.to) {
+        const d = b.updatedAt ? b.updatedAt.slice(0, 10) : '';
+        if (!d) return false;
+        if (configDateFilter.from && d < configDateFilter.from) return false;
+        if (configDateFilter.to && d > configDateFilter.to) return false;
+      }
+      return true;
+    });
+    if (configEditingId && !filtered.some(b => b.id === configEditingId)) {
+      const eb = batches.find(b => b.id === configEditingId);
+      if (eb) filtered = [eb].concat(filtered);
+    }
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map((b, i) => configRowHTML(b, i + 1)).join('');
+  }
+
   function render() {
     document.querySelectorAll('.sidebar-link').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.section === activeSection);
@@ -1042,6 +1203,7 @@ function boot(seedBatches, seedStudents) {
     renderTimeline();
     renderRecordsTable();
     renderStudentsTable();
+    renderConfigsTable();
     updateAccessBanner();
     updateSyncBadge();
   }
@@ -1186,6 +1348,7 @@ function boot(seedBatches, seedStudents) {
     const errors = validateDraft(draft);
     if (Object.keys(errors).length) { updateErrorDisplays(); flashToast('Fix the highlighted time ranges before saving.', 'error'); return; }
     if (!draft.batch.trim()) { flashToast('Batch is required.', 'error'); return; }
+    draft.updatedAt = new Date().toISOString();
     const idx = batches.findIndex(b => b.id === editingId);
     if (idx > -1) batches[idx] = { ...draft };
     const saved = { ...draft };
@@ -1262,6 +1425,114 @@ function boot(seedBatches, seedStudents) {
     render();
     persistStudentDelete(id);
     flashToast('Student deleted.', 'success');
+  }
+
+  function startConfigEdit(id) {
+    if (!canWrite) return;
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    configEditingId = id;
+    configDraft = {
+      mockConfigUrl: b.mockConfigUrl,
+      mockInterviewConfigUrl: b.mockInterviewConfigUrl,
+      mainConfigUrl: b.mainConfigUrl,
+      mainInterviewConfigUrl: b.mainInterviewConfigUrl
+    };
+    render();
+  }
+
+  function cancelConfigEdit() {
+    configEditingId = null;
+    configDraft = null;
+    render();
+  }
+
+  function saveConfig() {
+    const idx = batches.findIndex(b => b.id === configEditingId);
+    if (idx === -1) return;
+    const updated = { ...batches[idx], ...configDraft, updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    configEditingId = null;
+    configDraft = null;
+    render();
+    persistSave(updated);
+    flashToast('Config saved.', 'success');
+  }
+
+  function clearConfig(id) {
+    if (!canWrite) return;
+    if (!confirm('Clear all config links for this entry? This cannot be undone.')) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const updated = { ...batches[idx], mockConfigUrl: '', mockInterviewConfigUrl: '', mainConfigUrl: '', mainInterviewConfigUrl: '', updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    if (configEditingId === id) { configEditingId = null; configDraft = null; }
+    render();
+    persistSave(updated);
+    flashToast('Config cleared.', 'success');
+  }
+
+  function viewSyllabus(id) {
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    activeSection = 'records';
+    searchQuery = b.batch;
+    dateFilter = { from: '', to: '' };
+    render();
+    const searchEl = document.getElementById('syllabus-search'); if (searchEl) searchEl.value = b.batch;
+  }
+
+  function buildConfigsExportCSV() {
+    const headers = ['Batch', 'Week', 'Mock Assessment Required', 'Mock Interview Required', 'Mock Assessment Config', 'Mock Interview Config', 'Main Assessment Config', 'Main Interview Config', 'SEB Status', 'Status', 'Updated'];
+    const escCsv = v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const rows = batches.map(b => [
+      b.batch, b.week, b.mockRequired ? 'Yes' : 'No', b.mockInterviewRequired ? 'Yes' : 'No',
+      b.mockConfigUrl, b.mockInterviewConfigUrl, b.mainConfigUrl, b.mainInterviewConfigUrl,
+      b.mainSebStatus, configStatus(b) === 'submitted' ? 'Submitted' : 'Pending', b.updatedAt
+    ]);
+    const lines = [headers.map(escCsv).join(',')].concat(rows.map(r => r.map(escCsv).join(',')));
+    return lines.join('\r\n');
+  }
+
+  async function exportConfigsCSV() {
+    const csv = buildConfigsExportCSV();
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        try {
+          await downloads.save({ filename: 'topin-configs-export.csv', data: csv });
+          flashToast('Export downloaded.', 'success');
+        } catch (err) {
+          const code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rejected_extension' || code === 'extension_not_enabled') {
+            try {
+              await downloads.save({ filename: 'topin-configs-export.txt', data: csv });
+              flashToast('Downloaded as .txt.', 'success');
+            } catch (e2) { flashToast('Could not download the export.', 'error'); }
+          } else {
+            flashToast('Could not download the export.', 'error');
+          }
+        }
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'topin-configs-export.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      flashToast('Could not download the export.', 'error');
+    }
   }
 
   function parseCSV(text) {
@@ -1710,6 +1981,24 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'download-student-sample') {
       downloadStudentSampleCSV();
     }
+    else if (action === 'edit-config') startConfigEdit(id);
+    else if (action === 'cancel-config') cancelConfigEdit();
+    else if (action === 'save-config') saveConfig();
+    else if (action === 'clear-config') clearConfig(id);
+    else if (action === 'view-syllabus') viewSyllabus(id);
+    else if (action === 'export-configs') exportConfigsCSV();
+    else if (action === 'config-tab') {
+      configStatusTab = btn.dataset.tab;
+      document.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === configStatusTab));
+      renderConfigsTable();
+    }
+    else if (action === 'clear-config-filter') {
+      configSearchQuery = ''; configBatchFilter = ''; configWeekFilter = ''; configDateFilter = { from: '', to: '' };
+      const searchEl = document.getElementById('config-search'); if (searchEl) searchEl.value = '';
+      const fromEl = document.getElementById('config-filter-from'); if (fromEl) fromEl.value = '';
+      const toEl = document.getElementById('config-filter-to'); if (toEl) toEl.value = '';
+      renderConfigsTable();
+    }
     else if (action === 'nav') { activeSection = btn.dataset.section; render(); }
     else if (action === 'clear-overview-filter') {
       overviewDateRange = getWeekRange(new Date());
@@ -1790,6 +2079,12 @@ function boot(seedBatches, seedStudents) {
       studentDraft[t.dataset.field] = t.value;
       return;
     }
+    if (t.id === 'config-search') { configSearchQuery = t.value; renderConfigsTable(); return; }
+    if (t.matches('.config-cell-input')) {
+      if (!configDraft) return;
+      configDraft[t.dataset.field] = t.value;
+      return;
+    }
     if (!draft) return;
     if (t.matches('.syllabus-subject-input')) {
       draft.syllabusItems[Number(t.dataset.index)].subject = t.value;
@@ -1821,6 +2116,10 @@ function boot(seedBatches, seedStudents) {
       if (file) handleStudentImportFile(file);
       return;
     }
+    if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
+    if (t.id === 'config-filter-week') { configWeekFilter = t.value; renderConfigsTable(); return; }
+    if (t.id === 'config-filter-from') { configDateFilter.from = t.value; renderConfigsTable(); return; }
+    if (t.id === 'config-filter-to') { configDateFilter.to = t.value; renderConfigsTable(); return; }
     if (!draft) return;
     if (t.dataset.action === 'toggle-mock') {
       draft.mockRequired = t.checked;
