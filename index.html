@@ -144,6 +144,7 @@ button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px
 .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:6px;}
 .kpi-sub{font-size:11.5px;color:var(--ink-2);margin-top:5px;}
 .filter-bar-assigned{margin-left:auto;font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);align-self:center;}
+.filter-bar-count{font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--ink-2);align-self:center;white-space:nowrap;}
 .section-heading{font-family:var(--font-display);font-weight:700;font-size:17px;color:var(--ink);margin:0 0 4px;}
 .section-desc{font-size:12.5px;color:var(--muted);margin:0 0 16px;}
 .filter-bar{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;}
@@ -625,6 +626,7 @@ function boot(seedBatches, seedStudents) {
             <div class="filter-bar">
               <div class="filter-field"><label for="student-search">Search</label><input type="text" id="student-search" placeholder="Search batch, name, email&hellip;"></div>
               <div class="filter-field"><label for="student-filter-batch">Batch</label><select id="student-filter-batch"><option value="">All Batches</option></select></div>
+              <div class="filter-bar-count" id="student-filter-count"></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-student-filter">Clear</button>
               <button type="button" class="btn btn--ghost btn--sm" data-action="download-students">Download CSV</button>
               <button type="button" class="btn btn--ghost btn--sm" id="delete-selected-students-btn" data-action="delete-selected-students" disabled>Delete Selected</button>
@@ -1160,6 +1162,13 @@ function boot(seedBatches, seedStudents) {
     if (!tbody) return;
     populateStudentFilterOptions();
     let filtered = getFilteredStudents();
+    const countEl = document.getElementById('student-filter-count');
+    if (countEl) {
+      const noun = filtered.length === 1 ? ' student' : ' students';
+      countEl.textContent = studentBatchFilter
+        ? filtered.length + noun + ' in ' + studentBatchFilter
+        : filtered.length + noun + (studentSearchQuery ? ' match' + (filtered.length === 1 ? 'es' : '') : ' total');
+    }
     if (studentEditingId && !filtered.some(s => s.id === studentEditingId)) {
       const editingStudent = students.find(s => s.id === studentEditingId);
       if (editingStudent) filtered = [editingStudent].concat(filtered);
