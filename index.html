@@ -186,6 +186,7 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .import-help{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
 .import-help summary{cursor:pointer;font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--ink);}
 .import-help .section-desc{margin:8px 0 0;}
+.import-help code{font-family:var(--font-mono);background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:11.5px;}
 .filter-bar-import{margin-left:auto;}
 .import-file-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .import-summary{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);margin:0 0 10px;}
@@ -549,7 +550,9 @@ function boot(seedBatches) {
           <details class="import-help">
             <summary>Which columns can I use?</summary>
             <p class="section-desc">One CSV row per subject. Repeat the same <strong>Batch</strong> (and Week) on multiple rows to add several subjects to one batch &mdash; everything else is read from the first row for that batch.</p>
-            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Batch, Week, Subject, Topics, Mock Assessment Required, Mock Assessment Title, Mock Assessment Date, Mock Assessment Start, Mock Assessment End, Mock Assessment Tag, Mock Interview Required, Mock Interview Title, Mock Interview Date, Mock Interview Start, Mock Interview End, Mock Interview Tag, Main Assessment Title, Main Assessment Date, Main Assessment Start, Main Assessment End, Main Assessment Tag, Main Interview Title, Main Interview Date, Main Interview Start, Main Interview End, Main Interview Tag, SEB Status. Required fields accept Yes/No; unrecognized columns are ignored.</p>
+            <p class="section-desc">These are exactly the fields you'd fill in by hand when editing a batch &mdash; nothing extra.</p>
+            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Batch, Week, Subject, Topics, Mock Assessment Required, Mock Assessment Title, Mock Assessment Date, Mock Assessment Start, Mock Assessment End, Mock Assessment Tag, Mock Interview Required, Mock Interview Title, Mock Interview Start Date &amp; Time, Mock Interview End Date &amp; Time, Mock Interview Tag, Main Assessment Title, Main Assessment Start Date &amp; Time, Main Assessment End Date &amp; Time, Main Assessment Tag, Main Interview Title, Main Interview Start Date &amp; Time, Main Interview End Date &amp; Time, Main Interview Tag, SEB Status. Required fields accept Yes/No; unrecognized columns are ignored.</p>
+            <p class="section-desc"><strong>Date &amp; time format:</strong> Mock Assessment Date is a plain date (<code>2026-09-10</code>) with separate Start/End times (<code>10:00</code>, 24-hour). Every other Start/End Date &amp; Time column is one combined value: <code>YYYY-MM-DD HH:MM</code>, e.g. <code>2026-09-12 11:00</code>.</p>
           </details>
           <div id="import-preview"><p class="section-desc">Choose a CSV file to preview the batches it will create before importing.</p></div>
         </div>
@@ -1047,31 +1050,43 @@ function boot(seedBatches) {
     mockassessmenttag: 'mockTag', mocktag: 'mockTag',
     mockinterviewrequired: 'mockInterviewRequired',
     mockinterviewtitle: 'mockInterviewTitle',
+    mockinterviewstartdatetime: 'mockInterviewStartAt', mockinterviewstart: 'mockInterviewStartAt',
+    mockinterviewenddatetime: 'mockInterviewEndAt', mockinterviewend: 'mockInterviewEndAt',
     mockinterviewdate: 'mockInterviewDate',
-    mockinterviewstarttime: 'mockInterviewStart', mockinterviewstart: 'mockInterviewStart',
-    mockinterviewendtime: 'mockInterviewEnd', mockinterviewend: 'mockInterviewEnd',
+    mockinterviewstarttime: 'mockInterviewStart',
+    mockinterviewendtime: 'mockInterviewEnd',
     mockinterviewtag: 'mockInterviewTag',
     mainassessmenttitle: 'mainTitle', maintitle: 'mainTitle',
+    mainassessmentstartdatetime: 'mainStartAt', mainstart: 'mainStartAt', mainassessmentstart: 'mainStartAt',
+    mainassessmentenddatetime: 'mainEndAt', mainend: 'mainEndAt', mainassessmentend: 'mainEndAt',
     mainassessmentdate: 'mainDate', maindate: 'mainDate',
-    mainassessmentstarttime: 'mainStart', mainassessmentstart: 'mainStart', mainstart: 'mainStart',
-    mainassessmentendtime: 'mainEnd', mainassessmentend: 'mainEnd', mainend: 'mainEnd',
+    mainassessmentstarttime: 'mainStart',
+    mainassessmentendtime: 'mainEnd',
     mainassessmenttag: 'mainTag', maintag: 'mainTag',
     maininterviewtitle: 'mainInterviewTitle',
+    maininterviewstartdatetime: 'mainInterviewStartAt', maininterviewstart: 'mainInterviewStartAt',
+    maininterviewenddatetime: 'mainInterviewEndAt', maininterviewend: 'mainInterviewEndAt',
     maininterviewdate: 'mainInterviewDate',
-    maininterviewstarttime: 'mainInterviewStart', maininterviewstart: 'mainInterviewStart',
-    maininterviewendtime: 'mainInterviewEnd', maininterviewend: 'mainInterviewEnd',
+    maininterviewstarttime: 'mainInterviewStart',
+    maininterviewendtime: 'mainInterviewEnd',
     maininterviewtag: 'mainInterviewTag',
     mainassessmentsebstatus: 'mainSebStatus', sebstatus: 'mainSebStatus'
   };
+  const IMPORT_DATETIME_FIELDS = ['mockInterviewStartAt', 'mockInterviewEndAt', 'mainStartAt', 'mainEndAt', 'mainInterviewStartAt', 'mainInterviewEndAt'];
 
   function normHeader(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); }
   function truthyImport(v) { return /^(y|yes|true|1)$/i.test(String(v || '').trim()); }
+  function normalizeImportDT(v) {
+    const s = String(v || '').trim();
+    if (!s) return '';
+    return /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s) ? s.replace(' ', 'T') : s;
+  }
 
   function mapImportRow(row, headers) {
     const out = {};
     headers.forEach(h => {
       const key = IMPORT_FIELD_MAP[normHeader(h)];
-      if (key && row[h]) out[key] = row[h];
+      if (key && row[h]) out[key] = IMPORT_DATETIME_FIELDS.indexOf(key) > -1 ? normalizeImportDT(row[h]) : row[h];
     });
     return out;
   }
@@ -1107,16 +1122,22 @@ function boot(seedBatches) {
         mockTag: first.mockTag || '',
         mockInterviewRequired: first.mockInterviewRequired != null ? truthyImport(first.mockInterviewRequired) : null,
         mockInterviewTitle: first.mockInterviewTitle || '',
+        mockInterviewStartAt: first.mockInterviewStartAt || '',
+        mockInterviewEndAt: first.mockInterviewEndAt || '',
         mockInterviewDate: first.mockInterviewDate || '',
         mockInterviewStart: first.mockInterviewStart || '',
         mockInterviewEnd: first.mockInterviewEnd || '',
         mockInterviewTag: first.mockInterviewTag || '',
         mainTitle: first.mainTitle || '',
+        mainStartAt: first.mainStartAt || '',
+        mainEndAt: first.mainEndAt || '',
         mainDate: first.mainDate || '',
         mainStart: first.mainStart || '',
         mainEnd: first.mainEnd || '',
         mainTag: first.mainTag || '',
         mainInterviewTitle: first.mainInterviewTitle || '',
+        mainInterviewStartAt: first.mainInterviewStartAt || '',
+        mainInterviewEndAt: first.mainInterviewEndAt || '',
         mainInterviewDate: first.mainInterviewDate || '',
         mainInterviewStart: first.mainInterviewStart || '',
         mainInterviewEnd: first.mainInterviewEnd || '',
@@ -1124,6 +1145,7 @@ function boot(seedBatches) {
         mainSebStatus: first.mainSebStatus || ''
       };
       if (raw.mockInterviewRequired === null) delete raw.mockInterviewRequired;
+      IMPORT_DATETIME_FIELDS.forEach(f => { if (!raw[f]) delete raw[f]; });
       return normalizeBatch(raw);
     });
     return { batches: built, skipped: skipped };
@@ -1191,11 +1213,11 @@ function boot(seedBatches) {
   }
 
   function buildSampleCSV() {
-    const headers = ['Batch','Week','Subject','Topics','Mock Assessment Required','Mock Assessment Title','Mock Assessment Date','Mock Assessment Start','Mock Assessment End','Mock Assessment Tag','Mock Interview Required','Mock Interview Title','Mock Interview Date','Mock Interview Start','Mock Interview End','Mock Interview Tag','Main Assessment Title','Main Assessment Date','Main Assessment Start','Main Assessment End','Main Assessment Tag','Main Interview Title','Main Interview Date','Main Interview Start','Main Interview End','Main Interview Tag','SEB Status'];
+    const headers = ['Batch','Week','Subject','Topics','Mock Assessment Required','Mock Assessment Title','Mock Assessment Date','Mock Assessment Start','Mock Assessment End','Mock Assessment Tag','Mock Interview Required','Mock Interview Title','Mock Interview Start Date & Time','Mock Interview End Date & Time','Mock Interview Tag','Main Assessment Title','Main Assessment Start Date & Time','Main Assessment End Date & Time','Main Assessment Tag','Main Interview Title','Main Interview Start Date & Time','Main Interview End Date & Time','Main Interview Tag','SEB Status'];
     const rows = [
-      ['CS25-B10','Week 1','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Yes','Frontend Mock Test','2026-09-10','10:00','12:00','Mock','Yes','Frontend Mock Interview','2026-09-12','11:00','11:30','Mock Interview','Frontend Main Exam','2026-09-15','09:00','11:00','Main Exam','Frontend Final Interview','2026-09-18','10:00','10:30','Final','Non-SEB'],
-      ['CS25-B10','Week 1','Backend Development','Intro to Node.js | REST APIs | Databases','','','','','','','','','','','','','','','','','','','','','','',''],
-      ['CS25-B11','Week 2','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','No','','','','','','No','','','','','','DSA Main Exam','2026-09-20','09:00','11:00','Main Exam','','','','','','SEB']
+      ['CS25-B10','Week 1','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Yes','Frontend Mock Test','2026-09-10','10:00','12:00','Mock','Yes','Frontend Mock Interview','2026-09-12 11:00','2026-09-12 11:30','Mock Interview','Frontend Main Exam','2026-09-15 09:00','2026-09-15 11:00','Main Exam','Frontend Final Interview','2026-09-18 10:00','2026-09-18 10:30','Final','Non-SEB'],
+      ['CS25-B10','Week 1','Backend Development','Intro to Node.js | REST APIs | Databases','','','','','','','','','','','','','','','','','','','',''],
+      ['CS25-B11','Week 2','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','No','','','','','','No','','','','','DSA Main Exam','2026-09-20 09:00','2026-09-20 11:00','Main Exam','','','','','SEB']
     ];
     const escCsv = v => {
       const s = String(v == null ? '' : v);
