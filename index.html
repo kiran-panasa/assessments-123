@@ -457,8 +457,10 @@ function boot(seedBatches, seedStudents) {
       mainPublished: !!b.mainPublished,
       mockPublished: !!b.mockPublished,
       publishedAt: b.publishedAt || '',
-      inviteSent: !!b.inviteSent,
-      inviteSentAt: b.inviteSentAt || '',
+      mainInviteSent: !!b.mainInviteSent,
+      mainInviteSentAt: b.mainInviteSentAt || '',
+      mockInviteSent: !!b.mockInviteSent,
+      mockInviteSentAt: b.mockInviteSentAt || '',
       updatedAt: b.updatedAt || ''
     };
   }
@@ -1283,11 +1285,15 @@ function boot(seedBatches, seedStudents) {
     return 'not-ready';
   }
 
+  function assessFullyInvited(b) {
+    return !!b.mainInviteSent && (!b.mockRequired || !!b.mockInviteSent);
+  }
+
   function assessMatchesTab(b, tab) {
     if (tab === 'all') return true;
     const s = assessStatus(b);
-    if (tab === 'invites-pending') return s === 'published' && !b.inviteSent;
-    if (tab === 'invites-sent') return s === 'published' && !!b.inviteSent;
+    if (tab === 'invites-pending') return s === 'published' && !assessFullyInvited(b);
+    if (tab === 'invites-sent') return s === 'published' && assessFullyInvited(b);
     return s === tab;
   }
 
@@ -1317,11 +1323,19 @@ function boot(seedBatches, seedStudents) {
   function assessActionsCell(b) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
     const parts = [];
-    if (b.mainPublished) parts.push('<span class="badge badge--yes">Main Published</span>');
-    else parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="main"'+(b.mainConfigUrl?'':' disabled title="Add a main config link in Topin Configs first"')+'>Publish Main</button>');
+    if (b.mainPublished) {
+      if (b.mainInviteSent) parts.push('<span class="badge badge--yes">&#10003; Main Invited</span>');
+      else parts.push('<a class="btn btn--primary btn--xs" href="'+esc(b.mainConfigUrl)+'" target="_blank" rel="noopener noreferrer" data-action="invite-assessment" data-id="'+b.id+'" data-type="main">Invite Main Students</a>');
+    } else {
+      parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="main"'+(b.mainConfigUrl?'':' disabled title="Add a main config link in Topin Configs first"')+'>Publish Main</button>');
+    }
     if (b.mockRequired) {
-      if (b.mockPublished) parts.push('<span class="badge badge--yes">Mock Published</span>');
-      else parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="mock"'+(b.mockConfigUrl?'':' disabled title="Add a mock config link in Topin Configs first"')+'>Publish Mock</button>');
+      if (b.mockPublished) {
+        if (b.mockInviteSent) parts.push('<span class="badge badge--yes">&#10003; Mock Invited</span>');
+        else parts.push('<a class="btn btn--ghost btn--xs" href="'+esc(b.mockConfigUrl)+'" target="_blank" rel="noopener noreferrer" data-action="invite-assessment" data-id="'+b.id+'" data-type="mock">Invite Mock Students</a>');
+      } else {
+        parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="mock"'+(b.mockConfigUrl?'':' disabled title="Add a mock config link in Topin Configs first"')+'>Publish Mock</button>');
+      }
     }
     return '<div class="actions">' + parts.join('') + '</div>';
   }
@@ -1332,8 +1346,8 @@ function boot(seedBatches, seedStudents) {
     const statusClass = status === 'published' ? 'badge--yes' : 'badge--no';
     let statusCell = '<span class="badge '+statusClass+'">'+statusLabel+'</span>';
     if (status === 'published') {
-      const inviteLine = b.inviteSent
-        ? '<div class="muted-cell">Invited' + (fmtUpdatedAt(b.inviteSentAt) ? ' &middot; ' + fmtUpdatedAt(b.inviteSentAt) : '') + '</div>'
+      const inviteLine = assessFullyInvited(b)
+        ? '<div class="muted-cell">Invited</div>'
         : '<div class="muted-cell">Invites pending</div>';
       statusCell = (fmtUpdatedAt(b.publishedAt) ? '<div class="muted-cell">Published ' + fmtUpdatedAt(b.publishedAt) + '</div>' : '') + statusCell + inviteLine;
     }
@@ -1396,6 +1410,20 @@ function boot(seedBatches, seedStudents) {
     render();
     persistSave(updated);
     flashToast(label + ' assessment published.', 'success');
+  }
+
+  function inviteAssessment(id, type) {
+    if (!canWrite) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const label = type === 'main' ? 'Main' : 'Mock';
+    const field = type === 'main' ? 'mainInviteSent' : 'mockInviteSent';
+    const atField = type === 'main' ? 'mainInviteSentAt' : 'mockInviteSentAt';
+    const updated = { ...batches[idx], [field]: true, [atField]: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    render();
+    persistSave(updated);
+    flashToast(label + ' students invited for ' + updated.batch + '.', 'success');
   }
 
   function render() {
@@ -2264,6 +2292,9 @@ function boot(seedBatches, seedStudents) {
     }
     else if (action === 'publish-assessment') {
       publishAssessment(id, btn.dataset.type);
+    }
+    else if (action === 'invite-assessment') {
+      inviteAssessment(id, btn.dataset.type);
     }
     else if (action === 'nav') { activeSection = btn.dataset.section; render(); }
     else if (action === 'clear-overview-filter') {
