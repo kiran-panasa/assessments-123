@@ -1462,18 +1462,18 @@ function boot(seedBatches, seedStudents) {
 
   function interviewLinkField(field, value, editing) {
     if (!editing) {
-      if (!value) return dash();
+      if (!value) return '';
       const short = value.length > 30 ? value.slice(0, 27) + '…' : value;
       return '<a href="'+esc(value)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(value)+'">'+esc(short)+'</a>';
     }
     return '<input type="text" class="cell-input interview-cell-input" data-field="'+field+'" value="'+esc(value||'')+'" placeholder="https://…">';
   }
 
-  function yesNoField(field, value, editing) {
-    if (!editing) return '<span class="badge '+(value?'badge--yes':'badge--no')+'">'+(value?'Yes':'No')+'</span>';
-    return '<select class="cell-input interview-cell-input" data-field="'+field+'">'
-      + '<option value="no"'+(!value?' selected':'')+'>No</option>'
-      + '<option value="yes"'+(value?' selected':'')+'>Yes</option>'
+  function interviewInvitedSelect(b, field) {
+    if (!canWrite) return '<span class="badge '+(b[field]?'badge--yes':'badge--no')+'">'+(b[field]?'Yes':'No')+'</span>';
+    return '<select class="cell-input interview-invited-select" data-id="'+b.id+'" data-field="'+field+'">'
+      + '<option value="no"'+(!b[field]?' selected':'')+'>No</option>'
+      + '<option value="yes"'+(b[field]?' selected':'')+'>Yes</option>'
       + '</select>';
   }
 
@@ -1495,8 +1495,8 @@ function boot(seedBatches, seedStudents) {
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockInterviewRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockInterviewRequired?'✓':'✗')+'</span></td>'
       + '<td>' + interviewLinkField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewLinkField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + yesNoField('mainInterviewInvited', d.mainInterviewInvited, editing) + '</td>'
-      + '<td>' + (b.mockInterviewRequired ? yesNoField('mockInterviewInvited', d.mockInterviewInvited, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + interviewInvitedSelect(b, 'mainInterviewInvited') + '</td>'
+      + '<td>' + (b.mockInterviewRequired ? interviewInvitedSelect(b, 'mockInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td class="col-actions">' + interviewActionsCell(b.id, editing) + '</td>'
       + '</tr>';
   }
@@ -1535,9 +1535,7 @@ function boot(seedBatches, seedStudents) {
     interviewEditingId = id;
     interviewDraft = {
       mainInterviewConfigUrl: b.mainInterviewConfigUrl,
-      mockInterviewConfigUrl: b.mockInterviewConfigUrl,
-      mainInterviewInvited: b.mainInterviewInvited,
-      mockInterviewInvited: b.mockInterviewInvited
+      mockInterviewConfigUrl: b.mockInterviewConfigUrl
     };
     render();
   }
@@ -1558,6 +1556,16 @@ function boot(seedBatches, seedStudents) {
     render();
     persistSave(updated);
     flashToast('Interview details saved.', 'success');
+  }
+
+  function toggleInterviewInvited(id, field, value) {
+    if (!canWrite) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const updated = { ...batches[idx], [field]: value, updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    renderInterviewsTable();
+    persistSave(updated);
   }
 
   function render() {
@@ -2593,8 +2601,8 @@ function boot(seedBatches, seedStudents) {
     if (t.id === 'assess-filter-batch') { assessBatchFilter = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'assess-filter-status') { assessStatusTab = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'interview-filter-batch') { interviewBatchFilter = t.value; renderInterviewsTable(); return; }
-    if (t.matches('.interview-cell-input') && t.tagName === 'SELECT') {
-      if (interviewDraft) interviewDraft[t.dataset.field] = t.value === 'yes';
+    if (t.matches('.interview-invited-select')) {
+      toggleInterviewInvited(t.dataset.id, t.dataset.field, t.value === 'yes');
       return;
     }
     if (t.id === 'config-filter-week') { configWeekFilter = t.value; renderConfigsTable(); return; }
