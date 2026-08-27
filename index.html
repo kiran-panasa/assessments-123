@@ -61,6 +61,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-body);-webkit-
 .stat-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:2px;}
 .btn{font-family:var(--font-display);font-weight:600;font-size:12.5px;border-radius:8px;padding:9px 16px;border:1px solid transparent;cursor:pointer;transition:background-color .15s ease,border-color .15s ease,color .15s ease;}
 .btn--sm{padding:6px 12px;font-size:12px;}
+.btn--xs{padding:4px 9px;font-size:11.5px;}
 .btn--primary{background:var(--accent);color:#fff;}
 .btn--primary:hover{background:var(--accent-ink);}
 .btn--primary:disabled{opacity:.5;cursor:not-allowed;}
@@ -112,7 +113,8 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 .cell-input--date,.cell-input--time{font-family:var(--font-mono);min-width:120px;font-variant-numeric:tabular-nums;}
 .cell-input--datetime{font-family:var(--font-mono);min-width:190px;font-variant-numeric:tabular-nums;}
 .field-error{color:var(--danger);font-size:11px;margin-top:4px;font-family:var(--font-body);max-width:130px;}
-.actions{display:flex;gap:6px;}
+.actions{display:flex;gap:4px;}
+td.col-actions{padding-left:8px;padding-right:8px;}
 .empty-state{padding:56px 24px;text-align:center;color:var(--muted);font-family:var(--font-body);}
 .empty-state .btn{margin-top:14px;}
 .toast{position:fixed;bottom:22px;right:22px;background:var(--ink);color:var(--bg);font-family:var(--font-body);font-size:13px;padding:10px 16px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.22);opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s ease,transform .2s ease;z-index:50;}
@@ -158,12 +160,16 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 .item-edit-row .cell-input{flex:1;min-width:0;}
 .item-add-input{opacity:.85;}
 .item-row.paragraph-row{white-space:pre-wrap;}
-.syllabus-pair-cell{padding:0 !important;min-width:340px;}
+.syllabus-pair-cell{padding:0 !important;min-width:300px;max-width:340px;}
 .syllabus-pairs{display:flex;flex-direction:column;}
-.syllabus-pair-row{display:grid;grid-template-columns:150px 1fr;gap:16px;padding:10px 12px;border-bottom:1px solid var(--border-soft);}
+.syllabus-pair-row{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border-soft);}
 .syllabus-pair-row:last-child{border-bottom:none;}
-.syllabus-pair-subject{font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--ink);padding-top:1px;}
-.syllabus-pair-topics{white-space:pre-wrap;font-size:12.5px;color:var(--ink-2);line-height:1.55;}
+.syllabus-pair-subject{font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--ink);padding-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.syllabus-pair-topics-wrap{min-width:0;}
+.syllabus-pair-topics{white-space:pre-wrap;font-size:12.5px;color:var(--ink-2);line-height:1.5;max-height:3em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+.syllabus-pair-topics.expanded{max-height:none;display:block;-webkit-line-clamp:unset;}
+.topics-toggle{background:none;border:none;padding:3px 0 0;margin:0;font-family:var(--font-display);font-weight:600;font-size:11px;color:var(--accent);cursor:pointer;}
+.topics-toggle:hover{text-decoration:underline;}
 .syllabus-pairs-editing{gap:0;}
 .syllabus-pair-row-edit{display:grid;grid-template-columns:150px 1fr 26px;gap:8px;align-items:start;padding:10px 12px;border-bottom:1px solid var(--border-soft);}
 .syllabus-pairs-editing .btn{margin:10px 12px;align-self:flex-start;}
@@ -263,6 +269,7 @@ function boot(seedBatches) {
   let searchQuery = '';
   let dateFilter = { from: '', to: '' };
   let uploadPreview = null;
+  let expandedTopics = new Set();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
   const firebaseConfigured = ['apiKey','projectId','appId'].every(isConfigured);
 
@@ -464,9 +471,9 @@ function boot(seedBatches) {
                     <th rowspan="2">Students Data</th>
                     <th rowspan="2">Main Assessment SEB Status</th>
                     <th colspan="6" class="grp-amber">Mock Assessment</th>
-                    <th colspan="6" class="grp-teal">Mock Interview</th>
-                    <th colspan="5" class="grp-blue">Main Assessment</th>
-                    <th colspan="5" class="grp-rose">Main Interview</th>
+                    <th colspan="5" class="grp-teal">Mock Interview</th>
+                    <th colspan="4" class="grp-blue">Main Assessment</th>
+                    <th colspan="4" class="grp-rose">Main Interview</th>
                     <th class="col-actions" rowspan="2">Actions</th>
                   </tr>
                   <tr class="thead-fields">
@@ -483,17 +490,14 @@ function boot(seedBatches) {
                     <th class="grp-teal">Start Date &amp; Time</th>
                     <th class="grp-teal">End Date &amp; Time</th>
                     <th class="grp-teal">Tag</th>
-                    <th class="grp-teal"></th>
                     <th class="grp-blue">Title</th>
                     <th class="grp-blue">Start Date &amp; Time</th>
                     <th class="grp-blue">End Date &amp; Time</th>
                     <th class="grp-blue">Tag</th>
-                    <th class="grp-blue"></th>
                     <th class="grp-rose">Title</th>
                     <th class="grp-rose">Start Date &amp; Time</th>
                     <th class="grp-rose">End Date &amp; Time</th>
                     <th class="grp-rose">Tag</th>
-                    <th class="grp-rose"></th>
                   </tr>
                 </thead>
                 <tbody id="tbody"></tbody>
@@ -527,15 +531,20 @@ function boot(seedBatches) {
     if (!editing) return esc(value) || dash();
     return '<input type="text" class="cell-input" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'">';
   }
-  function syllabusPairCell(items, editing) {
+  function syllabusPairCell(items, editing, batchId) {
     if (!editing) {
       if (!items.length) return dash();
-      return '<div class="syllabus-pairs">' + items.map(it =>
-        '<div class="syllabus-pair-row">'
-          + '<div class="syllabus-pair-subject">' + (esc(it.subject) || '<span class="empty-dash">&mdash;</span>') + '</div>'
-          + '<div class="syllabus-pair-topics">' + (it.topics ? esc(it.topics) : '<span class="empty-dash">&mdash;</span>') + '</div>'
-        + '</div>'
-      ).join('') + '</div>';
+      return '<div class="syllabus-pairs">' + items.map((it, i) => {
+        const key = batchId + ':' + i;
+        const expanded = expandedTopics.has(key);
+        return '<div class="syllabus-pair-row">'
+          + '<div class="syllabus-pair-subject" title="'+esc(it.subject)+'">' + (esc(it.subject) || '<span class="empty-dash">&mdash;</span>') + '</div>'
+          + '<div class="syllabus-pair-topics-wrap">'
+            + '<div class="syllabus-pair-topics'+(expanded?' expanded':'')+'" data-topics-key="'+key+'">' + (it.topics ? esc(it.topics) : '<span class="empty-dash">&mdash;</span>') + '</div>'
+            + (it.topics ? '<button type="button" class="topics-toggle" data-action="toggle-topics" data-key="'+key+'">'+(expanded?'▾ Hide':'▸ View topics')+'</button>' : '')
+          + '</div>'
+        + '</div>';
+      }).join('') + '</div>';
     }
     return '<div class="syllabus-pairs syllabus-pairs-editing">'
       + items.map((it, i) =>
@@ -588,16 +597,12 @@ function boot(seedBatches) {
     if (!editing) return d[field] ? '<span class="mono">'+fmtDateTime(d[field])+'</span>' : dash();
     return '<input type="datetime-local" class="cell-input cell-input--datetime" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
   }
-  function clearDateBtn(group, editing) {
-    if (!editing) return '';
-    return '<button type="button" class="btn btn--ghost btn--sm" data-action="clear-dates" data-group="'+group+'">Remove Date</button>';
-  }
   function actionsCell(id, editing) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
     if (editing) {
-      return '<div class="actions"><button type="button" class="btn btn--primary btn--sm" data-action="save">Save</button><button type="button" class="btn btn--ghost btn--sm" data-action="cancel">Cancel</button></div>';
+      return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel">Cancel</button></div>';
     }
-    return '<div class="actions"><button type="button" class="btn btn--ghost btn--sm" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
+    return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
   }
 
   function rowHTML(b) {
@@ -619,27 +624,24 @@ function boot(seedBatches) {
         + '<td>'+dateTimeCell('mockInterviewStartAt', d, editing)+'</td>'
         + '<td>'+dateTimeCell('mockInterviewEndAt', d, editing)+errSpan('mockInterview', id, errors.mockInterview)+'</td>'
         + '<td>'+textCell('mockInterviewTag', d.mockInterviewTag, editing, 'Tag')+'</td>'
-        + '<td>'+clearDateBtn('mockInterview', editing)+'</td>'
-      : '<td class="muted-cell">Not Required</td>'.repeat(5);
+      : '<td class="muted-cell">Not Required</td>'.repeat(4);
 
     const mainCols =
         '<td>'+textCell('mainTitle', d.mainTitle, editing, 'Title')+'</td>'
       + '<td>'+dateTimeCell('mainStartAt', d, editing)+'</td>'
       + '<td>'+dateTimeCell('mainEndAt', d, editing)+errSpan('main', id, errors.main)+'</td>'
-      + '<td>'+textCell('mainTag', d.mainTag, editing, 'Tag')+'</td>'
-      + '<td>'+clearDateBtn('main', editing)+'</td>';
+      + '<td>'+textCell('mainTag', d.mainTag, editing, 'Tag')+'</td>';
 
     const mainInterviewCols =
         '<td>'+textCell('mainInterviewTitle', d.mainInterviewTitle, editing, 'Title')+'</td>'
       + '<td>'+dateTimeCell('mainInterviewStartAt', d, editing)+'</td>'
       + '<td>'+dateTimeCell('mainInterviewEndAt', d, editing)+errSpan('mainInterview', id, errors.mainInterview)+'</td>'
-      + '<td>'+textCell('mainInterviewTag', d.mainInterviewTag, editing, 'Tag')+'</td>'
-      + '<td>'+clearDateBtn('mainInterview', editing)+'</td>';
+      + '<td>'+textCell('mainInterviewTag', d.mainInterviewTag, editing, 'Tag')+'</td>';
 
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus">' + textCell('batch', d.batch, editing, 'Batch name') + '</td>'
       + '<td>' + textCell('week', d.week, editing, 'Week 1') + '</td>'
-      + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing) + '</td>'
+      + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing, id) + '</td>'
       + '<td>' + studentsCell(d, editing) + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
       + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
@@ -761,7 +763,7 @@ function boot(seedBatches) {
       if (editingBatch) filtered = [editingBatch].concat(filtered);
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="29"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="26"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
@@ -1009,9 +1011,21 @@ function boot(seedBatches) {
     else if (action === 'nav') { activeSection = btn.dataset.section; render(); }
     else if (action === 'clear-syllabus-filter') {
       dateFilter = { from: '', to: '' };
+      searchQuery = '';
+      const searchEl = document.getElementById('syllabus-search'); if (searchEl) searchEl.value = '';
       const fromEl = document.getElementById('syllabus-filter-from'); if (fromEl) fromEl.value = '';
       const toEl = document.getElementById('syllabus-filter-to'); if (toEl) toEl.value = '';
       renderRecordsTable();
+    }
+    else if (action === 'toggle-topics') {
+      const key = btn.dataset.key;
+      const el = root.querySelector('[data-topics-key="' + key + '"]');
+      if (el) {
+        const wasExpanded = el.classList.contains('expanded');
+        el.classList.toggle('expanded');
+        btn.textContent = wasExpanded ? '▸ View topics' : '▾ Hide';
+        if (wasExpanded) expandedTopics.delete(key); else expandedTopics.add(key);
+      }
     }
     else if (action === 'add-syllabus-item') {
       if (!draft) return;
@@ -1042,13 +1056,6 @@ function boot(seedBatches) {
       closeUploadModal();
       render();
       flashToast('Student data imported.', 'success');
-    }
-    else if (action === 'clear-dates') {
-      if (!draft) return;
-      const group = btn.dataset.group;
-      draft[group + 'StartAt'] = '';
-      draft[group + 'EndAt'] = '';
-      render();
     }
   });
 
