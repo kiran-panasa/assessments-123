@@ -707,10 +707,17 @@ function boot(seedBatches, seedStudents) {
               <button type="button" class="tab-btn active" data-action="assess-tab" data-tab="all">All</button>
               <button type="button" class="tab-btn" data-action="assess-tab" data-tab="ready">Ready to Publish</button>
               <button type="button" class="tab-btn" data-action="assess-tab" data-tab="published">Published</button>
+              <button type="button" class="tab-btn" data-action="assess-tab" data-tab="not-ready">Not Configured</button>
             </div>
             <div class="filter-bar">
               <div class="filter-field"><label for="assess-search">Search</label><input type="text" id="assess-search" placeholder="Search batch or week&hellip;"></div>
               <div class="filter-field"><label for="assess-filter-batch">Batch</label><select id="assess-filter-batch"><option value="">All Batches</option></select></div>
+              <div class="filter-field"><label for="assess-filter-status">Status</label><select id="assess-filter-status">
+                <option value="all">All</option>
+                <option value="ready">Ready to Publish</option>
+                <option value="published">Published</option>
+                <option value="not-ready">Not Configured</option>
+              </select></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-assess-filter">Clear</button>
             </div>
             <div class="table-wrap">
@@ -1293,7 +1300,7 @@ function boot(seedBatches, seedStudents) {
       else if (s === 'published') published++;
       else notReady++;
     });
-    el.innerHTML = assessCard('Ready to Publish', ready, 'ready') + assessCard('Published', published, 'published') + assessCard('Not Configured', notReady, 'all');
+    el.innerHTML = assessCard('Ready to Publish', ready, 'ready') + assessCard('Published', published, 'published') + assessCard('Not Configured', notReady, 'not-ready');
   }
 
   function populateAssessFilterOptions() {
@@ -1331,11 +1338,18 @@ function boot(seedBatches, seedStudents) {
       + '</tr>';
   }
 
+  function syncAssessStatusUI() {
+    const sel = document.getElementById('assess-filter-status');
+    if (sel) sel.value = assessStatusTab;
+    document.querySelectorAll('#section-assessments .tab-row .tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === assessStatusTab));
+  }
+
   function renderAssessmentsTable() {
     const tbody = document.getElementById('assess-tbody');
     if (!tbody) return;
     renderAssessmentCards();
     populateAssessFilterOptions();
+    syncAssessStatusUI();
     const q = assessSearchQuery.trim().toLowerCase();
     const filtered = batches.filter(b => {
       if (q) {
@@ -2221,11 +2235,10 @@ function boot(seedBatches, seedStudents) {
     }
     else if (action === 'assess-tab') {
       assessStatusTab = btn.dataset.tab;
-      btn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === assessStatusTab));
       renderAssessmentsTable();
     }
     else if (action === 'clear-assess-filter') {
-      assessSearchQuery = ''; assessBatchFilter = '';
+      assessSearchQuery = ''; assessBatchFilter = ''; assessStatusTab = 'all';
       const searchEl = document.getElementById('assess-search'); if (searchEl) searchEl.value = '';
       const batchEl = document.getElementById('assess-filter-batch'); if (batchEl) batchEl.value = '';
       renderAssessmentsTable();
@@ -2233,8 +2246,6 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'assess-card-nav') {
       assessStatusTab = btn.dataset.tab;
       renderAssessmentsTable();
-      const tabBtn = document.querySelector('#section-assessments .tab-btn[data-tab="' + assessStatusTab + '"]');
-      if (tabBtn) tabBtn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb === tabBtn));
     }
     else if (action === 'publish-assessment') {
       publishAssessment(id, btn.dataset.type);
@@ -2384,6 +2395,7 @@ function boot(seedBatches, seedStudents) {
     }
     if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
     if (t.id === 'assess-filter-batch') { assessBatchFilter = t.value; renderAssessmentsTable(); return; }
+    if (t.id === 'assess-filter-status') { assessStatusTab = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'config-filter-week') { configWeekFilter = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-from') { configDateFilter.from = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-to') { configDateFilter.to = t.value; renderConfigsTable(); return; }
