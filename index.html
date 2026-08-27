@@ -318,6 +318,10 @@ function boot(seedBatches, seedStudents) {
   let assessStatusTab = 'all';
   let assessSearchQuery = '';
   let assessBatchFilter = '';
+  let interviewEditingId = null;
+  let interviewDraft = null;
+  let interviewSearchQuery = '';
+  let interviewBatchFilter = '';
   let overviewDateRange = getWeekRange(new Date());
   let whatsNextDate = todayISO();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
@@ -461,6 +465,8 @@ function boot(seedBatches, seedStudents) {
       mainInviteSentAt: b.mainInviteSentAt || '',
       mockInviteSent: !!b.mockInviteSent,
       mockInviteSentAt: b.mockInviteSentAt || '',
+      mainInterviewInvited: !!b.mainInterviewInvited,
+      mockInterviewInvited: !!b.mockInterviewInvited,
       updatedAt: b.updatedAt || ''
     };
   }
@@ -557,6 +563,7 @@ function boot(seedBatches, seedStudents) {
           <button type="button" class="sidebar-link" data-action="nav" data-section="students">Students Data</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="topin">Topin Configs</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="assessments">Assessments</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="interviews">NxtMock Interviews</button>
         </nav>
 
         <div class="content">
@@ -735,6 +742,33 @@ function boot(seedBatches, seedStudents) {
                   </tr>
                 </thead>
                 <tbody id="assess-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="content-section" id="section-interviews">
+            <h2 class="section-heading">NxtMock Interviews</h2>
+            <div class="filter-bar">
+              <div class="filter-field"><label for="interview-search">Search</label><input type="text" id="interview-search" placeholder="Search batch or week&hellip;"></div>
+              <div class="filter-field"><label for="interview-filter-batch">Batch</label><select id="interview-filter-batch"><option value="">All Batches</option></select></div>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-interview-filter">Clear</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr class="thead-single">
+                    <th>#</th>
+                    <th class="col-syllabus">Batch</th>
+                    <th>Week</th>
+                    <th>Assessment Type</th>
+                    <th>Main Interview Link</th>
+                    <th>Mock Interview Link</th>
+                    <th>Main Invited</th>
+                    <th>Mock Invited</th>
+                    <th class="col-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="interview-tbody"></tbody>
               </table>
             </div>
           </section>
@@ -1426,6 +1460,106 @@ function boot(seedBatches, seedStudents) {
     flashToast(label + ' students invited for ' + updated.batch + '.', 'success');
   }
 
+  function interviewLinkField(field, value, editing) {
+    if (!editing) {
+      if (!value) return dash();
+      const short = value.length > 30 ? value.slice(0, 27) + '…' : value;
+      return '<a href="'+esc(value)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(value)+'">'+esc(short)+'</a>';
+    }
+    return '<input type="text" class="cell-input interview-cell-input" data-field="'+field+'" value="'+esc(value||'')+'" placeholder="https://…">';
+  }
+
+  function yesNoField(field, value, editing) {
+    if (!editing) return '<span class="badge '+(value?'badge--yes':'badge--no')+'">'+(value?'Yes':'No')+'</span>';
+    return '<select class="cell-input interview-cell-input" data-field="'+field+'">'
+      + '<option value="no"'+(!value?' selected':'')+'>No</option>'
+      + '<option value="yes"'+(value?' selected':'')+'>Yes</option>'
+      + '</select>';
+  }
+
+  function interviewActionsCell(id, editing) {
+    if (!canWrite) return '<span class="muted-cell">Locked</span>';
+    if (editing) {
+      return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save-interview">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel-interview">Cancel</button></div>';
+    }
+    return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit-interview" data-id="'+id+'">Edit</button></div>';
+  }
+
+  function interviewRowHTML(b, index) {
+    const editing = interviewEditingId === b.id;
+    const d = editing ? interviewDraft : b;
+    return '<tr class="'+(editing?'row-editing':'')+'" id="irow-'+b.id+'" data-id="'+b.id+'">'
+      + '<td class="mono">' + index + '</td>'
+      + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
+      + '<td>' + (esc(b.week) || dash()) + '</td>'
+      + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockInterviewRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockInterviewRequired?'✓':'✗')+'</span></td>'
+      + '<td>' + interviewLinkField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) + '</td>'
+      + '<td>' + (b.mockInterviewRequired ? interviewLinkField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + yesNoField('mainInterviewInvited', d.mainInterviewInvited, editing) + '</td>'
+      + '<td>' + (b.mockInterviewRequired ? yesNoField('mockInterviewInvited', d.mockInterviewInvited, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td class="col-actions">' + interviewActionsCell(b.id, editing) + '</td>'
+      + '</tr>';
+  }
+
+  function populateInterviewFilterOptions() {
+    const sel = document.getElementById('interview-filter-batch');
+    if (!sel) return;
+    const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
+    sel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===interviewBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
+  }
+
+  function renderInterviewsTable() {
+    const tbody = document.getElementById('interview-tbody');
+    if (!tbody) return;
+    populateInterviewFilterOptions();
+    const q = interviewSearchQuery.trim().toLowerCase();
+    const filtered = batches.filter(b => {
+      if (q) {
+        const hay = [b.batch, b.week].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (interviewBatchFilter && b.batch !== interviewBatchFilter) return false;
+      return true;
+    });
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map((b, i) => interviewRowHTML(b, i + 1)).join('');
+  }
+
+  function startInterviewEdit(id) {
+    if (!canWrite) return;
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    interviewEditingId = id;
+    interviewDraft = {
+      mainInterviewConfigUrl: b.mainInterviewConfigUrl,
+      mockInterviewConfigUrl: b.mockInterviewConfigUrl,
+      mainInterviewInvited: b.mainInterviewInvited,
+      mockInterviewInvited: b.mockInterviewInvited
+    };
+    render();
+  }
+
+  function cancelInterviewEdit() {
+    interviewEditingId = null;
+    interviewDraft = null;
+    render();
+  }
+
+  function saveInterview() {
+    const idx = batches.findIndex(b => b.id === interviewEditingId);
+    if (idx === -1) return;
+    const updated = { ...batches[idx], ...interviewDraft, updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    interviewEditingId = null;
+    interviewDraft = null;
+    render();
+    persistSave(updated);
+    flashToast('Interview details saved.', 'success');
+  }
+
   function render() {
     document.querySelectorAll('.sidebar-link').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.section === activeSection);
@@ -1442,6 +1576,7 @@ function boot(seedBatches, seedStudents) {
     renderStudentsTable();
     renderConfigsTable();
     renderAssessmentsTable();
+    renderInterviewsTable();
     updateAccessBanner();
     updateSyncBadge();
   }
@@ -2296,6 +2431,15 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'invite-assessment') {
       inviteAssessment(id, btn.dataset.type);
     }
+    else if (action === 'edit-interview') startInterviewEdit(id);
+    else if (action === 'cancel-interview') cancelInterviewEdit();
+    else if (action === 'save-interview') saveInterview();
+    else if (action === 'clear-interview-filter') {
+      interviewSearchQuery = ''; interviewBatchFilter = '';
+      const searchEl = document.getElementById('interview-search'); if (searchEl) searchEl.value = '';
+      const batchEl = document.getElementById('interview-filter-batch'); if (batchEl) batchEl.value = '';
+      renderInterviewsTable();
+    }
     else if (action === 'nav') { activeSection = btn.dataset.section; render(); }
     else if (action === 'clear-overview-filter') {
       overviewDateRange = getWeekRange(new Date());
@@ -2385,9 +2529,15 @@ function boot(seedBatches, seedStudents) {
     }
     if (t.id === 'config-search') { configSearchQuery = t.value; renderConfigsTable(); return; }
     if (t.id === 'assess-search') { assessSearchQuery = t.value; renderAssessmentsTable(); return; }
+    if (t.id === 'interview-search') { interviewSearchQuery = t.value; renderInterviewsTable(); return; }
     if (t.matches('.config-cell-input')) {
       if (!configDraft) return;
       configDraft[t.dataset.field] = t.value;
+      return;
+    }
+    if (t.matches('.interview-cell-input') && t.tagName !== 'SELECT') {
+      if (!interviewDraft) return;
+      interviewDraft[t.dataset.field] = t.value;
       return;
     }
     if (!draft) return;
@@ -2442,6 +2592,11 @@ function boot(seedBatches, seedStudents) {
     if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
     if (t.id === 'assess-filter-batch') { assessBatchFilter = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'assess-filter-status') { assessStatusTab = t.value; renderAssessmentsTable(); return; }
+    if (t.id === 'interview-filter-batch') { interviewBatchFilter = t.value; renderInterviewsTable(); return; }
+    if (t.matches('.interview-cell-input') && t.tagName === 'SELECT') {
+      if (interviewDraft) interviewDraft[t.dataset.field] = t.value === 'yes';
+      return;
+    }
     if (t.id === 'config-filter-week') { configWeekFilter = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-from') { configDateFilter.from = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-to') { configDateFilter.to = t.value; renderConfigsTable(); return; }
