@@ -186,7 +186,6 @@ tbody td:last-child{border-right:none;}
 tbody td.col-syllabus{border-right:1px solid var(--border);}
 .switch--disabled{opacity:.45;cursor:not-allowed;}
 .switch input:disabled+.switch-track{cursor:not-allowed;}
-.students-cell{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
 .modal-overlay{position:fixed;inset:0;background:rgba(10,14,10,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
 .modal-overlay[hidden]{display:none;}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:min(640px,100%);max-height:85vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.3);}
@@ -205,7 +204,6 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .modal-close:hover{color:var(--danger);}
 .modal-body{padding:16px 20px;overflow:auto;display:flex;flex-direction:column;gap:14px;}
 .modal-footer{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid var(--border);}
-#students-file-input{font-family:var(--font-body);font-size:12.5px;}
 .rel-label{color:var(--muted);font-size:11.5px;white-space:nowrap;text-align:right;}
 .badge--today{background:var(--amber-soft);color:var(--amber);}
 .badge--upcoming{background:var(--accent-soft);color:var(--accent-ink);}
@@ -285,7 +283,6 @@ function boot(seedBatches) {
   let activeSection = 'overview';
   let searchQuery = '';
   let dateFilter = { from: '', to: '' };
-  let uploadPreview = null;
   let expandedTopics = new Set();
   let importPreview = null;
   let overviewDateRange = getWeekRange(new Date());
@@ -353,6 +350,19 @@ function boot(seedBatches) {
     return date ? (date + 'T' + (time || '00:00')) : '';
   }
 
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function coerceDT(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return s;
+    let m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2})[:.](\d{2})/.exec(s);
+    if (m) return m[1] + '-' + m[2] + '-' + m[3] + 'T' + pad2(m[4]) + ':' + m[5];
+    m = /^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})[ T](\d{1,2})[:.](\d{2})/.exec(s);
+    if (m) return m[3] + '-' + pad2(m[2]) + '-' + pad2(m[1]) + 'T' + pad2(m[4]) + ':' + m[5];
+    return '';
+  }
+
   function normalizeBatch(b) {
     const mockRequired = !!b.mockRequired;
     const inferredMockInterviewRequired = b.mockInterviewRequired != null
@@ -363,8 +373,6 @@ function boot(seedBatches) {
       batch: b.batch != null ? b.batch : (b.firstBatch || ''),
       week: b.week || '',
       syllabusItems: normalizeSyllabusItems(b),
-      studentsHeaders: Array.isArray(b.studentsHeaders) ? b.studentsHeaders : [],
-      studentsData: Array.isArray(b.studentsData) ? b.studentsData : [],
       mainSebStatus: (b.mainSebStatus === 'SEB' || b.mainSebStatus === 'Non-SEB') ? b.mainSebStatus : '',
       mockRequired: mockRequired,
       mockTitle: b.mockTitle || '',
@@ -374,16 +382,16 @@ function boot(seedBatches) {
       mockTag: b.mockTag || '',
       mockInterviewRequired: mockRequired ? inferredMockInterviewRequired : false,
       mockInterviewTitle: b.mockInterviewTitle || '',
-      mockInterviewStartAt: b.mockInterviewStartAt != null ? b.mockInterviewStartAt : combineDT(b.mockInterviewDate || b.nextDate, b.mockInterviewStart || b.nextStart),
-      mockInterviewEndAt: b.mockInterviewEndAt != null ? b.mockInterviewEndAt : combineDT(b.mockInterviewDate || b.nextDate, b.mockInterviewEnd || b.nextEnd),
+      mockInterviewStartAt: coerceDT(b.mockInterviewStartAt != null ? b.mockInterviewStartAt : combineDT(b.mockInterviewDate || b.nextDate, b.mockInterviewStart || b.nextStart)),
+      mockInterviewEndAt: coerceDT(b.mockInterviewEndAt != null ? b.mockInterviewEndAt : combineDT(b.mockInterviewDate || b.nextDate, b.mockInterviewEnd || b.nextEnd)),
       mockInterviewTag: b.mockInterviewTag || '',
       mainTitle: b.mainTitle || '',
-      mainStartAt: b.mainStartAt != null ? b.mainStartAt : combineDT(b.mainDate || b.mainExamDate, b.mainStart || b.mainExamStart),
-      mainEndAt: b.mainEndAt != null ? b.mainEndAt : combineDT(b.mainDate || b.mainExamDate, b.mainEnd || b.mainExamEnd),
+      mainStartAt: coerceDT(b.mainStartAt != null ? b.mainStartAt : combineDT(b.mainDate || b.mainExamDate, b.mainStart || b.mainExamStart)),
+      mainEndAt: coerceDT(b.mainEndAt != null ? b.mainEndAt : combineDT(b.mainDate || b.mainExamDate, b.mainEnd || b.mainExamEnd)),
       mainTag: b.mainTag || '',
       mainInterviewTitle: b.mainInterviewTitle || '',
-      mainInterviewStartAt: b.mainInterviewStartAt != null ? b.mainInterviewStartAt : combineDT(b.mainInterviewDate, b.mainInterviewStart),
-      mainInterviewEndAt: b.mainInterviewEndAt != null ? b.mainInterviewEndAt : combineDT(b.mainInterviewDate, b.mainInterviewEnd),
+      mainInterviewStartAt: coerceDT(b.mainInterviewStartAt != null ? b.mainInterviewStartAt : combineDT(b.mainInterviewDate, b.mainInterviewStart)),
+      mainInterviewEndAt: coerceDT(b.mainInterviewEndAt != null ? b.mainInterviewEndAt : combineDT(b.mainInterviewDate, b.mainInterviewEnd)),
       mainInterviewTag: b.mainInterviewTag || ''
     };
   }
@@ -499,7 +507,6 @@ function boot(seedBatches) {
                     <th class="col-syllabus" rowspan="2">Batch</th>
                     <th rowspan="2">Week</th>
                     <th colspan="2">Syllabus</th>
-                    <th rowspan="2">Students Data</th>
                     <th rowspan="2">Main Assessment SEB Status</th>
                     <th colspan="6" class="grp-amber">Mock Assessment</th>
                     <th colspan="5" class="grp-teal">Mock Interview</th>
@@ -540,22 +547,6 @@ function boot(seedBatches) {
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <div class="modal-overlay" id="upload-modal-overlay" hidden>
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
-        <div class="modal-header">
-          <h3 id="upload-modal-title">Upload Student Data</h3>
-          <button type="button" class="modal-close" data-action="close-upload" aria-label="Close">&times;</button>
-        </div>
-        <div class="modal-body">
-          <input type="file" id="students-file-input" accept=".csv">
-          <div id="upload-preview"><p class="section-desc">Choose a CSV file to preview its rows before importing.</p></div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn--ghost btn--sm" data-action="close-upload">Cancel</button>
-          <button type="button" class="btn btn--primary btn--sm" id="confirm-upload-btn" data-action="confirm-upload" disabled>Confirm Import</button>
-        </div>
-      </div>
-    </div>
     <div class="modal-overlay" id="import-modal-overlay" hidden>
       <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
         <div class="modal-header">
@@ -572,7 +563,7 @@ function boot(seedBatches) {
             <p class="section-desc">One CSV row per subject. Repeat the same <strong>Batch</strong> (and Week) on multiple rows to add several subjects to one batch &mdash; everything else is read from the first row for that batch.</p>
             <p class="section-desc">These are exactly the fields you'd fill in by hand when editing a batch &mdash; nothing extra.</p>
             <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Batch, Week, Subject, Topics, Mock Assessment Required, Mock Assessment Title, Mock Assessment Date, Mock Assessment Start, Mock Assessment End, Mock Assessment Tag, Mock Interview Required, Mock Interview Title, Mock Interview Start Date &amp; Time, Mock Interview End Date &amp; Time, Mock Interview Tag, Main Assessment Title, Main Assessment Start Date &amp; Time, Main Assessment End Date &amp; Time, Main Assessment Tag, Main Interview Title, Main Interview Start Date &amp; Time, Main Interview End Date &amp; Time, Main Interview Tag, SEB Status. Required fields accept Yes/No; unrecognized columns are ignored.</p>
-            <p class="section-desc"><strong>Date &amp; time format:</strong> Mock Assessment Date is a plain date (<code>2026-09-10</code>) with separate Start/End times (<code>10:00</code>, 24-hour). Every other Start/End Date &amp; Time column is one combined value: <code>YYYY-MM-DD HH:MM</code>, e.g. <code>2026-09-12 11:00</code>.</p>
+            <p class="section-desc"><strong>Date &amp; time format:</strong> Mock Assessment Date is a plain date (<code>2026-09-10</code>) with separate Start/End times (<code>10:00</code>, 24-hour). Every other Start/End Date &amp; Time column is one combined value, either <code>YYYY-MM-DD HH:MM</code> (e.g. <code>2026-09-12 11:00</code>) or <code>DD-MM-YYYY HH:MM</code> (e.g. <code>12-09-2026 11:00</code>). Anything else is left blank rather than imported wrong &mdash; the preview will flag it.</p>
           </details>
           <div id="import-preview"><p class="section-desc">Choose a CSV file to preview the batches it will create before importing.</p></div>
         </div>
@@ -612,14 +603,6 @@ function boot(seedBatches) {
         + '</div>'
       ).join('')
       + '<button type="button" class="btn btn--ghost btn--sm" data-action="add-syllabus-item">+ Add Subject</button>'
-      + '</div>';
-  }
-  function studentsCell(d, editing) {
-    const count = d.studentsData.length;
-    if (!editing) return count ? (count + (count === 1 ? ' student' : ' students')) : dash();
-    return '<div class="students-cell">'
-      + '<span class="mono">' + (count ? (count + ' rows') : 'No data') + '</span>'
-      + '<button type="button" class="btn btn--ghost btn--sm" data-action="open-upload">' + (count ? 'Replace' : 'Upload') + '</button>'
       + '</div>';
   }
   function sebCell(d, editing) {
@@ -699,7 +682,6 @@ function boot(seedBatches) {
       + '<td class="col-syllabus">' + textCell('batch', d.batch, editing, 'Batch name') + '</td>'
       + '<td>' + textCell('week', d.week, editing, 'Week 1') + '</td>'
       + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing, id) + '</td>'
-      + '<td>' + studentsCell(d, editing) + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
       + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
       + mockCols
@@ -866,7 +848,7 @@ function boot(seedBatches) {
       if (editingBatch) filtered = [editingBatch].concat(filtered);
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="26"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="25"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
@@ -962,9 +944,7 @@ function boot(seedBatches) {
   function cloneForEdit(b) {
     return {
       ...b,
-      syllabusItems: b.syllabusItems.map(it => ({ ...it })),
-      studentsHeaders: [...b.studentsHeaders],
-      studentsData: b.studentsData.map(r => ({ ...r }))
+      syllabusItems: b.syllabusItems.map(it => ({ ...it }))
     };
   }
 
@@ -1014,21 +994,6 @@ function boot(seedBatches) {
     flashToast('Batch deleted.', 'success');
   }
 
-  function openUploadModal() {
-    uploadPreview = null;
-    const overlay = document.getElementById('upload-modal-overlay');
-    if (overlay) overlay.hidden = false;
-    const fileInput = document.getElementById('students-file-input');
-    if (fileInput) fileInput.value = '';
-    renderUploadPreview();
-  }
-
-  function closeUploadModal() {
-    const overlay = document.getElementById('upload-modal-overlay');
-    if (overlay) overlay.hidden = true;
-    uploadPreview = null;
-  }
-
   function parseCSV(text) {
     const rows = [];
     let row = [], field = '', inQuotes = false;
@@ -1061,46 +1026,6 @@ function boot(seedBatches) {
       return obj;
     });
     return { headers, rows: dataRows };
-  }
-
-  function handleStudentsFile(file) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = parseCSV(String(reader.result));
-        if (!parsed.rows.length) { flashToast('No rows found in that file.', 'error'); }
-        uploadPreview = parsed;
-      } catch (err) {
-        uploadPreview = null;
-        flashToast('Could not read that file — make sure it’s a CSV.', 'error');
-      }
-      renderUploadPreview();
-    };
-    reader.onerror = () => {
-      uploadPreview = null;
-      renderUploadPreview();
-      flashToast('Could not read that file.', 'error');
-    };
-    reader.readAsText(file);
-  }
-
-  function renderUploadPreview() {
-    const el = document.getElementById('upload-preview');
-    const confirmBtn = document.getElementById('confirm-upload-btn');
-    if (!el) return;
-    if (!uploadPreview || !uploadPreview.rows.length) {
-      el.innerHTML = '<p class="section-desc">Choose a CSV file to preview its rows before importing.</p>';
-      if (confirmBtn) confirmBtn.disabled = true;
-      return;
-    }
-    const previewRows = uploadPreview.rows.slice(0, 20);
-    el.innerHTML = '<div class="table-wrap" style="max-height:280px;"><table><thead><tr>'
-      + uploadPreview.headers.map(h => '<th>' + esc(h) + '</th>').join('')
-      + '</tr></thead><tbody>'
-      + previewRows.map(r => '<tr>' + uploadPreview.headers.map(h => '<td>' + (esc(r[h]) || dash()) + '</td>').join('') + '</tr>').join('')
-      + '</tbody></table></div>'
-      + '<p class="footnote">Showing ' + previewRows.length + ' of ' + uploadPreview.rows.length + ' rows.</p>';
-    if (confirmBtn) confirmBtn.disabled = false;
   }
 
   const IMPORT_FIELD_MAP = {
@@ -1142,17 +1067,12 @@ function boot(seedBatches) {
 
   function normHeader(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); }
   function truthyImport(v) { return /^(y|yes|true|1)$/i.test(String(v || '').trim()); }
-  function normalizeImportDT(v) {
-    const s = String(v || '').trim();
-    if (!s) return '';
-    return /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s) ? s.replace(' ', 'T') : s;
-  }
 
   function mapImportRow(row, headers) {
     const out = {};
     headers.forEach(h => {
       const key = IMPORT_FIELD_MAP[normHeader(h)];
-      if (key && row[h]) out[key] = IMPORT_DATETIME_FIELDS.indexOf(key) > -1 ? normalizeImportDT(row[h]) : row[h];
+      if (key && row[h]) out[key] = row[h];
     });
     return out;
   }
@@ -1169,6 +1089,7 @@ function boot(seedBatches) {
       if (!groups.has(key)) { groups.set(key, []); order.push(key); }
       groups.get(key).push(r);
     });
+    let dateWarnings = 0;
     const built = order.map(key => {
       const rowsForBatch = groups.get(key);
       const first = rowsForBatch[0];
@@ -1211,10 +1132,13 @@ function boot(seedBatches) {
         mainSebStatus: first.mainSebStatus || ''
       };
       if (raw.mockInterviewRequired === null) delete raw.mockInterviewRequired;
-      IMPORT_DATETIME_FIELDS.forEach(f => { if (!raw[f]) delete raw[f]; });
+      IMPORT_DATETIME_FIELDS.forEach(f => {
+        if (raw[f] && !coerceDT(raw[f])) dateWarnings++;
+        if (!raw[f]) delete raw[f];
+      });
       return normalizeBatch(raw);
     });
-    return { batches: built, skipped: skipped };
+    return { batches: built, skipped: skipped, dateWarnings: dateWarnings };
   }
 
   function openImportModal() {
@@ -1274,7 +1198,8 @@ function boot(seedBatches) {
         + '</tr>').join('')
       + '</tbody></table></div>'
       + '<p class="footnote">Showing ' + preview.length + ' of ' + importPreview.batches.length + ' batches.</p>'
-      + (importPreview.skipped ? '<p class="import-skip">Skipped ' + importPreview.skipped + ' row' + (importPreview.skipped === 1 ? '' : 's') + ' with no Batch value.</p>' : '');
+      + (importPreview.skipped ? '<p class="import-skip">Skipped ' + importPreview.skipped + ' row' + (importPreview.skipped === 1 ? '' : 's') + ' with no Batch value.</p>' : '')
+      + (importPreview.dateWarnings ? '<p class="import-skip">' + importPreview.dateWarnings + ' date/time value' + (importPreview.dateWarnings === 1 ? '' : 's') + " couldn't be understood and " + (importPreview.dateWarnings === 1 ? 'was' : 'were') + ' left blank. Use YYYY-MM-DD HH:MM or DD-MM-YYYY HH:MM.</p>' : '');
     if (confirmBtn) confirmBtn.disabled = false;
   }
 
@@ -1390,21 +1315,6 @@ function boot(seedBatches) {
       draft.syllabusItems.splice(Number(btn.dataset.index), 1);
       render();
     }
-    else if (action === 'open-upload') {
-      if (!draft) return;
-      openUploadModal();
-    }
-    else if (action === 'close-upload') {
-      closeUploadModal();
-    }
-    else if (action === 'confirm-upload') {
-      if (!draft || !uploadPreview || !uploadPreview.rows.length) return;
-      draft.studentsHeaders = uploadPreview.headers;
-      draft.studentsData = uploadPreview.rows;
-      closeUploadModal();
-      render();
-      flashToast('Student data imported.', 'success');
-    }
     else if (action === 'download-sample') {
       downloadSampleCSV();
     }
@@ -1451,11 +1361,6 @@ function boot(seedBatches) {
     if (t.id === 'ov-from') { overviewDateRange.from = t.value; renderKPICards(); return; }
     if (t.id === 'ov-to') { overviewDateRange.to = t.value; renderKPICards(); return; }
     if (t.id === 'wn-date') { whatsNextDate = t.value; renderTimeline(); return; }
-    if (t.id === 'students-file-input') {
-      const file = t.files && t.files[0];
-      if (file) handleStudentsFile(file);
-      return;
-    }
     if (t.id === 'import-file-input') {
       const file = t.files && t.files[0];
       if (file) handleImportFile(file);
