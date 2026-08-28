@@ -150,8 +150,10 @@ button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px
 .filter-bar{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;}
 .filter-field{display:flex;flex-direction:column;gap:4px;}
 .filter-field label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
-.filter-field input,.filter-field select{font-family:var(--font-body);font-size:12.5px;padding:6px 9px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--ink);min-width:150px;}
+.filter-field input,.filter-field select,.filter-field textarea{font-family:var(--font-body);font-size:12.5px;padding:6px 9px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--ink);min-width:150px;}
 .filter-field input[type="date"]{font-family:var(--font-mono);min-width:130px;}
+.filter-field textarea{width:100%;resize:vertical;min-height:70px;}
+.modal-field-stack{display:flex;flex-direction:column;gap:14px;}
 .timeline{display:flex;flex-direction:column;}
 .timeline-row{display:grid;grid-template-columns:128px 150px 1fr auto;gap:14px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--border-soft);font-size:12.5px;}
 .timeline-batch{color:var(--muted);font-size:11.5px;margin-left:6px;}
@@ -307,6 +309,8 @@ function boot(seedBatches, seedStudents) {
   let studentSearchQuery = '';
   let studentBatchFilter = '';
   let selectedStudentIds = new Set();
+  let selectedBatchIds = new Set();
+  let notifyRecipients = '';
   let studentImportPreview = null;
   let configEditingId = null;
   let configDraft = null;
@@ -591,13 +595,14 @@ function boot(seedBatches, seedStudents) {
               <div class="filter-field"><label for="syllabus-filter-from">From</label><input type="date" id="syllabus-filter-from"></div>
               <div class="filter-field"><label for="syllabus-filter-to">To</label><input type="date" id="syllabus-filter-to"></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-syllabus-filter">Clear</button>
+              <button type="button" class="btn btn--ghost btn--sm" id="notify-smes-btn" data-action="open-notify" disabled>Notify SMEs</button>
               <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="import-batches-btn" data-action="open-import">Import Batches</button>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr class="thead-groups">
-                    <th class="col-syllabus" rowspan="2">Batch</th>
+                    <th class="col-syllabus" rowspan="2"><input type="checkbox" id="records-select-all" aria-label="Select all"> Batch</th>
                     <th rowspan="2">Week</th>
                     <th colspan="2">Syllabus</th>
                     <th rowspan="2">Main Assessment SEB Status</th>
@@ -826,6 +831,26 @@ function boot(seedBatches, seedStudents) {
         </div>
       </div>
     </div>
+    <div class="modal-overlay" id="notify-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="notify-modal-title">
+        <div class="modal-header">
+          <h3 id="notify-modal-title">Notify SMEs</h3>
+          <button type="button" class="modal-close" data-action="close-notify" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc" id="notify-batch-list"></p>
+          <div class="modal-field-stack">
+            <div class="filter-field"><label for="notify-recipients">Send to (Teams emails, comma-separated)</label><input type="text" id="notify-recipients" placeholder="sme1@company.com, sme2@company.com"></div>
+            <div class="filter-field"><label for="notify-message">Message</label><textarea id="notify-message" rows="4"></textarea></div>
+          </div>
+          <p class="section-desc">Opens Microsoft Teams with this message pre-filled &mdash; you still need to hit Send there.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-notify">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" data-action="open-in-teams">Open in Teams</button>
+        </div>
+      </div>
+    </div>
   `;
 
   function textCell(field, value, editing, placeholder) {
@@ -1030,7 +1055,7 @@ function boot(seedBatches, seedStudents) {
       + '<td>'+textCell('mainInterviewTag', d.mainInterviewTag, editing, 'Tag')+'</td>';
 
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
-      + '<td class="col-syllabus">' + textCell('batch', d.batch, editing, 'Batch name') + '</td>'
+      + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + textCell('batch', d.batch, editing, 'Batch name') + '</td>'
       + '<td>' + textCell('week', d.week, editing, 'Week 1') + '</td>'
       + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing, id) + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
@@ -1185,11 +1210,9 @@ function boot(seedBatches, seedStudents) {
     return dates.some(d => (!from || d >= from) && (!to || d <= to));
   }
 
-  function renderRecordsTable() {
-    const tbody = document.getElementById('tbody');
-    if (!tbody) return;
+  function getFilteredBatches() {
     const q = searchQuery.trim().toLowerCase();
-    let filtered = batches.filter(b => {
+    return batches.filter(b => {
       if (q) {
         const syllabusText = b.syllabusItems.map(it => it.subject + ' ' + it.topics).join(' ');
         const hay = [b.batch, b.week, syllabusText, b.mockTitle, b.mockTag, b.mockInterviewTitle, b.mockInterviewTag, b.mainTitle, b.mainTag, b.mainInterviewTitle, b.mainInterviewTag].join(' ').toLowerCase();
@@ -1197,10 +1220,30 @@ function boot(seedBatches, seedStudents) {
       }
       return batchMatchesDateRange(b, dateFilter.from, dateFilter.to);
     });
+  }
+
+  function updateRecordsSelectionUI(filtered) {
+    const btn = document.getElementById('notify-smes-btn');
+    if (btn) {
+      btn.disabled = selectedBatchIds.size === 0;
+      btn.textContent = 'Notify SMEs' + (selectedBatchIds.size ? ' (' + selectedBatchIds.size + ')' : '');
+    }
+    const selectAll = document.getElementById('records-select-all');
+    if (selectAll) {
+      const visibleIds = filtered.map(b => b.id);
+      selectAll.checked = visibleIds.length > 0 && visibleIds.every(id => selectedBatchIds.has(id));
+    }
+  }
+
+  function renderRecordsTable() {
+    const tbody = document.getElementById('tbody');
+    if (!tbody) return;
+    let filtered = getFilteredBatches();
     if (editingId && !filtered.some(b => b.id === editingId)) {
       const editingBatch = batches.find(b => b.id === editingId);
       if (editingBatch) filtered = [editingBatch].concat(filtered);
     }
+    updateRecordsSelectionUI(filtered);
     if (!filtered.length) {
       tbody.innerHTML = '<tr><td colspan="25"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
       return;
@@ -2135,6 +2178,47 @@ function boot(seedBatches, seedStudents) {
     importPreview = null;
   }
 
+  function defaultNotifyMessage(batchNames) {
+    return 'The syllabus has been updated for the following batch(es): ' + batchNames.join(', ') + '. Kindly start the Topin config preparation accordingly.';
+  }
+
+  function openNotifyModal() {
+    if (!selectedBatchIds.size) return;
+    const names = batches.filter(b => selectedBatchIds.has(b.id)).map(b => b.batch);
+    const overlay = document.getElementById('notify-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    const listEl = document.getElementById('notify-batch-list');
+    if (listEl) listEl.textContent = names.length + ' batch' + (names.length === 1 ? '' : 'es') + ' selected: ' + names.join(', ');
+    const recipientsEl = document.getElementById('notify-recipients');
+    if (recipientsEl) recipientsEl.value = notifyRecipients;
+    const messageEl = document.getElementById('notify-message');
+    if (messageEl) messageEl.value = defaultNotifyMessage(names);
+  }
+
+  function closeNotifyModal() {
+    const overlay = document.getElementById('notify-modal-overlay');
+    if (overlay) overlay.hidden = true;
+  }
+
+  function buildTeamsDeepLink(recipients, message) {
+    const users = recipients.split(',').map(s => s.trim()).filter(Boolean).join(',');
+    const params = new URLSearchParams();
+    if (users) params.set('users', users);
+    params.set('message', message);
+    return 'https://teams.microsoft.com/l/chat/0/0?' + params.toString();
+  }
+
+  function openInTeams() {
+    const recipientsEl = document.getElementById('notify-recipients');
+    const messageEl = document.getElementById('notify-message');
+    const recipients = recipientsEl ? recipientsEl.value.trim() : '';
+    const message = messageEl ? messageEl.value.trim() : '';
+    if (!recipients) { flashToast('Add at least one recipient email first.', 'error'); return; }
+    notifyRecipients = recipients;
+    window.open(buildTeamsDeepLink(recipients, message), '_blank', 'noopener,noreferrer');
+    closeNotifyModal();
+  }
+
   function handleImportFile(file) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -2547,6 +2631,15 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'close-import') {
       closeImportModal();
     }
+    else if (action === 'open-notify') {
+      openNotifyModal();
+    }
+    else if (action === 'close-notify') {
+      closeNotifyModal();
+    }
+    else if (action === 'open-in-teams') {
+      openInTeams();
+    }
     else if (action === 'confirm-import') {
       if (!canWrite || !importPreview || !importPreview.batches.length) return;
       const imported = importPreview.batches;
@@ -2631,6 +2724,19 @@ function boot(seedBatches, seedStudents) {
       if (t.checked) filtered.forEach(s => selectedStudentIds.add(s.id));
       else filtered.forEach(s => selectedStudentIds.delete(s.id));
       renderStudentsTable();
+      return;
+    }
+    if (t.matches('.row-checkbox-batch')) {
+      const id = t.dataset.id;
+      if (t.checked) selectedBatchIds.add(id); else selectedBatchIds.delete(id);
+      updateRecordsSelectionUI(getFilteredBatches());
+      return;
+    }
+    if (t.id === 'records-select-all') {
+      const filtered = getFilteredBatches();
+      if (t.checked) filtered.forEach(b => selectedBatchIds.add(b.id));
+      else filtered.forEach(b => selectedBatchIds.delete(b.id));
+      renderRecordsTable();
       return;
     }
     if (t.matches('.student-cell-input') && t.tagName === 'SELECT') {
