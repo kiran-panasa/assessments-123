@@ -1354,22 +1354,39 @@ function boot(seedBatches, seedStudents) {
     sel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===assessBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
   }
 
+  function assessInviteButton(b, type) {
+    const label = type === 'main' ? 'Invite Main' : 'Invite Mock';
+    const url = type === 'main' ? b.mainConfigUrl : b.mockConfigUrl;
+    const cls = type === 'main' ? 'btn btn--primary btn--xs' : 'btn btn--ghost btn--xs';
+    return '<a class="'+cls+'" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer" data-action="invite-assessment" data-id="'+b.id+'" data-type="'+type+'">'+label+'</a>';
+  }
+
+  function assessInvitedBadge(type) {
+    return '<span class="badge badge--yes">&#10003; '+(type === 'main' ? 'Main Invited' : 'Mock Invited')+'</span>';
+  }
+
   function assessActionsCell(b) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
+    const status = assessStatus(b);
     const parts = [];
-    if (b.mainPublished) {
-      if (b.mainInviteSent) parts.push('<span class="badge badge--yes">&#10003; Main Invited</span>');
-      else parts.push('<a class="btn btn--primary btn--xs" href="'+esc(b.mainConfigUrl)+'" target="_blank" rel="noopener noreferrer" data-action="invite-assessment" data-id="'+b.id+'" data-type="main">Invite Main Students</a>');
-    } else {
-      parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="main"'+(b.mainConfigUrl?'':' disabled title="Add a main config link in Topin Configs first"')+'>Publish Main</button>');
+
+    if (status !== 'published') {
+      if (!b.mainPublished) parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="main"'+(b.mainConfigUrl?'':' disabled title="Add a main config link in Topin Configs first"')+'>Publish Main</button>');
+      if (b.mockRequired && !b.mockPublished) parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="mock"'+(b.mockConfigUrl?'':' disabled title="Add a mock config link in Topin Configs first"')+'>Publish Mock</button>');
+      return '<div class="actions">' + parts.join('') + '</div>';
     }
-    if (b.mockRequired) {
-      if (b.mockPublished) {
-        if (b.mockInviteSent) parts.push('<span class="badge badge--yes">&#10003; Mock Invited</span>');
-        else parts.push('<a class="btn btn--ghost btn--xs" href="'+esc(b.mockConfigUrl)+'" target="_blank" rel="noopener noreferrer" data-action="invite-assessment" data-id="'+b.id+'" data-type="mock">Invite Mock Students</a>');
-      } else {
-        parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="mock"'+(b.mockConfigUrl?'':' disabled title="Add a mock config link in Topin Configs first"')+'>Publish Mock</button>');
-      }
+
+    if (assessStatusTab === 'published') {
+      parts.push('<span class="badge badge--yes">Published</span>');
+    } else if (assessStatusTab === 'invites-pending') {
+      if (!b.mainInviteSent) parts.push(assessInviteButton(b, 'main'));
+      if (b.mockRequired && !b.mockInviteSent) parts.push(assessInviteButton(b, 'mock'));
+    } else if (assessStatusTab === 'invites-sent') {
+      parts.push(assessInvitedBadge('main'));
+      if (b.mockRequired) parts.push(assessInvitedBadge('mock'));
+    } else {
+      parts.push(b.mainInviteSent ? assessInvitedBadge('main') : assessInviteButton(b, 'main'));
+      if (b.mockRequired) parts.push(b.mockInviteSent ? assessInvitedBadge('mock') : assessInviteButton(b, 'mock'));
     }
     return '<div class="actions">' + parts.join('') + '</div>';
   }
