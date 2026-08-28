@@ -1365,6 +1365,14 @@ function boot(seedBatches, seedStudents) {
     return '<span class="badge badge--yes">&#10003; '+(type === 'main' ? 'Main Invited' : 'Mock Invited')+'</span>';
   }
 
+  function studentCountForBatch(batchName) {
+    return students.filter(s => s.batch === batchName).length;
+  }
+
+  function viewStudentsButton(id) {
+    return '<button type="button" class="btn btn--ghost btn--xs" data-action="view-students-for-batch" data-id="'+id+'">View Students</button>';
+  }
+
   function assessActionsCell(b) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
     const status = assessStatus(b);
@@ -1373,6 +1381,7 @@ function boot(seedBatches, seedStudents) {
     if (status !== 'published') {
       if (!b.mainPublished) parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="main"'+(b.mainConfigUrl?'':' disabled title="Add a main config link in Topin Configs first"')+'>Publish Main</button>');
       if (b.mockRequired && !b.mockPublished) parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="mock"'+(b.mockConfigUrl?'':' disabled title="Add a mock config link in Topin Configs first"')+'>Publish Mock</button>');
+      parts.push(viewStudentsButton(b.id));
       return '<div class="actions">' + parts.join('') + '</div>';
     }
 
@@ -1388,6 +1397,7 @@ function boot(seedBatches, seedStudents) {
       parts.push(b.mainInviteSent ? assessInvitedBadge('main') : assessInviteButton(b, 'main'));
       if (b.mockRequired) parts.push(b.mockInviteSent ? assessInvitedBadge('mock') : assessInviteButton(b, 'mock'));
     }
+    parts.push(viewStudentsButton(b.id));
     return '<div class="actions">' + parts.join('') + '</div>';
   }
 
@@ -1402,9 +1412,10 @@ function boot(seedBatches, seedStudents) {
         : '<div class="muted-cell">Invites pending</div>';
       statusCell = (fmtUpdatedAt(b.publishedAt) ? '<div class="muted-cell">Published ' + fmtUpdatedAt(b.publishedAt) + '</div>' : '') + statusCell + inviteLine;
     }
+    const count = studentCountForBatch(b.batch);
     return '<tr id="arow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
-      + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
+      + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '<div class="muted-cell">' + count + ' student' + (count === 1 ? '' : 's') + '</div></td>'
       + '<td>' + (esc(b.week) || dash()) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td>' + configField('mainConfigUrl', b.mainConfigUrl, false) + '</td>'
@@ -1950,6 +1961,17 @@ function boot(seedBatches, seedStudents) {
     const searchEl = document.getElementById('syllabus-search'); if (searchEl) searchEl.value = b.batch;
   }
 
+  function viewStudentsForBatch(id) {
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    activeSection = 'students';
+    studentSearchQuery = '';
+    studentBatchFilter = b.batch;
+    render();
+    const searchEl = document.getElementById('student-search'); if (searchEl) searchEl.value = '';
+    const batchEl = document.getElementById('student-filter-batch'); if (batchEl) batchEl.value = b.batch;
+  }
+
   function parseCSV(text) {
     const rows = [];
     let row = [], field = '', inQuotes = false;
@@ -2424,6 +2446,7 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'save-config') saveConfig();
     else if (action === 'clear-config') clearConfig(id);
     else if (action === 'view-syllabus') viewSyllabus(id);
+    else if (action === 'view-students-for-batch') viewStudentsForBatch(id);
     else if (action === 'config-tab') {
       configStatusTab = btn.dataset.tab;
       btn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === configStatusTab));
