@@ -844,13 +844,9 @@ function boot(seedBatches, seedStudents) {
               <label for="notify-group-name">Group name</label>
               <input type="text" id="notify-group-name" placeholder="e.g. Intensive_Offline_Assessment_Issues">
             </div>
-            <div class="filter-field">
-              <label for="notify-group-link">Chat link (paste once per group)</label>
-              <input type="text" id="notify-group-link" placeholder="Paste the address-bar URL from that chat in Teams for web">
-            </div>
             <div class="filter-field"><label for="notify-message">Message</label><textarea id="notify-message" rows="4"></textarea></div>
           </div>
-          <p class="section-desc" id="notify-status">First time for a group: open it in Teams for web, copy the address bar URL, and paste it above &mdash; it's remembered after that.</p>
+          <p class="section-desc" id="notify-status">Copies the message and opens Teams &mdash; paste it into the group above.</p>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-notify">Cancel</button>
@@ -2190,33 +2186,6 @@ function boot(seedBatches, seedStudents) {
     return 'The syllabus has been updated for the following batch(es): ' + batchNames.join(', ') + '. Kindly start the Topin config preparation accordingly.';
   }
 
-  function loadTeamsGroupLinks() {
-    try { return JSON.parse(localStorage.getItem('teams-group-links:v1') || '{}'); } catch (e) { return {}; }
-  }
-
-  function saveTeamsGroupLinks(map) {
-    try { localStorage.setItem('teams-group-links:v1', JSON.stringify(map)); } catch (e) {}
-  }
-
-  function extractTeamsChatId(url) {
-    let decoded = url || '';
-    try { decoded = decodeURIComponent(url); } catch (e) {}
-    const m = decoded.match(/19:[a-zA-Z0-9_-]+@(thread\.v2|thread\.tacv2|unq\.gbl\.spaces)/i);
-    return m ? m[0] : '';
-  }
-
-  function buildTeamsAppLink(threadId, message) {
-    const params = new URLSearchParams();
-    if (message) params.set('message', message);
-    return 'msteams:/l/chat/' + encodeURIComponent(threadId) + '/0?' + params.toString();
-  }
-
-  function buildTeamsWebLink(threadId, message) {
-    const params = new URLSearchParams();
-    if (message) params.set('message', message);
-    return 'https://teams.microsoft.com/l/chat/' + encodeURIComponent(threadId) + '/0?' + params.toString();
-  }
-
   function openNotifyModal() {
     if (!selectedBatchIds.size) return;
     const names = batches.filter(b => selectedBatchIds.has(b.id)).map(b => b.batch);
@@ -2226,8 +2195,6 @@ function boot(seedBatches, seedStudents) {
     if (listEl) listEl.textContent = names.length + ' batch' + (names.length === 1 ? '' : 'es') + ' selected: ' + names.join(', ');
     const groupEl = document.getElementById('notify-group-name');
     if (groupEl) groupEl.value = notifyLastGroup;
-    const linkEl = document.getElementById('notify-group-link');
-    if (linkEl) linkEl.value = '';
     const messageEl = document.getElementById('notify-message');
     if (messageEl) messageEl.value = defaultNotifyMessage(names);
     const statusEl = document.getElementById('notify-status');
@@ -2239,36 +2206,18 @@ function boot(seedBatches, seedStudents) {
     if (overlay) overlay.hidden = true;
   }
 
-  function resolveNotifyThreadId() {
+  async function openNotifyIn(kind) {
     const groupEl = document.getElementById('notify-group-name');
-    const linkEl = document.getElementById('notify-group-link');
-    const statusEl = document.getElementById('notify-status');
-    const groupName = groupEl ? groupEl.value.trim() : '';
-    const link = linkEl ? linkEl.value.trim() : '';
-    if (!groupName) { if (statusEl) statusEl.textContent = 'Enter a group name first.'; return null; }
-    const links = loadTeamsGroupLinks();
-    if (link) {
-      const threadId = extractTeamsChatId(link);
-      if (!threadId) { if (statusEl) statusEl.textContent = "Couldn't find a chat ID in that link — copy it from the address bar while viewing the chat in Teams for web."; return null; }
-      links[groupName] = threadId;
-      saveTeamsGroupLinks(links);
-      notifyLastGroup = groupName;
-      return threadId;
-    }
-    if (links[groupName]) { notifyLastGroup = groupName; return links[groupName]; }
-    if (statusEl) statusEl.textContent = 'No saved link for "' + groupName + '" yet — paste the chat link once to save it.';
-    return null;
-  }
-
-  function openNotifyIn(kind) {
     const msgEl = document.getElementById('notify-message');
     const statusEl = document.getElementById('notify-status');
+    const groupName = groupEl ? groupEl.value.trim() : '';
     const message = msgEl ? msgEl.value.trim() : '';
-    const threadId = resolveNotifyThreadId();
-    if (!threadId) return;
-    const link = kind === 'app' ? buildTeamsAppLink(threadId, message) : buildTeamsWebLink(threadId, message);
-    window.open(link, kind === 'app' ? '_self' : '_blank', 'noopener,noreferrer');
-    if (statusEl) statusEl.textContent = 'Opened in Teams ' + (kind === 'app' ? 'app' : 'web') + '.';
+    if (!message) { if (statusEl) statusEl.textContent = 'Message is empty.'; return; }
+    notifyLastGroup = groupName;
+    try { await navigator.clipboard.writeText(message); } catch (err) {}
+    const url = kind === 'app' ? 'msteams:/' : 'https://teams.microsoft.com/';
+    window.open(url, kind === 'app' ? '_self' : '_blank', 'noopener,noreferrer');
+    if (statusEl) statusEl.textContent = 'Message copied' + (groupName ? ' — paste it into ' + groupName : '') + ' once Teams opens.';
   }
 
   function handleImportFile(file) {
