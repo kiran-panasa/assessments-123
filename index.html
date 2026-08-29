@@ -310,7 +310,7 @@ function boot(seedBatches, seedStudents) {
   let studentBatchFilter = '';
   let selectedStudentIds = new Set();
   let selectedBatchIds = new Set();
-  let notifyLastGroup = '';
+  let notifyLastRecipients = '';
   let studentImportPreview = null;
   let configEditingId = null;
   let configDraft = null;
@@ -841,12 +841,12 @@ function boot(seedBatches, seedStudents) {
           <p class="section-desc" id="notify-batch-list"></p>
           <div class="modal-field-stack">
             <div class="filter-field">
-              <label for="notify-group-name">Group name</label>
-              <input type="text" id="notify-group-name" placeholder="e.g. Intensive_Offline_Assessment_Issues">
+              <label for="notify-recipients">Recipients (Teams emails, comma-separated)</label>
+              <input type="text" id="notify-recipients" placeholder="sme1@nxtwave.co.in, sme2@nxtwave.co.in">
             </div>
             <div class="filter-field"><label for="notify-message">Message</label><textarea id="notify-message" rows="4"></textarea></div>
           </div>
-          <p class="section-desc" id="notify-status">Copies the message and opens Teams &mdash; paste it into the group above.</p>
+          <p class="section-desc" id="notify-status">Opens (or creates) a Teams chat with these people and pre-fills the message &mdash; you just hit Send.</p>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-notify">Cancel</button>
@@ -2193,8 +2193,8 @@ function boot(seedBatches, seedStudents) {
     if (overlay) overlay.hidden = false;
     const listEl = document.getElementById('notify-batch-list');
     if (listEl) listEl.textContent = names.length + ' batch' + (names.length === 1 ? '' : 'es') + ' selected: ' + names.join(', ');
-    const groupEl = document.getElementById('notify-group-name');
-    if (groupEl) groupEl.value = notifyLastGroup;
+    const recipientsEl = document.getElementById('notify-recipients');
+    if (recipientsEl) recipientsEl.value = notifyLastRecipients;
     const messageEl = document.getElementById('notify-message');
     if (messageEl) messageEl.value = defaultNotifyMessage(names);
     const statusEl = document.getElementById('notify-status');
@@ -2206,18 +2206,27 @@ function boot(seedBatches, seedStudents) {
     if (overlay) overlay.hidden = true;
   }
 
-  async function openNotifyIn(kind) {
-    const groupEl = document.getElementById('notify-group-name');
+  function buildTeamsChatLink(kind, recipients, message) {
+    const users = recipients.split(',').map(s => s.trim()).filter(Boolean).join(',');
+    const params = new URLSearchParams();
+    if (users) params.set('users', users);
+    if (message) params.set('message', message);
+    const base = kind === 'app' ? 'msteams:/l/chat/0/0' : 'https://teams.microsoft.com/l/chat/0/0';
+    return base + '?' + params.toString();
+  }
+
+  function openNotifyIn(kind) {
+    const recipientsEl = document.getElementById('notify-recipients');
     const msgEl = document.getElementById('notify-message');
     const statusEl = document.getElementById('notify-status');
-    const groupName = groupEl ? groupEl.value.trim() : '';
+    const recipients = recipientsEl ? recipientsEl.value.trim() : '';
     const message = msgEl ? msgEl.value.trim() : '';
+    if (!recipients) { if (statusEl) statusEl.textContent = 'Add at least one recipient email first.'; return; }
     if (!message) { if (statusEl) statusEl.textContent = 'Message is empty.'; return; }
-    notifyLastGroup = groupName;
-    try { await navigator.clipboard.writeText(message); } catch (err) {}
-    const url = kind === 'app' ? 'msteams:/' : 'https://teams.microsoft.com/';
-    window.open(url, kind === 'app' ? '_self' : '_blank', 'noopener,noreferrer');
-    if (statusEl) statusEl.textContent = 'Message copied' + (groupName ? ' — paste it into ' + groupName : '') + ' once Teams opens.';
+    notifyLastRecipients = recipients;
+    const link = buildTeamsChatLink(kind, recipients, message);
+    window.open(link, kind === 'app' ? '_self' : '_blank', 'noopener,noreferrer');
+    if (statusEl) statusEl.textContent = 'Opening Teams ' + (kind === 'app' ? 'app' : 'web') + ' with the message pre-filled…';
   }
 
   function handleImportFile(file) {
