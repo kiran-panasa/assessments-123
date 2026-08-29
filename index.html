@@ -311,12 +311,6 @@ function boot(seedBatches, seedStudents) {
   let selectedStudentIds = new Set();
   let selectedBatchIds = new Set();
   let notifyLastGroup = '';
-  let notifyLastTag = '';
-  let msalInstance = null;
-  let msalAccount = null;
-  const MSAL_CLIENT_ID = 'bf3012ae-8431-4618-a829-ddb2a7fb5eac';
-  const MSAL_TENANT_ID = '6ae3d026-e965-483e-8309-8f8f3aca71c8';
-  const TEAMS_SCOPES = ['Chat.Read', 'ChatMessage.Send', 'User.Read', 'User.ReadBasic.All'];
   let studentImportPreview = null;
   let configEditingId = null;
   let configDraft = null;
@@ -847,19 +841,16 @@ function boot(seedBatches, seedStudents) {
           <p class="section-desc" id="notify-batch-list"></p>
           <div class="modal-field-stack">
             <div class="filter-field">
-              <label for="notify-group-name">Teams group chat name</label>
+              <label for="notify-group-name">Group name</label>
               <input type="text" id="notify-group-name" placeholder="e.g. Intensive_Offline_Assessment_Issues">
             </div>
-            <div id="notify-chat-suggestions"></div>
-            <button type="button" class="btn btn--ghost btn--sm" data-action="notify-show-chats">Show my Teams chats</button>
-            <div class="filter-field"><label for="notify-tag-email">Tag (email, optional)</label><input type="text" id="notify-tag-email" placeholder="poshala.varsha@nxtwave.co.in"></div>
             <div class="filter-field"><label for="notify-message">Message</label><textarea id="notify-message" rows="4"></textarea></div>
           </div>
-          <p class="section-desc" id="notify-status"></p>
+          <p class="section-desc">Copies the message, then opens Teams &mdash; paste it into the group above.</p>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-notify">Cancel</button>
-          <button type="button" class="btn btn--primary btn--sm" id="notify-send-btn" data-action="send-teams-message">Send to Teams</button>
+          <button type="button" class="btn btn--primary btn--sm" data-action="copy-notify-message">Copy &amp; Open Teams</button>
         </div>
       </div>
     </div>
@@ -2203,14 +2194,8 @@ function boot(seedBatches, seedStudents) {
     if (listEl) listEl.textContent = names.length + ' batch' + (names.length === 1 ? '' : 'es') + ' selected: ' + names.join(', ');
     const groupEl = document.getElementById('notify-group-name');
     if (groupEl) groupEl.value = notifyLastGroup;
-    const tagEl = document.getElementById('notify-tag-email');
-    if (tagEl) tagEl.value = notifyLastTag;
     const messageEl = document.getElementById('notify-message');
     if (messageEl) messageEl.value = defaultNotifyMessage(names);
-    const statusEl = document.getElementById('notify-status');
-    if (statusEl) statusEl.textContent = '';
-    const suggestEl = document.getElementById('notify-chat-suggestions');
-    if (suggestEl) suggestEl.innerHTML = '';
   }
 
   function closeNotifyModal() {
@@ -2218,144 +2203,20 @@ function boot(seedBatches, seedStudents) {
     if (overlay) overlay.hidden = true;
   }
 
-  function loadScriptOnce(src) {
-    return new Promise((resolve, reject) => {
-      if (document.querySelector('script[data-src="' + src + '"]')) { resolve(); return; }
-      const s = document.createElement('script');
-      s.src = src;
-      s.dataset.src = src;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error('Failed to load ' + src));
-      document.head.appendChild(s);
-    });
-  }
-
-  async function ensureMsal() {
-    if (msalInstance) return msalInstance;
-    await loadScriptOnce('https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js');
-    if (!window.msal) throw new Error('MSAL library did not load correctly.');
-    msalInstance = new window.msal.PublicClientApplication({
-      auth: { clientId: MSAL_CLIENT_ID, authority: 'https://login.microsoftonline.com/' + MSAL_TENANT_ID, redirectUri: window.location.origin },
-      cache: { cacheLocation: 'localStorage' }
-    });
-    await msalInstance.initialize();
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts.length) msalAccount = accounts[0];
-    return msalInstance;
-  }
-
-  async function getTeamsToken() {
-    await ensureMsal();
-    if (!msalAccount) {
-      const result = await msalInstance.loginPopup({ scopes: TEAMS_SCOPES });
-      msalAccount = result.account;
-    }
-    try {
-      const result = await msalInstance.acquireTokenSilent({ scopes: TEAMS_SCOPES, account: msalAccount });
-      return result.accessToken;
-    } catch (err) {
-      const result = await msalInstance.acquireTokenPopup({ scopes: TEAMS_SCOPES });
-      msalAccount = result.account;
-      return result.accessToken;
-    }
-  }
-
-  async function fetchMyChats() {
-    const token = await getTeamsToken();
-    const res = await fetch('https://graph.microsoft.com/v1.0/me/chats?$top=50&$select=id,topic,chatType', {
-      headers: { Authorization: 'Bearer ' + token }
-    });
-    if (!res.ok) throw new Error('Could not load your chats (' + res.status + ')');
-    const data = await res.json();
-    return (data.value || []).filter(c => c.topic).map(c => ({ id: c.id, topic: c.topic }));
-  }
-
-  async function resolveTeamsUser(email) {
-    const token = await getTeamsToken();
-    const res = await fetch('https://graph.microsoft.com/v1.0/users/' + encodeURIComponent(email) + '?$select=id,displayName,mail', {
-      headers: { Authorization: 'Bearer ' + token }
-    });
-    if (!res.ok) throw new Error('Could not find a Teams user for ' + email);
-    return res.json();
-  }
-
-  async function sendTeamsChatMessage(chatId, message, mentionUser) {
-    const token = await getTeamsToken();
-    let body;
-    if (mentionUser) {
-      body = {
-        body: {
-          contentType: 'html',
-          content: '<at id="0">' + esc(mentionUser.displayName) + '</at> ' + esc(message).replace(/\n/g, '<br>')
-        },
-        mentions: [{
-          id: 0,
-          mentionText: mentionUser.displayName,
-          mentioned: { user: { id: mentionUser.id, displayName: mentionUser.displayName, userIdentityType: 'aadUser' } }
-        }]
-      };
-    } else {
-      body = { body: { contentType: 'text', content: message } };
-    }
-    const res = await fetch('https://graph.microsoft.com/v1.0/chats/' + chatId + '/messages', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error('Send failed (' + res.status + '): ' + errText);
-    }
-    return res.json();
-  }
-
-  function renderChatSuggestions(chats) {
-    const el = document.getElementById('notify-chat-suggestions');
-    if (!el) return;
-    if (!chats.length) { el.innerHTML = '<span class="muted-cell">No named group chats found.</span>'; return; }
-    el.innerHTML = chats.map(c => '<button type="button" class="btn btn--ghost btn--xs" data-action="pick-notify-chat" data-name="'+esc(c.topic)+'">'+esc(c.topic)+'</button>').join(' ');
-  }
-
-  async function showMyTeamsChats() {
-    const statusEl = document.getElementById('notify-status');
-    if (statusEl) statusEl.textContent = 'Signing in / loading your chats…';
-    try {
-      const chats = await fetchMyChats();
-      renderChatSuggestions(chats);
-      if (statusEl) statusEl.textContent = chats.length ? 'Click a chat name to use it, or type it manually.' : 'No named group chats found in your account.';
-    } catch (err) {
-      if (statusEl) statusEl.textContent = 'Could not load chats: ' + err.message;
-    }
-  }
-
-  async function sendTeamsMessage() {
+  async function copyNotifyMessage() {
     const groupEl = document.getElementById('notify-group-name');
-    const tagEl = document.getElementById('notify-tag-email');
     const msgEl = document.getElementById('notify-message');
-    const statusEl = document.getElementById('notify-status');
-    const sendBtn = document.getElementById('notify-send-btn');
     const groupName = groupEl ? groupEl.value.trim() : '';
-    const tagEmail = tagEl ? tagEl.value.trim() : '';
     const message = msgEl ? msgEl.value.trim() : '';
-    if (!groupName) { if (statusEl) statusEl.textContent = 'Enter or pick a group chat name first.'; return; }
-    if (!message) { if (statusEl) statusEl.textContent = 'Message is empty.'; return; }
-    if (sendBtn) sendBtn.disabled = true;
-    if (statusEl) statusEl.textContent = 'Sending…';
+    if (!message) { flashToast('Message is empty.', 'error'); return; }
+    notifyLastGroup = groupName;
     try {
-      const chats = await fetchMyChats();
-      const match = chats.find(c => c.topic && c.topic.trim().toLowerCase() === groupName.toLowerCase());
-      if (!match) throw new Error('No chat named "' + groupName + '" found among your Teams chats. Try "Show my Teams chats" to see exact names.');
-      let mentionUser = null;
-      if (tagEmail) mentionUser = await resolveTeamsUser(tagEmail);
-      await sendTeamsChatMessage(match.id, message, mentionUser);
-      notifyLastGroup = groupName;
-      notifyLastTag = tagEmail;
-      flashToast('Message sent to ' + groupName + '.', 'success');
+      await navigator.clipboard.writeText(message);
+      flashToast('Message copied' + (groupName ? ' — paste it into ' + groupName + ' in Teams.' : '.'), 'success');
+      window.open('https://teams.microsoft.com/', '_blank', 'noopener,noreferrer');
       closeNotifyModal();
     } catch (err) {
-      if (statusEl) statusEl.textContent = 'Failed: ' + err.message;
-    } finally {
-      if (sendBtn) sendBtn.disabled = false;
+      flashToast('Could not copy to clipboard — select and copy the message manually.', 'error');
     }
   }
 
@@ -2777,15 +2638,8 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'close-notify') {
       closeNotifyModal();
     }
-    else if (action === 'notify-show-chats') {
-      showMyTeamsChats();
-    }
-    else if (action === 'pick-notify-chat') {
-      const el = document.getElementById('notify-group-name');
-      if (el) el.value = btn.dataset.name;
-    }
-    else if (action === 'send-teams-message') {
-      sendTeamsMessage();
+    else if (action === 'copy-notify-message') {
+      copyNotifyMessage();
     }
     else if (action === 'confirm-import') {
       if (!canWrite || !importPreview || !importPreview.batches.length) return;
