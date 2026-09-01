@@ -215,6 +215,12 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .tab-btn:hover{color:var(--ink);}
 .tab-btn.active{color:var(--accent-ink);border-bottom-color:var(--accent);}
 .config-link{color:var(--accent-ink);font-size:12px;text-decoration:underline;text-decoration-color:var(--border);word-break:break-all;}
+.published-link-cell{display:flex;flex-direction:column;gap:4px;}
+.published-link-row{display:flex;align-items:center;gap:6px;}
+.published-link-details{color:var(--accent-ink);font-size:12px;font-weight:600;text-decoration:underline;text-decoration-color:var(--border);}
+.published-link-pending{color:var(--muted);font-size:12px;font-weight:600;font-style:italic;cursor:help;}
+.copy-icon-btn{border:none;background:none;cursor:pointer;font-size:11px;padding:1px 3px;line-height:1;border-radius:4px;opacity:.7;}
+.copy-icon-btn:hover{opacity:1;background:var(--surface-2);}
 .config-link:hover{text-decoration-color:currentColor;}
 .import-file-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .import-summary{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);margin:0 0 10px;}
@@ -1484,6 +1490,29 @@ function boot(seedBatches, seedStudents) {
     return '<div class="actions">' + parts.join('') + '</div>';
   }
 
+  function copyIconButton(value) {
+    return '<button type="button" class="copy-icon-btn" data-action="copy-link" data-value="'+esc(value)+'" title="Copy link" aria-label="Copy link">&#128203;</button>';
+  }
+
+  function deriveDetailsLink(url) {
+    if (!url || !url.includes('/view-assessment/')) return '';
+    return url.replace('/view-assessment/', '/view-details/');
+  }
+
+  function publishedLinkCell(configUrl) {
+    if (!configUrl) return dash();
+    const short = configUrl.length > 30 ? configUrl.slice(0, 27) + '…' : configUrl;
+    const detailsUrl = deriveDetailsLink(configUrl);
+    let html = '<div class="published-link-cell">';
+    html += '<div class="published-link-row"><a href="'+esc(configUrl)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(configUrl)+'">'+esc(short)+'</a>' + copyIconButton(configUrl) + '</div>';
+    html += '<div class="published-link-row"><span class="published-link-pending" title="Link format pending — coming soon">Assessment Link ↗</span></div>';
+    if (detailsUrl) {
+      html += '<div class="published-link-row"><a href="'+esc(detailsUrl)+'" target="_blank" rel="noopener noreferrer" class="published-link-details">Details Link ↗</a>' + copyIconButton(detailsUrl) + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
   function assessRowHTML(b, index) {
     const status = assessStatus(b);
     const statusLabel = status === 'published' ? 'Live' : (status === 'ready' ? 'Ready' : 'Not Configured');
@@ -1501,8 +1530,8 @@ function boot(seedBatches, seedStudents) {
       + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '<div class="muted-cell">' + count + ' student' + (count === 1 ? '' : 's') + '</div></td>'
       + '<td>' + (esc(b.week) || dash()) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
-      + '<td>' + configField('mainConfigUrl', b.mainConfigUrl, false) + '</td>'
-      + '<td>' + (b.mockRequired ? configField('mockConfigUrl', b.mockConfigUrl, false) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (status === 'published' ? publishedLinkCell(b.mainConfigUrl) : configField('mainConfigUrl', b.mainConfigUrl, false)) + '</td>'
+      + '<td>' + (b.mockRequired ? (status === 'published' ? publishedLinkCell(b.mockConfigUrl) : configField('mockConfigUrl', b.mockConfigUrl, false)) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + statusCell + '</td>'
       + '<td class="col-actions">' + assessActionsCell(b) + '</td>'
       + '</tr>';
@@ -2774,6 +2803,13 @@ function boot(seedBatches, seedStudents) {
     }
     else if (action === 'submit-publish-modal') {
       submitPublishModal();
+    }
+    else if (action === 'copy-link') {
+      const value = btn.dataset.value;
+      if (!value) return;
+      navigator.clipboard.writeText(value)
+        .then(() => flashToast('Link copied.', 'success'))
+        .catch(() => flashToast('Could not copy link.', 'error'));
     }
     else if (action === 'confirm-import') {
       if (!canWrite || !importPreview || !importPreview.batches.length) return;
