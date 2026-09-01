@@ -154,6 +154,17 @@ button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px
 .filter-field input[type="date"]{font-family:var(--font-mono);min-width:130px;}
 .filter-field textarea{width:100%;resize:vertical;min-height:70px;}
 .modal-field-stack{display:flex;flex-direction:column;gap:14px;}
+.publish-modal-subtitle{font-size:13px;color:var(--muted);margin:0 0 14px;}
+.publish-modal-subtitle strong{color:var(--ink);}
+.publish-detail-list{display:flex;flex-direction:column;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:4px 14px;margin-bottom:16px;}
+.publish-detail-row{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+.publish-detail-row:last-child{border-bottom:none;}
+.publish-detail-check{color:var(--accent-ink);font-size:13px;line-height:1.5;flex-shrink:0;}
+.publish-detail-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:2px;}
+.publish-detail-value{font-size:13px;color:var(--ink);word-break:break-word;}
+.publish-detail-value a{color:var(--accent-ink);}
+.publish-modal-confirm{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--ink);cursor:pointer;text-transform:uppercase;letter-spacing:.02em;}
+.publish-modal-confirm input{margin-top:2px;}
 .timeline{display:flex;flex-direction:column;}
 .timeline-row{display:grid;grid-template-columns:128px 150px 1fr auto;gap:14px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--border-soft);font-size:12.5px;}
 .timeline-batch{color:var(--muted);font-size:11.5px;margin-left:6px;}
@@ -326,6 +337,8 @@ function boot(seedBatches, seedStudents) {
   let interviewDraft = null;
   let interviewSearchQuery = '';
   let interviewBatchFilter = '';
+  let publishModalTarget = null;
+  let publishModalConfirmed = false;
   let overviewDateRange = getWeekRange(new Date());
   let whatsNextDate = todayISO();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
@@ -852,6 +865,29 @@ function boot(seedBatches, seedStudents) {
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-notify">Cancel</button>
           <button type="button" class="btn btn--ghost btn--sm" data-action="open-notify-web">Open in Teams Web</button>
           <button type="button" class="btn btn--primary btn--sm" data-action="open-notify-app">Open in Teams App</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="publish-modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="publish-modal-title">
+        <div class="modal-header">
+          <h3 id="publish-modal-title">Publish Assessment</h3>
+          <button type="button" class="modal-close" data-action="close-publish-modal" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="publish-modal-subtitle">
+            <span id="publish-modal-subtitle"></span>
+            <span id="publish-modal-badge" class="type-tag type-tag--blue"></span>
+          </p>
+          <div class="publish-detail-list" id="publish-modal-details"></div>
+          <label class="publish-modal-confirm">
+            <input type="checkbox" id="publish-modal-confirm-check">
+            I've reviewed the details above and confirm they're correct
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-publish-modal">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" id="publish-modal-submit" data-action="submit-publish-modal" disabled>Publish</button>
         </div>
       </div>
     </div>
@@ -1426,8 +1462,8 @@ function boot(seedBatches, seedStudents) {
     const parts = [];
 
     if (status !== 'published') {
-      if (!b.mainPublished) parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="main"'+(b.mainConfigUrl?'':' disabled title="Add a main config link in Topin Configs first"')+'>Publish Main</button>');
-      if (b.mockRequired && !b.mockPublished) parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="publish-assessment" data-id="'+b.id+'" data-type="mock"'+(b.mockConfigUrl?'':' disabled title="Add a mock config link in Topin Configs first"')+'>Publish Mock</button>');
+      if (!b.mainPublished) parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="main"'+(b.mainConfigUrl?'':' disabled title="Add a main config link in Topin Configs first"')+'>Publish Main</button>');
+      if (b.mockRequired && !b.mockPublished) parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="mock"'+(b.mockConfigUrl?'':' disabled title="Add a mock config link in Topin Configs first"')+'>Publish Mock</button>');
       parts.push(viewStudentsButton(b.id));
       return '<div class="actions">' + parts.join('') + '</div>';
     }
@@ -1501,6 +1537,84 @@ function boot(seedBatches, seedStudents) {
     tbody.innerHTML = filtered.map((b, i) => assessRowHTML(b, i + 1)).join('');
   }
 
+  function splitDT(dt) {
+    if (!dt) return { date: '', time: '' };
+    const idx = dt.indexOf('T');
+    return idx === -1 ? { date: dt, time: '' } : { date: dt.slice(0, idx), time: dt.slice(idx + 1) };
+  }
+
+  function publishModalDetails(b, type) {
+    if (type === 'main') {
+      const start = splitDT(b.mainStartAt);
+      const end = splitDT(b.mainEndAt);
+      return [
+        { label: 'Main Config Link', value: b.mainConfigUrl, isLink: true },
+        { label: 'Assessment Date', value: fmtDate(start.date) },
+        { label: 'Start Time', value: fmt12(start.time) },
+        { label: 'End Time', value: fmt12(end.time) },
+        { label: 'Assessment Title', value: b.mainTitle },
+        { label: 'Main Exam Tag', value: b.mainTag },
+      ];
+    }
+    return [
+      { label: 'Mock Config Link', value: b.mockConfigUrl, isLink: true },
+      { label: 'Assessment Date', value: fmtDate(b.mockDate) },
+      { label: 'Start Time', value: fmt12(b.mockStart) },
+      { label: 'End Time', value: fmt12(b.mockEnd) },
+      { label: 'Assessment Title', value: b.mockTitle },
+      { label: 'Mock Exam Tag', value: b.mockTag },
+    ];
+  }
+
+  function renderPublishModal() {
+    const overlay = document.getElementById('publish-modal-overlay');
+    if (!overlay) return;
+    if (!publishModalTarget) { overlay.hidden = true; return; }
+    const b = batches.find(x => x.id === publishModalTarget.id);
+    if (!b) { closePublishModal(); return; }
+    overlay.hidden = false;
+    const type = publishModalTarget.type;
+    const subtitleEl = document.getElementById('publish-modal-subtitle');
+    if (subtitleEl) subtitleEl.innerHTML = 'Marking <strong>' + esc(b.batch) + (b.week ? ' &mdash; ' + esc(b.week) : '') + '</strong> as published.';
+    const badgeEl = document.getElementById('publish-modal-badge');
+    if (badgeEl) badgeEl.textContent = type === 'main' ? 'Main Assessment' : 'Mock Assessment';
+    const detailsEl = document.getElementById('publish-modal-details');
+    if (detailsEl) {
+      detailsEl.innerHTML = publishModalDetails(b, type).map(d =>
+        '<div class="publish-detail-row">'
+        + '<span class="publish-detail-check">&#10003;</span>'
+        + '<div><div class="publish-detail-label">' + esc(d.label) + '</div>'
+        + '<div class="publish-detail-value">' + (d.value ? (d.isLink ? '<a href="'+esc(d.value)+'" target="_blank" rel="noopener noreferrer">'+esc(d.value)+'</a>' : esc(d.value)) : '<span class="muted-cell">Not set</span>') + '</div></div>'
+        + '</div>'
+      ).join('');
+    }
+    const checkEl = document.getElementById('publish-modal-confirm-check');
+    if (checkEl) checkEl.checked = publishModalConfirmed;
+    const submitBtn = document.getElementById('publish-modal-submit');
+    if (submitBtn) submitBtn.disabled = !publishModalConfirmed;
+  }
+
+  function openPublishModal(id, type) {
+    if (!canWrite) return;
+    publishModalTarget = { id, type };
+    publishModalConfirmed = false;
+    renderPublishModal();
+  }
+
+  function closePublishModal() {
+    publishModalTarget = null;
+    publishModalConfirmed = false;
+    const overlay = document.getElementById('publish-modal-overlay');
+    if (overlay) overlay.hidden = true;
+  }
+
+  function submitPublishModal() {
+    if (!publishModalTarget || !publishModalConfirmed) return;
+    const { id, type } = publishModalTarget;
+    closePublishModal();
+    publishAssessment(id, type);
+  }
+
   function publishAssessment(id, type) {
     if (!canWrite) return;
     const idx = batches.findIndex(b => b.id === id);
@@ -1508,7 +1622,6 @@ function boot(seedBatches, seedStudents) {
     const label = type === 'main' ? 'Main' : 'Mock';
     const linkField = type === 'main' ? 'mainConfigUrl' : 'mockConfigUrl';
     if (!batches[idx][linkField]) { flashToast('Add a ' + label.toLowerCase() + ' config link in Topin Configs first.', 'error'); return; }
-    if (!confirm('Publish the ' + label + ' assessment for ' + batches[idx].batch + '?')) return;
     const field = type === 'main' ? 'mainPublished' : 'mockPublished';
     const now = new Date().toISOString();
     let updated = { ...batches[idx], [field]: true, updatedAt: now };
@@ -2653,6 +2766,15 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'open-notify-web') {
       openNotifyIn('web');
     }
+    else if (action === 'open-publish-modal') {
+      openPublishModal(id, btn.dataset.type);
+    }
+    else if (action === 'close-publish-modal') {
+      closePublishModal();
+    }
+    else if (action === 'submit-publish-modal') {
+      submitPublishModal();
+    }
     else if (action === 'confirm-import') {
       if (!canWrite || !importPreview || !importPreview.batches.length) return;
       const imported = importPreview.batches;
@@ -2737,6 +2859,12 @@ function boot(seedBatches, seedStudents) {
       if (t.checked) filtered.forEach(s => selectedStudentIds.add(s.id));
       else filtered.forEach(s => selectedStudentIds.delete(s.id));
       renderStudentsTable();
+      return;
+    }
+    if (t.id === 'publish-modal-confirm-check') {
+      publishModalConfirmed = t.checked;
+      const submitBtn = document.getElementById('publish-modal-submit');
+      if (submitBtn) submitBtn.disabled = !publishModalConfirmed;
       return;
     }
     if (t.matches('.row-checkbox-batch')) {
