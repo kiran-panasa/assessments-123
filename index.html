@@ -1486,7 +1486,7 @@ function boot(seedBatches, seedStudents) {
       parts.push(b.mainInviteSent ? assessInvitedBadge('main') : assessInviteButton(b, 'main'));
       if (b.mockRequired) parts.push(b.mockInviteSent ? assessInvitedBadge('mock') : assessInviteButton(b, 'mock'));
     }
-    if (assessStatusTab !== 'published') parts.push(viewStudentsButton(b.id));
+    if (assessStatusTab !== 'published' && assessStatusTab !== 'invites-sent') parts.push(viewStudentsButton(b.id));
     return '<div class="actions">' + parts.join('') + '</div>';
   }
 
