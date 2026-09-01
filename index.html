@@ -218,7 +218,6 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .published-link-cell{display:flex;flex-direction:column;gap:4px;}
 .published-link-row{display:flex;align-items:center;gap:6px;}
 .published-link-details{color:var(--accent-ink);font-size:12px;font-weight:600;text-decoration:underline;text-decoration-color:var(--border);}
-.published-link-pending{color:var(--muted);font-size:12px;font-weight:600;font-style:italic;cursor:help;}
 .copy-icon-btn{border:none;background:none;cursor:pointer;font-size:11px;padding:1px 3px;line-height:1;border-radius:4px;opacity:.7;}
 .copy-icon-btn:hover{opacity:1;background:var(--surface-2);}
 .config-link:hover{text-decoration-color:currentColor;}
@@ -1494,9 +1493,15 @@ function boot(seedBatches, seedStudents) {
     return '<button type="button" class="copy-icon-btn" data-action="copy-link" data-value="'+esc(value)+'" title="Copy link" aria-label="Copy link">&#128203;</button>';
   }
 
+  function pendingCopyIconButton() {
+    return '<button type="button" class="copy-icon-btn" data-action="pending-link" title="Not available yet" aria-label="Not available yet">&#128203;</button>';
+  }
+
   function deriveDetailsLink(url) {
-    if (!url || !url.includes('/view-assessment/')) return '';
-    return url.replace('/view-assessment/', '/view-details/');
+    if (!url) return '';
+    if (url.includes('/view-assessment/')) return url.replace('/view-assessment/', '/view-details/');
+    if (url.includes('/edit-assessment/')) return url.replace('/edit-assessment/', '/view-details/');
+    return '';
   }
 
   function publishedLinkCell(configUrl) {
@@ -1505,10 +1510,12 @@ function boot(seedBatches, seedStudents) {
     const detailsUrl = deriveDetailsLink(configUrl);
     let html = '<div class="published-link-cell">';
     html += '<div class="published-link-row"><a href="'+esc(configUrl)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(configUrl)+'">'+esc(short)+'</a>' + copyIconButton(configUrl) + '</div>';
-    html += '<div class="published-link-row"><span class="published-link-pending" title="Link format pending — coming soon">Assessment Link ↗</span></div>';
-    if (detailsUrl) {
-      html += '<div class="published-link-row"><a href="'+esc(detailsUrl)+'" target="_blank" rel="noopener noreferrer" class="published-link-details">Details Link ↗</a>' + copyIconButton(detailsUrl) + '</div>';
-    }
+    html += '<div class="published-link-row"><a href="javascript:void(0)" class="published-link-details" data-action="pending-link">Assessment Link ↗</a>' + pendingCopyIconButton() + '</div>';
+    html += '<div class="published-link-row">'
+      + (detailsUrl
+        ? '<a href="'+esc(detailsUrl)+'" target="_blank" rel="noopener noreferrer" class="published-link-details">Details Link ↗</a>' + copyIconButton(detailsUrl)
+        : '<a href="javascript:void(0)" class="published-link-details" data-action="pending-link">Details Link ↗</a>' + pendingCopyIconButton())
+      + '</div>';
     html += '</div>';
     return html;
   }
@@ -2810,6 +2817,9 @@ function boot(seedBatches, seedStudents) {
       navigator.clipboard.writeText(value)
         .then(() => flashToast('Link copied.', 'success'))
         .catch(() => flashToast('Could not copy link.', 'error'));
+    }
+    else if (action === 'pending-link') {
+      flashToast("This link isn't available yet.", 'error');
     }
     else if (action === 'confirm-import') {
       if (!canWrite || !importPreview || !importPreview.batches.length) return;
