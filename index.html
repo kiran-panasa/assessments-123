@@ -1464,7 +1464,7 @@ function boot(seedBatches, seedStudents) {
     if (status !== 'published') {
       if (!b.mainPublished) parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="main"'+(b.mainConfigUrl?'':' disabled title="Add a main config link in Topin Configs first"')+'>Publish Main</button>');
       if (b.mockRequired && !b.mockPublished) parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="mock"'+(b.mockConfigUrl?'':' disabled title="Add a mock config link in Topin Configs first"')+'>Publish Mock</button>');
-      parts.push(viewStudentsButton(b.id));
+      if (assessStatusTab !== 'ready') parts.push(viewStudentsButton(b.id));
       return '<div class="actions">' + parts.join('') + '</div>';
     }
 
