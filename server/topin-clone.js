@@ -23,8 +23,12 @@ function normalizeSpaces(value) {
 }
 
 function normalizeSampleViewLink(url) {
-  const trimmed = normalizeSpaces(url);
+  let trimmed = normalizeSpaces(url);
   if (!trimmed) throw new Error("Config link is empty.");
+  // Tolerate a pasted link missing its scheme (e.g. "config.topin.tech/edit-assessment/...").
+  if (!trimmed.startsWith("http") && /^config\.topin\.tech\//i.test(trimmed)) {
+    trimmed = "https://" + trimmed;
+  }
   if (!trimmed.startsWith("http")) {
     throw new Error(`Config link does not look like a URL: "${trimmed}"`);
   }
