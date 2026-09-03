@@ -360,6 +360,13 @@ function boot(seedBatches, seedStudents) {
   let publishModalTarget = null;
   let publishModalConfirmed = false;
   let sseSource = null;
+  let progressModalOpen = false;
+  let progressModalTitle = '';
+  let progressLogLines = [];
+  let progressResult = null;
+  let progressShowCreds = false;
+  let progressCredsStatus = null;
+  let progressMobilePrefill = '';
   let overviewDateRange = getWeekRange(new Date());
   let whatsNextDate = todayISO();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
@@ -1798,52 +1805,89 @@ function boot(seedBatches, seedStudents) {
     }
   }
 
-  function openProgressModal(title) {
+  // The progress modal's visible state (log lines, result, OTP box) is driven
+  // entirely by these variables and reapplied by renderProgressModal() — never
+  // mutated only via one-off DOM writes. This app rebuilds document.body's
+  // innerHTML wholesale on every render() (e.g. when a publish finishes and
+  // applyPublishResult() calls render()), which would otherwise silently reset
+  // or hide this modal mid-flow. renderProgressModal() is also called at the
+  // end of the main render(), so any such rebuild restores it correctly.
+  function renderProgressModal() {
     const overlay = document.getElementById('progress-modal-overlay');
     if (!overlay) return;
-    document.getElementById('progress-modal-title').textContent = title;
-    document.getElementById('progress-log').innerHTML = '';
-    const result = document.getElementById('progress-result');
-    result.hidden = true; result.className = 'progress-result'; result.textContent = '';
-    document.getElementById('progress-cancel-btn').hidden = false;
-    document.getElementById('progress-close-btn').hidden = true;
-    const box = document.getElementById('progress-creds-box'); if (box) box.hidden = true;
-    const statusEl = document.getElementById('progress-creds-status'); if (statusEl) statusEl.textContent = '';
+    overlay.hidden = !progressModalOpen;
+    if (!progressModalOpen) return;
+    const titleEl = document.getElementById('progress-modal-title');
+    if (titleEl) titleEl.textContent = progressModalTitle;
+    const log = document.getElementById('progress-log');
+    if (log) {
+      log.innerHTML = progressLogLines.map(l =>
+        '<div class="progress-log-line progress-log-line--' + esc(l.type) + '">[' + esc(l.time) + '] ' + esc(l.message) + '</div>'
+      ).join('');
+      log.scrollTop = log.scrollHeight;
+    }
+    const box = document.getElementById('progress-creds-box');
+    if (box) {
+      box.hidden = !progressShowCreds;
+      if (progressShowCreds) {
+        const mobileEl = document.getElementById('progress-mobile-input');
+        if (mobileEl && !mobileEl.value) mobileEl.value = progressMobilePrefill;
+      }
+    }
+    const statusEl = document.getElementById('progress-creds-status');
+    if (statusEl) {
+      statusEl.textContent = progressCredsStatus ? progressCredsStatus.msg : '';
+      statusEl.style.color = !progressCredsStatus ? '' : (progressCredsStatus.kind === 'error' ? 'var(--danger)' : progressCredsStatus.kind === 'success' ? 'var(--accent-ink)' : 'var(--muted)');
+    }
+    const res = document.getElementById('progress-result');
+    if (res) {
+      if (progressResult) {
+        res.hidden = false;
+        res.className = 'progress-result ' + (progressResult.success ? 'progress-result--ok' : 'progress-result--err');
+        res.textContent = progressResult.message;
+        if (progressResult.assessmentLink) {
+          const a = document.createElement('a');
+          a.href = progressResult.assessmentLink; a.target = '_blank'; a.rel = 'noopener noreferrer';
+          a.textContent = progressResult.assessmentLink;
+          res.appendChild(a);
+        }
+      } else {
+        res.hidden = true; res.className = 'progress-result'; res.textContent = '';
+      }
+    }
+    const cancelBtn = document.getElementById('progress-cancel-btn');
+    const closeBtn = document.getElementById('progress-close-btn');
+    if (cancelBtn) cancelBtn.hidden = !!progressResult;
+    if (closeBtn) closeBtn.hidden = !progressResult;
+  }
+
+  function openProgressModal(title) {
+    progressModalOpen = true;
+    progressModalTitle = title;
+    progressLogLines = [];
+    progressResult = null;
+    progressShowCreds = false;
+    progressCredsStatus = null;
+    progressMobilePrefill = localStorage.getItem('topinMobile') || '';
     window._otpProceed = null;
-    overlay.hidden = false;
+    renderProgressModal();
   }
 
   function closeProgressModal() {
-    const overlay = document.getElementById('progress-modal-overlay');
-    if (overlay) overlay.hidden = true;
+    progressModalOpen = false;
     if (sseSource) { sseSource.close(); sseSource = null; }
+    renderProgressModal();
   }
 
   function logProgress(type, message) {
-    const log = document.getElementById('progress-log');
-    if (!log) return;
-    const line = document.createElement('div');
-    line.className = 'progress-log-line progress-log-line--' + (type || 'info');
-    line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + message;
-    log.appendChild(line);
-    log.scrollTop = log.scrollHeight;
+    progressLogLines.push({ type: type || 'info', message: message, time: new Date().toLocaleTimeString() });
+    renderProgressModal();
   }
 
   function finishProgress(success, message, extra) {
     extra = extra || {};
-    const res = document.getElementById('progress-result');
-    if (!res) return;
-    res.hidden = false;
-    res.className = 'progress-result ' + (success ? 'progress-result--ok' : 'progress-result--err');
-    res.textContent = message;
-    if (extra.assessmentLink) {
-      const a = document.createElement('a');
-      a.href = extra.assessmentLink; a.target = '_blank'; a.rel = 'noopener noreferrer';
-      a.textContent = extra.assessmentLink;
-      res.appendChild(a);
-    }
-    document.getElementById('progress-cancel-btn').hidden = true;
-    document.getElementById('progress-close-btn').hidden = false;
+    progressResult = { success: success, message: message, assessmentLink: extra.assessmentLink || '' };
+    renderProgressModal();
   }
 
   async function cancelAutomation() {
@@ -1852,10 +1896,8 @@ function boot(seedBatches, seedStudents) {
   }
 
   function setCredsStatus(msg, kind) {
-    const el = document.getElementById('progress-creds-status');
-    if (!el) return;
-    el.textContent = msg;
-    el.style.color = kind === 'error' ? 'var(--danger)' : kind === 'success' ? 'var(--accent-ink)' : 'var(--muted)';
+    progressCredsStatus = { msg: msg, kind: kind };
+    renderProgressModal();
   }
 
   function applyPublishResult(id, type, data) {
@@ -1947,6 +1989,7 @@ function boot(seedBatches, seedStudents) {
         setCredsStatus('OTP sent to ' + mobile.replace(/\d(?=\d{4})/g, '*') + ' — check your phone', 'success');
         const otpEl = document.getElementById('progress-otp-input'); if (otpEl) { otpEl.value = ''; otpEl.focus(); }
       } else if (data.status === 'already_authenticated') {
+        progressShowCreds = false;
         setCredsStatus('Already logged in — resuming publish...', 'success');
         if (window._otpProceed) { const p = window._otpProceed; window._otpProceed = null; p(); }
       } else {
@@ -1966,9 +2009,9 @@ function boot(seedBatches, seedStudents) {
       const resp = await fetch(serverUrl + '/api/publish/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp }) });
       const data = await resp.json();
       if (data.status === 'authenticated') {
+        progressShowCreds = false;
         setCredsStatus('Verified — resuming publish...', 'success');
         logProgress('success', 'OTP verified — starting automation...');
-        const box = document.getElementById('progress-creds-box'); if (box) box.hidden = true;
         if (window._otpProceed) { const p = window._otpProceed; window._otpProceed = null; await p(); }
       } else {
         setCredsStatus('Wrong OTP — try again', 'error');
@@ -2018,10 +2061,8 @@ function boot(seedBatches, seedStudents) {
         if (loggedIn) { await run(); return; }
         logProgress('error', 'Auto-login failed — falling back to manual entry.');
       }
-      const box = document.getElementById('progress-creds-box');
-      if (box) box.hidden = false;
-      const mobileEl = document.getElementById('progress-mobile-input');
-      if (mobileEl) mobileEl.value = savedMobile;
+      progressShowCreds = true;
+      progressMobilePrefill = savedMobile;
       setCredsStatus('Enter your Topin mobile number and click Get OTP to log in', 'info');
       window._otpProceed = run;
     }
@@ -2201,6 +2242,7 @@ function boot(seedBatches, seedStudents) {
     renderInterviewsTable();
     updateAccessBanner();
     updateSyncBadge();
+    renderProgressModal();
   }
 
   function updateErrorDisplays() {
