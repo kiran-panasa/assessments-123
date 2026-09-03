@@ -246,6 +246,21 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
   .cards-grid{grid-template-columns:1fr;}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none !important;}}
+.server-health-row{display:flex;align-items:center;gap:10px;}
+.server-health-dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex-shrink:0;}
+.server-health-dot--ok{background:var(--accent);}
+.server-health-dot--bad{background:var(--danger);}
+.progress-log{background:#0d120e;border-radius:10px;padding:14px;height:200px;overflow-y:auto;font-family:var(--font-mono);font-size:11.5px;color:#dce8dd;line-height:1.6;}
+.progress-log-line--error{color:#f2a099;}
+.progress-log-line--success,.progress-log-line--done{color:#8fe0b8;}
+.progress-log-line--info{color:#a9c6ea;}
+.progress-creds-box{border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;}
+.progress-otp-row{display:flex;gap:10px;align-items:flex-end;}
+.progress-otp-row .filter-field{flex:1;}
+.progress-result{padding:10px 14px;border-radius:8px;font-size:12.5px;}
+.progress-result--ok{background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--accent);}
+.progress-result--err{background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger);}
+.progress-result a{display:block;margin-top:6px;font-size:11.5px;word-break:break-all;color:inherit;}
 `;
 document.getElementById('app-style').textContent = CSS;
 
@@ -344,6 +359,7 @@ function boot(seedBatches, seedStudents) {
   let interviewBatchFilter = '';
   let publishModalTarget = null;
   let publishModalConfirmed = false;
+  let sseSource = null;
   let overviewDateRange = getWeekRange(new Date());
   let whatsNextDate = todayISO();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
@@ -482,6 +498,8 @@ function boot(seedBatches, seedStudents) {
       mainInterviewConfigUrl: b.mainInterviewConfigUrl || '',
       mainPublished: !!b.mainPublished,
       mockPublished: !!b.mockPublished,
+      mainAssessmentLink: b.mainAssessmentLink || '',
+      mockAssessmentLink: b.mockAssessmentLink || '',
       publishedAt: b.publishedAt || '',
       mainInviteSent: !!b.mainInviteSent,
       mainInviteSentAt: b.mainInviteSentAt || '',
@@ -749,6 +767,7 @@ function boot(seedBatches, seedStudents) {
                 <option value="invites-sent">Invites Sent</option>
               </select></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-assess-filter">Clear</button>
+              <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="open-automation-settings">Automation Server</button>
             </div>
             <div class="table-wrap">
               <table>
@@ -893,6 +912,74 @@ function boot(seedBatches, seedStudents) {
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-publish-modal">Cancel</button>
           <button type="button" class="btn btn--primary btn--sm" id="publish-modal-submit" data-action="submit-publish-modal" disabled>Publish</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="automation-modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="automation-modal-title">
+        <div class="modal-header">
+          <h3 id="automation-modal-title">Automation Server</h3>
+          <button type="button" class="modal-close" data-action="close-automation-settings" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc">Publishing to Topin and inviting students runs through a local automation server on your own machine &mdash; it drives a real browser session against config.topin.tech. Start it once (<code>server/start.ps1</code>, or <code>cd server &amp;&amp; npm install &amp;&amp; node index.js</code>), then set its address here.</p>
+          <div class="modal-field-stack">
+            <div class="filter-field">
+              <label for="automation-server-url">Local Server URL</label>
+              <input type="text" id="automation-server-url" placeholder="http://localhost:3001">
+            </div>
+            <div class="server-health-row">
+              <span class="server-health-dot" id="automation-health-dot"></span>
+              <span id="automation-health-txt" class="muted-cell">Not checked</span>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="check-server-health">Check Connection</button>
+            </div>
+            <div class="filter-field">
+              <label for="automation-mobile">Topin Mobile Number <span class="muted-cell">(optional &mdash; enables auto login)</span></label>
+              <input type="text" id="automation-mobile" placeholder="e.g. 9876543210" maxlength="10" inputmode="numeric">
+            </div>
+            <div class="filter-field">
+              <label for="automation-otp">Topin Fixed OTP <span class="muted-cell">(optional)</span></label>
+              <input type="text" id="automation-otp" placeholder="Only if your Topin account uses a static OTP" maxlength="6" inputmode="numeric">
+            </div>
+            <p class="section-desc">Leave mobile/OTP blank to log in manually &mdash; you'll be prompted for a one-time OTP the first time you publish each session. These are stored in this browser only, never synced.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-automation-settings">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" data-action="save-automation-settings">Save</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="progress-modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="progress-modal-title">
+        <div class="modal-header">
+          <h3 id="progress-modal-title">Publishing to Topin</h3>
+          <button type="button" class="modal-close" data-action="close-progress-modal" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="progress-log" id="progress-log"></div>
+          <div class="progress-creds-box" id="progress-creds-box" hidden>
+            <div class="progress-otp-row">
+              <div class="filter-field">
+                <label for="progress-mobile-input">Topin Mobile</label>
+                <input type="text" id="progress-mobile-input" placeholder="10-digit mobile number" maxlength="10" inputmode="numeric">
+              </div>
+              <button type="button" class="btn btn--ghost btn--sm" id="progress-get-otp-btn" data-action="get-otp-inline">Get OTP</button>
+            </div>
+            <div class="progress-otp-row">
+              <div class="filter-field">
+                <label for="progress-otp-input">OTP</label>
+                <input type="text" id="progress-otp-input" placeholder="6-digit OTP" maxlength="6" inputmode="numeric">
+              </div>
+              <button type="button" class="btn btn--primary btn--sm" id="progress-otp-btn" data-action="submit-inline-otp">Verify</button>
+            </div>
+            <p class="muted-cell" id="progress-creds-status"></p>
+          </div>
+          <div class="progress-result" id="progress-result" hidden></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" id="progress-cancel-btn" data-action="cancel-automation">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" id="progress-close-btn" data-action="close-progress-modal" hidden>Close</button>
         </div>
       </div>
     </div>
@@ -1504,13 +1591,17 @@ function boot(seedBatches, seedStudents) {
     return '';
   }
 
-  function publishedLinkCell(configUrl) {
+  function publishedLinkCell(configUrl, assessmentLink) {
     if (!configUrl) return dash();
     const short = configUrl.length > 30 ? configUrl.slice(0, 27) + '…' : configUrl;
     const detailsUrl = deriveDetailsLink(configUrl);
     let html = '<div class="published-link-cell">';
     html += '<div class="published-link-row"><a href="'+esc(configUrl)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(configUrl)+'">'+esc(short)+'</a>' + copyIconButton(configUrl) + '</div>';
-    html += '<div class="published-link-row"><a href="javascript:void(0)" class="published-link-details" data-action="pending-link">Assessment Link ↗</a>' + pendingCopyIconButton() + '</div>';
+    html += '<div class="published-link-row">'
+      + (assessmentLink
+        ? '<a href="'+esc(assessmentLink)+'" target="_blank" rel="noopener noreferrer" class="published-link-details">Assessment Link ↗</a>' + copyIconButton(assessmentLink)
+        : '<a href="javascript:void(0)" class="published-link-details" data-action="pending-link">Assessment Link ↗</a>' + pendingCopyIconButton())
+      + '</div>';
     html += '<div class="published-link-row">'
       + (detailsUrl
         ? '<a href="'+esc(detailsUrl)+'" target="_blank" rel="noopener noreferrer" class="published-link-details">Details Link ↗</a>' + copyIconButton(detailsUrl)
@@ -1537,8 +1628,8 @@ function boot(seedBatches, seedStudents) {
       + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '<div class="muted-cell">' + count + ' student' + (count === 1 ? '' : 's') + '</div></td>'
       + '<td>' + (esc(b.week) || dash()) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
-      + '<td>' + (status === 'published' ? publishedLinkCell(b.mainConfigUrl) : configField('mainConfigUrl', b.mainConfigUrl, false)) + '</td>'
-      + '<td>' + (b.mockRequired ? (status === 'published' ? publishedLinkCell(b.mockConfigUrl) : configField('mockConfigUrl', b.mockConfigUrl, false)) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (status === 'published' ? publishedLinkCell(b.mainConfigUrl, b.mainAssessmentLink) : configField('mainConfigUrl', b.mainConfigUrl, false)) + '</td>'
+      + '<td>' + (b.mockRequired ? (status === 'published' ? publishedLinkCell(b.mockConfigUrl, b.mockAssessmentLink) : configField('mockConfigUrl', b.mockConfigUrl, false)) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + statusCell + '</td>'
       + '<td class="col-actions">' + assessActionsCell(b) + '</td>'
       + '</tr>';
@@ -1651,37 +1742,336 @@ function boot(seedBatches, seedStudents) {
     publishAssessment(id, type);
   }
 
-  function publishAssessment(id, type) {
-    if (!canWrite) return;
+  // ── Topin publish automation (local server) ────────────────────
+  // Publishing and inviting drive a local automation server (server/) that
+  // clones the config on the real Topin UI (Playwright) and calls Topin's
+  // production invite API. See "Automation Server" in the Assessments page.
+
+  function topinServerUrl() {
+    return localStorage.getItem('topinServerUrl') || 'http://localhost:3001';
+  }
+
+  function openAutomationSettings() {
+    const overlay = document.getElementById('automation-modal-overlay');
+    if (!overlay) return;
+    document.getElementById('automation-server-url').value = topinServerUrl();
+    document.getElementById('automation-mobile').value = localStorage.getItem('topinMobile') || '';
+    document.getElementById('automation-otp').value = localStorage.getItem('topinFixedOtp') || '';
+    const dot = document.getElementById('automation-health-dot'); if (dot) dot.className = 'server-health-dot';
+    const txt = document.getElementById('automation-health-txt'); if (txt) txt.textContent = 'Not checked';
+    overlay.hidden = false;
+  }
+
+  function closeAutomationSettings() {
+    const overlay = document.getElementById('automation-modal-overlay');
+    if (overlay) overlay.hidden = true;
+  }
+
+  function saveAutomationSettings() {
+    const url = (document.getElementById('automation-server-url').value || '').trim() || 'http://localhost:3001';
+    const mobile = (document.getElementById('automation-mobile').value || '').trim();
+    const otp = (document.getElementById('automation-otp').value || '').trim();
+    localStorage.setItem('topinServerUrl', url);
+    if (mobile) localStorage.setItem('topinMobile', mobile); else localStorage.removeItem('topinMobile');
+    if (otp) localStorage.setItem('topinFixedOtp', otp); else localStorage.removeItem('topinFixedOtp');
+    closeAutomationSettings();
+    flashToast('Automation settings saved.', 'success');
+  }
+
+  async function checkServerHealth() {
+    const url = (document.getElementById('automation-server-url').value || '').trim() || 'http://localhost:3001';
+    const dot = document.getElementById('automation-health-dot');
+    const txt = document.getElementById('automation-health-txt');
+    if (txt) txt.textContent = 'Checking…';
+    try {
+      const resp = await fetch(url + '/api/health', { signal: AbortSignal.timeout(4000) });
+      if (resp.ok) {
+        if (dot) dot.className = 'server-health-dot server-health-dot--ok';
+        if (txt) txt.textContent = 'Connected';
+      } else {
+        if (dot) dot.className = 'server-health-dot server-health-dot--bad';
+        if (txt) txt.textContent = 'Server returned an error';
+      }
+    } catch (e) {
+      if (dot) dot.className = 'server-health-dot server-health-dot--bad';
+      if (txt) txt.textContent = 'Not reachable — is the server running?';
+    }
+  }
+
+  function openProgressModal(title) {
+    const overlay = document.getElementById('progress-modal-overlay');
+    if (!overlay) return;
+    document.getElementById('progress-modal-title').textContent = title;
+    document.getElementById('progress-log').innerHTML = '';
+    const result = document.getElementById('progress-result');
+    result.hidden = true; result.className = 'progress-result'; result.textContent = '';
+    document.getElementById('progress-cancel-btn').hidden = false;
+    document.getElementById('progress-close-btn').hidden = true;
+    const box = document.getElementById('progress-creds-box'); if (box) box.hidden = true;
+    const statusEl = document.getElementById('progress-creds-status'); if (statusEl) statusEl.textContent = '';
+    window._otpProceed = null;
+    overlay.hidden = false;
+  }
+
+  function closeProgressModal() {
+    const overlay = document.getElementById('progress-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    if (sseSource) { sseSource.close(); sseSource = null; }
+  }
+
+  function logProgress(type, message) {
+    const log = document.getElementById('progress-log');
+    if (!log) return;
+    const line = document.createElement('div');
+    line.className = 'progress-log-line progress-log-line--' + (type || 'info');
+    line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + message;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function finishProgress(success, message, extra) {
+    extra = extra || {};
+    const res = document.getElementById('progress-result');
+    if (!res) return;
+    res.hidden = false;
+    res.className = 'progress-result ' + (success ? 'progress-result--ok' : 'progress-result--err');
+    res.textContent = message;
+    if (extra.assessmentLink) {
+      const a = document.createElement('a');
+      a.href = extra.assessmentLink; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.textContent = extra.assessmentLink;
+      res.appendChild(a);
+    }
+    document.getElementById('progress-cancel-btn').hidden = true;
+    document.getElementById('progress-close-btn').hidden = false;
+  }
+
+  async function cancelAutomation() {
+    try { await fetch(topinServerUrl() + '/api/publish/cancel', { method: 'POST' }); } catch (e) {}
+    closeProgressModal();
+  }
+
+  function setCredsStatus(msg, kind) {
+    const el = document.getElementById('progress-creds-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = kind === 'error' ? 'var(--danger)' : kind === 'success' ? 'var(--accent-ink)' : 'var(--muted)';
+  }
+
+  function applyPublishResult(id, type, data) {
     const idx = batches.findIndex(b => b.id === id);
     if (idx === -1) return;
-    const label = type === 'main' ? 'Main' : 'Mock';
-    const linkField = type === 'main' ? 'mainConfigUrl' : 'mockConfigUrl';
-    if (!batches[idx][linkField]) { flashToast('Add a ' + label.toLowerCase() + ' config link in Topin Configs first.', 'error'); return; }
-    const field = type === 'main' ? 'mainPublished' : 'mockPublished';
     const now = new Date().toISOString();
-    let updated = { ...batches[idx], [field]: true, updatedAt: now };
+    const patch = type === 'main'
+      ? { mainPublished: true, mainAssessmentLink: data.assessmentLink || '', mainConfigUrl: data.newConfigLink || batches[idx].mainConfigUrl }
+      : { mockPublished: true, mockAssessmentLink: data.assessmentLink || '', mockConfigUrl: data.newConfigLink || batches[idx].mockConfigUrl };
+    let updated = { ...batches[idx], ...patch, updatedAt: now };
     const mainDone = !!updated.mainPublished;
     const mockDone = !updated.mockRequired || !!updated.mockPublished;
     if (mainDone && mockDone && !updated.publishedAt) updated = { ...updated, publishedAt: now };
     batches[idx] = updated;
     render();
     persistSave(updated);
-    flashToast(label + ' assessment published.', 'success');
   }
 
-  function inviteAssessment(id, type) {
+  function connectSSE(serverUrl, id, type) {
+    if (sseSource) { sseSource.close(); sseSource = null; }
+    let finished = false;
+    sseSource = new EventSource(serverUrl + '/api/publish/progress');
+    sseSource.onmessage = e => {
+      let data; try { data = JSON.parse(e.data); } catch (err) { return; }
+      if (data.type === 'connected') return;
+      logProgress(data.type, data.message);
+      if (data.type === 'done') {
+        finished = true;
+        applyPublishResult(id, type, data);
+        finishProgress(true, 'Published on Topin.', data);
+      }
+      if (data.type === 'error' && !finished) finishProgress(false, 'Error: ' + data.message);
+    };
+    sseSource.onerror = () => { if (!finished) logProgress('error', 'Connection to the automation server was lost.'); };
+  }
+
+  async function postPublishRun(serverUrl, type, params) {
+    try {
+      const resp = await fetch(serverUrl + '/api/publish/run', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          configUrl: params.configUrl, title: params.title,
+          assessmentDate: params.assessDate, startTime: params.startTime, endTime: params.endTime,
+          uniqueExamId: params.uniqueExamId, isSEB: params.isSEB, isMock: type === 'mock'
+        })
+      });
+      const data = await resp.json();
+      if (data.status === 'started') return 'started';
+      if (data.status === 'needs_otp') {
+        logProgress('info', 'Topin login required — enter your mobile number below and click Get OTP.');
+        return 'needs_otp';
+      }
+      logProgress('error', data.error || 'Unexpected response from the automation server');
+      finishProgress(false, 'Failed to start publishing');
+      return false;
+    } catch (e) {
+      logProgress('error', e.message);
+      finishProgress(false, 'Connection error — is the local automation server running?');
+      return false;
+    }
+  }
+
+  async function autoOtpLogin(serverUrl, mobile, otp) {
+    try {
+      const startResp = await fetch(serverUrl + '/api/publish/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile }) });
+      const startData = await startResp.json();
+      if (startData.status === 'already_authenticated') { logProgress('success', 'Already logged in.'); return true; }
+      if (startData.status !== 'otp_sent') { logProgress('error', startData.error || 'Failed to start Topin login'); return false; }
+      logProgress('info', 'Verifying with saved OTP...');
+      const verifyResp = await fetch(serverUrl + '/api/publish/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp }) });
+      const verifyData = await verifyResp.json();
+      if (verifyData.status === 'authenticated') { logProgress('success', 'Logged in with saved credentials.'); return true; }
+      logProgress('error', verifyData.error || 'OTP verification failed');
+      return false;
+    } catch (e) { logProgress('error', 'Auto-login failed: ' + e.message); return false; }
+  }
+
+  async function getOtpInline() {
+    const mobile = (document.getElementById('progress-mobile-input')?.value || '').trim();
+    if (!mobile || mobile.length < 10) { setCredsStatus('Enter a valid 10-digit mobile number', 'error'); return; }
+    localStorage.setItem('topinMobile', mobile);
+    const serverUrl = topinServerUrl();
+    const btn = document.getElementById('progress-get-otp-btn');
+    if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+    try {
+      const resp = await fetch(serverUrl + '/api/publish/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile }) });
+      const data = await resp.json();
+      if (data.status === 'otp_sent') {
+        setCredsStatus('OTP sent to ' + mobile.replace(/\d(?=\d{4})/g, '*') + ' — check your phone', 'success');
+        const otpEl = document.getElementById('progress-otp-input'); if (otpEl) { otpEl.value = ''; otpEl.focus(); }
+      } else if (data.status === 'already_authenticated') {
+        setCredsStatus('Already logged in — resuming publish...', 'success');
+        if (window._otpProceed) { const p = window._otpProceed; window._otpProceed = null; p(); }
+      } else {
+        setCredsStatus(data.error || 'Failed to send OTP', 'error');
+      }
+    } catch (e) { setCredsStatus('Server error: ' + e.message, 'error'); }
+    finally { if (btn) { btn.textContent = 'Get OTP'; btn.disabled = false; } }
+  }
+
+  async function submitInlineOTP() {
+    const otp = (document.getElementById('progress-otp-input')?.value || '').trim();
+    if (otp.length !== 6) { setCredsStatus('Enter a valid 6-digit OTP', 'error'); return; }
+    const serverUrl = topinServerUrl();
+    const btn = document.getElementById('progress-otp-btn');
+    if (btn) { btn.textContent = 'Verifying…'; btn.disabled = true; }
+    try {
+      const resp = await fetch(serverUrl + '/api/publish/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp }) });
+      const data = await resp.json();
+      if (data.status === 'authenticated') {
+        setCredsStatus('Verified — resuming publish...', 'success');
+        logProgress('success', 'OTP verified — starting automation...');
+        const box = document.getElementById('progress-creds-box'); if (box) box.hidden = true;
+        if (window._otpProceed) { const p = window._otpProceed; window._otpProceed = null; await p(); }
+      } else {
+        setCredsStatus('Wrong OTP — try again', 'error');
+        logProgress('error', 'OTP verification failed: ' + (data.error || 'unknown'));
+      }
+    } catch (e) { setCredsStatus('Error: ' + e.message, 'error'); logProgress('error', e.message); }
+    finally { if (btn) { btn.textContent = 'Verify'; btn.disabled = false; } }
+  }
+
+  async function publishAssessment(id, type) {
     if (!canWrite) return;
     const idx = batches.findIndex(b => b.id === id);
     if (idx === -1) return;
+    const b = batches[idx];
     const label = type === 'main' ? 'Main' : 'Mock';
-    const field = type === 'main' ? 'mainInviteSent' : 'mockInviteSent';
-    const atField = type === 'main' ? 'mainInviteSentAt' : 'mockInviteSentAt';
-    const updated = { ...batches[idx], [field]: true, [atField]: new Date().toISOString(), updatedAt: new Date().toISOString() };
-    batches[idx] = updated;
-    render();
-    persistSave(updated);
-    flashToast(label + ' students invited for ' + updated.batch + '.', 'success');
+    const configUrl = type === 'main' ? b.mainConfigUrl : b.mockConfigUrl;
+    if (!configUrl) { flashToast('Add a ' + label.toLowerCase() + ' config link in Topin Configs first.', 'error'); return; }
+    const title = type === 'main' ? b.mainTitle : b.mockTitle;
+    if (!title) { flashToast('Set the ' + label.toLowerCase() + ' assessment title first.', 'error'); return; }
+    let assessDate, startTime, endTime;
+    if (type === 'main') {
+      const s = splitDT(b.mainStartAt), e = splitDT(b.mainEndAt);
+      assessDate = s.date; startTime = s.time; endTime = e.time;
+    } else {
+      assessDate = b.mockDate; startTime = b.mockStart; endTime = b.mockEnd;
+    }
+    if (!assessDate || !startTime || !endTime) { flashToast('Set the ' + label.toLowerCase() + ' assessment date and times first.', 'error'); return; }
+    const uniqueExamId = (type === 'main' ? b.mainTag : b.mockTag) || (b.batch + ' ' + label);
+    const isSEB = b.mainSebStatus === 'SEB';
+
+    const serverUrl = topinServerUrl();
+    try { await fetch(serverUrl + '/api/health', { signal: AbortSignal.timeout(3000) }); }
+    catch { flashToast('Local automation server not reachable — open Automation Server settings for setup steps.', 'error'); return; }
+
+    openProgressModal(label + ' Assessment — Publish to Topin');
+    connectSSE(serverUrl, id, type);
+
+    const params = { configUrl, title, assessDate, startTime, endTime, uniqueExamId, isSEB };
+    const run = () => postPublishRun(serverUrl, type, params);
+    const outcome = await run();
+    if (outcome === 'needs_otp') {
+      const savedMobile = localStorage.getItem('topinMobile') || '';
+      const savedOtp = localStorage.getItem('topinFixedOtp') || '';
+      if (savedMobile && savedOtp) {
+        logProgress('info', 'Logging in automatically with saved Topin credentials...');
+        const loggedIn = await autoOtpLogin(serverUrl, savedMobile, savedOtp);
+        if (loggedIn) { await run(); return; }
+        logProgress('error', 'Auto-login failed — falling back to manual entry.');
+      }
+      const box = document.getElementById('progress-creds-box');
+      if (box) box.hidden = false;
+      const mobileEl = document.getElementById('progress-mobile-input');
+      if (mobileEl) mobileEl.value = savedMobile;
+      setCredsStatus('Enter your Topin mobile number and click Get OTP to log in', 'info');
+      window._otpProceed = run;
+    }
+  }
+
+  function extractOrgId(link) {
+    if (!link) return '';
+    try { const u = new URL(link); return u.searchParams.get('org_id') || ''; }
+    catch (e) { return (String(link).match(/org_id=([0-9a-f-]{36})/i) || [])[1] || ''; }
+  }
+
+  async function inviteAssessment(id, type) {
+    if (!canWrite) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const b = batches[idx];
+    const label = type === 'main' ? 'Main' : 'Mock';
+    const link = type === 'main' ? b.mainAssessmentLink : b.mockAssessmentLink;
+    const assessmentId = extractOrgId(link);
+    if (!assessmentId) { flashToast('No published assessment link found — publish to Topin first.', 'error'); return; }
+    const candidates = students.filter(s => s.batch === b.batch).map(s => s.uid).filter(Boolean);
+    if (!candidates.length) { flashToast('No students with a UID found for ' + b.batch + '.', 'error'); return; }
+
+    openProgressModal(label + ' Assessment — Invite Students');
+    logProgress('info', 'Found ' + candidates.length + ' student' + (candidates.length === 1 ? '' : 's') + '. Sending invites...');
+    try {
+      const resp = await fetch('/api/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidates, assessmentId }) });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        logProgress('error', err.error || ('HTTP ' + resp.status));
+        finishProgress(false, 'Invite API error — check that TOPIN_INVITE_API_KEY is set in Vercel.');
+        return;
+      }
+      const result = await resp.json();
+      logProgress('info', 'Total: ' + result.total);
+      logProgress('success', 'Sent: ' + result.sent + ' invites');
+      if (result.failed) logProgress('error', 'Failed: ' + result.failed);
+      (result.errors || []).forEach(e => logProgress('error', e));
+      if (result.sent > 0) {
+        const field = type === 'main' ? 'mainInviteSent' : 'mockInviteSent';
+        const atField = type === 'main' ? 'mainInviteSentAt' : 'mockInviteSentAt';
+        const updated = { ...batches[idx], [field]: true, [atField]: new Date().toISOString(), updatedAt: new Date().toISOString() };
+        batches[idx] = updated;
+        render();
+        persistSave(updated);
+        finishProgress(true, result.sent + ' invite' + (result.sent === 1 ? '' : 's') + ' sent successfully.');
+      } else {
+        finishProgress(false, 'No invites were sent. Check TOPIN_INVITE_API_KEY in Vercel env vars.');
+      }
+    } catch (e) { logProgress('error', e.message); finishProgress(false, 'Network error'); }
   }
 
   function interviewLinkField(field, value, editing) {
@@ -2821,6 +3211,14 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'pending-link') {
       flashToast("This link isn't available yet.", 'error');
     }
+    else if (action === 'open-automation-settings') { openAutomationSettings(); }
+    else if (action === 'close-automation-settings') { closeAutomationSettings(); }
+    else if (action === 'save-automation-settings') { saveAutomationSettings(); }
+    else if (action === 'check-server-health') { checkServerHealth(); }
+    else if (action === 'close-progress-modal') { closeProgressModal(); }
+    else if (action === 'cancel-automation') { cancelAutomation(); }
+    else if (action === 'get-otp-inline') { getOtpInline(); }
+    else if (action === 'submit-inline-otp') { submitInlineOTP(); }
     else if (action === 'confirm-import') {
       if (!canWrite || !importPreview || !importPreview.batches.length) return;
       const imported = importPreview.batches;
