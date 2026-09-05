@@ -1604,8 +1604,7 @@ function boot(seedBatches, seedStudents) {
       if (b.mockRequired) parts.push(b.mockInviteSent ? assessInvitedBadge('mock') : assessInviteButton(b, 'mock'));
     }
     if (assessStatusTab !== 'published' && assessStatusTab !== 'invites-sent') parts.push(viewStudentsButton(b.id));
-    parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="main" title="Clone and publish a fresh Main assessment, replacing the current link">Republish Main</button>');
-    if (b.mockRequired) parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="mock" title="Clone and publish a fresh Mock assessment, replacing the current link">Republish Mock</button>');
+    parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="unpublish-assessment" data-id="'+b.id+'" title="Reset this batch back to Ready to Publish so you can clone a fresh assessment">Unpublish</button>');
     return '<div class="actions">' + parts.join('') + '</div>';
   }
 
@@ -2146,6 +2145,27 @@ function boot(seedBatches, seedStudents) {
     if (!link) return '';
     try { const u = new URL(link); return u.searchParams.get('org_id') || ''; }
     catch (e) { return (String(link).match(/org_id=([0-9a-f-]{36})/i) || [])[1] || ''; }
+  }
+
+  function unpublishAssessment(id) {
+    if (!canWrite) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const b = batches[idx];
+    const ok = confirm('Reset "' + b.batch + (b.week ? ' — ' + b.week : '') + '" back to Ready to Publish?\n\nThis only clears the status in this app — it does NOT delete the assessment already live on Topin. Use this when a batch was published with the wrong details and you want to clone a fresh one.');
+    if (!ok) return;
+    const updated = {
+      ...b,
+      mainPublished: false, mockPublished: false,
+      mainAssessmentLink: '', mockAssessmentLink: '',
+      mainInviteSent: false, mainInviteSentAt: '',
+      mockInviteSent: false, mockInviteSentAt: '',
+      publishedAt: '', updatedAt: new Date().toISOString()
+    };
+    batches[idx] = updated;
+    render();
+    persistSave(updated);
+    flashToast(b.batch + ' reset to Ready to Publish.', 'success');
   }
 
   async function inviteAssessment(id, type) {
@@ -3227,6 +3247,9 @@ function boot(seedBatches, seedStudents) {
     }
     else if (action === 'invite-assessment') {
       inviteAssessment(id, btn.dataset.type);
+    }
+    else if (action === 'unpublish-assessment') {
+      unpublishAssessment(id);
     }
     else if (action === 'edit-interview') startInterviewEdit(id);
     else if (action === 'cancel-interview') cancelInterviewEdit();
