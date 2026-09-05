@@ -311,6 +311,13 @@ button.kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px -14px rg
 .table-wrap{transition:box-shadow .25s ease;}
 tbody tr:not(.row-editing){transition:background-color .15s ease,box-shadow .15s ease;}
 tbody tr:not(.row-editing):hover td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 var(--border);}
+/* Zebra striping so rows are easy to tell apart at a glance, across every
+   table in the app -- they all share this same tbody/td structure. The
+   hover accent bar above still makes hover distinguishable from a
+   resting even row even though both use the same tint. */
+tbody tr:nth-child(even):not(.row-editing) td,
+tbody tr:nth-child(even):not(.row-editing) td.col-syllabus,
+tbody tr:nth-child(even):not(.row-editing) td.col-actions{background:var(--surface-2);}
 
 .badge{position:relative;transition:box-shadow .15s ease;}
 .badge--yes{padding-left:20px;box-shadow:0 0 0 1px var(--accent-soft) inset;}
