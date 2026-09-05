@@ -1604,6 +1604,8 @@ function boot(seedBatches, seedStudents) {
       if (b.mockRequired) parts.push(b.mockInviteSent ? assessInvitedBadge('mock') : assessInviteButton(b, 'mock'));
     }
     if (assessStatusTab !== 'published' && assessStatusTab !== 'invites-sent') parts.push(viewStudentsButton(b.id));
+    parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="main" title="Clone and publish a fresh Main assessment, replacing the current link">Republish Main</button>');
+    if (b.mockRequired) parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="mock" title="Clone and publish a fresh Mock assessment, replacing the current link">Republish Mock</button>');
     return '<div class="actions">' + parts.join('') + '</div>';
   }
 
