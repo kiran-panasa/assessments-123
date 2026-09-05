@@ -948,7 +948,7 @@ function boot(seedBatches, seedStudents) {
           <button type="button" class="modal-close" data-action="close-automation-settings" aria-label="Close">&times;</button>
         </div>
         <div class="modal-body">
-          <p class="section-desc">Publishing to Topin and inviting students runs through a local automation server &mdash; it drives a real browser session against config.topin.tech. Start it once (<code>server/start.ps1</code>, or <code>cd server &amp;&amp; npm install &amp;&amp; node index.js</code>) and set its address here. If someone on your team is hosting it for everyone, use their machine's address instead of localhost, and ask them for the automation key their server printed on startup &mdash; every request needs it.</p>
+          <p class="section-desc">Publishing to Topin and inviting students runs through a local automation server &mdash; it drives a real browser session against config.topin.tech. <strong>The reliable setup is one person per machine:</strong> everyone who wants to publish runs their own copy on their own laptop (<code>server/start.ps1</code>, or <code>cd server &amp;&amp; npm install &amp;&amp; npx playwright install chromium &amp;&amp; node index.js</code>) and leaves the URL below as <code>http://localhost:3001</code> &mdash; no key needed for that. Only fill in a different address and an Automation Key if you're deliberately reaching a teammate's machine over a LAN or tunnel instead.</p>
           <div class="modal-field-stack">
             <div class="filter-field">
               <label for="automation-server-url">Local Server URL</label>
