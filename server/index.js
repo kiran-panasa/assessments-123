@@ -51,16 +51,28 @@ function requireKey(req, res, next) {
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// ── SSE broadcast ─────────────────────────────────────────────
+// ── Progress broadcast ────────────────────────────────────────
+// Two delivery paths for the same events: SSE (for direct/localhost use)
+// and a polling buffer (for reaching this server through ngrok, whose free
+// tier shows an HTML interstitial unless a header is sent — something
+// EventSource can never do, since browsers don't let it set custom
+// headers. A plain fetch() poll can carry that header, so it works
+// everywhere SSE would and everywhere SSE can't.
 const sseClients = new Set();
 let jobRunning      = false;
 let cancelRequested = false;
 let browser         = null;
 let pendingAuthCtx  = null;
+let logBuffer       = [];
+let logSeq          = 0;
+const LOG_BUFFER_MAX = 300;
 
 function broadcast(type, message, extra = {}) {
-  const payload = JSON.stringify({ type, message, ts: new Date().toISOString(), ...extra });
+  const entry = { seq: ++logSeq, type, message, ts: new Date().toISOString(), ...extra };
+  const payload = JSON.stringify(entry);
   sseClients.forEach(res => { try { res.write(`data: ${payload}\n\n`); } catch {} });
+  logBuffer.push(entry);
+  if (logBuffer.length > LOG_BUFFER_MAX) logBuffer = logBuffer.slice(-LOG_BUFFER_MAX);
   console.log(`[${type.toUpperCase()}] ${message}`);
 }
 
@@ -77,6 +89,11 @@ app.get("/api/publish/token-status", requireKey, (_req, res) => {
 });
 
 // ── SSE stream ────────────────────────────────────────────────
+app.get("/api/publish/poll", requireKey, (req, res) => {
+  const since = parseInt(req.query.since, 10) || 0;
+  res.json({ entries: logBuffer.filter(e => e.seq > since), latestSeq: logSeq });
+});
+
 app.get("/api/publish/progress", requireKey, (req, res) => {
   res.setHeader("Content-Type",  "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");

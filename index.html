@@ -378,7 +378,8 @@ function boot(seedBatches, seedStudents) {
   let interviewBatchFilter = '';
   let publishModalTarget = null;
   let publishModalConfirmed = false;
-  let sseSource = null;
+  let pollTimer = null;
+  let pollStopped = false;
   let progressModalOpen = false;
   let progressModalTitle = '';
   let progressLogLines = [];
@@ -1787,7 +1788,12 @@ function boot(seedBatches, seedStudents) {
 
   function automationHeaders() {
     const key = topinAutomationKey();
-    return key ? { 'X-Automation-Key': key } : {};
+    // ngrok's free tier shows an HTML interstitial instead of proxying the
+    // request unless this header is present -- harmless to send always,
+    // including to servers that aren't ngrok at all.
+    const headers = { 'ngrok-skip-browser-warning': 'true' };
+    if (key) headers['X-Automation-Key'] = key;
+    return headers;
   }
 
   function openAutomationSettings() {
@@ -1827,10 +1833,10 @@ function boot(seedBatches, seedStudents) {
     const txt = document.getElementById('automation-health-txt');
     if (txt) txt.textContent = 'Checking…';
     try {
-      const resp = await fetch(url + '/api/health', { signal: AbortSignal.timeout(4000) });
+      const resp = await fetch(url + '/api/health', { headers: { 'ngrok-skip-browser-warning': 'true' }, signal: AbortSignal.timeout(4000) });
       if (!resp.ok) throw new Error('unhealthy');
       const authResp = await fetch(url + '/api/publish/token-status', {
-        headers: key ? { 'X-Automation-Key': key } : {},
+        headers: { 'ngrok-skip-browser-warning': 'true', ...(key ? { 'X-Automation-Key': key } : {}) },
         signal: AbortSignal.timeout(4000)
       });
       if (authResp.status === 401) {
@@ -1916,7 +1922,8 @@ function boot(seedBatches, seedStudents) {
 
   function closeProgressModal() {
     progressModalOpen = false;
-    if (sseSource) { sseSource.close(); sseSource = null; }
+    pollStopped = true;
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     renderProgressModal();
   }
 
@@ -1957,24 +1964,45 @@ function boot(seedBatches, seedStudents) {
     persistSave(updated);
   }
 
+  // Polls for progress instead of using EventSource/SSE. EventSource can't
+  // send custom headers, which breaks two things it has no way around:
+  // the automation key, and ngrok's free-tier interstitial (which otherwise
+  // replaces every response with an HTML warning page). A plain fetch()
+  // poll carries both.
   function connectSSE(serverUrl, id, type) {
-    if (sseSource) { sseSource.close(); sseSource = null; }
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    pollStopped = false;
     let finished = false;
-    // EventSource can't send custom headers, so the key travels as a query param here.
-    const key = topinAutomationKey();
-    sseSource = new EventSource(serverUrl + '/api/publish/progress' + (key ? '?key=' + encodeURIComponent(key) : ''));
-    sseSource.onmessage = e => {
-      let data; try { data = JSON.parse(e.data); } catch (err) { return; }
-      if (data.type === 'connected') return;
-      logProgress(data.type, data.message);
-      if (data.type === 'done') {
-        finished = true;
-        applyPublishResult(id, type, data);
-        finishProgress(true, 'Published on Topin.', data);
+    let lastSeq = 0;
+    let misses = 0;
+
+    const poll = async () => {
+      if (pollStopped) return;
+      try {
+        const resp = await fetch(serverUrl + '/api/publish/poll?since=' + lastSeq, {
+          headers: automationHeaders(), signal: AbortSignal.timeout(8000)
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        misses = 0;
+        for (const entry of (data.entries || [])) {
+          lastSeq = Math.max(lastSeq, entry.seq || lastSeq);
+          if (entry.type === 'connected') continue;
+          logProgress(entry.type, entry.message);
+          if (entry.type === 'done') {
+            finished = true;
+            applyPublishResult(id, type, entry);
+            finishProgress(true, 'Published on Topin.', entry);
+          }
+          if (entry.type === 'error' && !finished) finishProgress(false, 'Error: ' + entry.message);
+        }
+      } catch (e) {
+        misses++;
+        if (misses === 3 && !finished) logProgress('error', 'Connection to the automation server was lost.');
       }
-      if (data.type === 'error' && !finished) finishProgress(false, 'Error: ' + data.message);
+      if (!finished && !pollStopped) pollTimer = setTimeout(poll, 1500);
     };
-    sseSource.onerror = () => { if (!finished) logProgress('error', 'Connection to the automation server was lost.'); };
+    poll();
   }
 
   async function postPublishRun(serverUrl, type, params) {
@@ -2087,7 +2115,7 @@ function boot(seedBatches, seedStudents) {
     const isSEB = b.mainSebStatus === 'SEB';
 
     const serverUrl = topinServerUrl();
-    try { await fetch(serverUrl + '/api/health', { signal: AbortSignal.timeout(3000) }); }
+    try { await fetch(serverUrl + '/api/health', { headers: { 'ngrok-skip-browser-warning': 'true' }, signal: AbortSignal.timeout(3000) }); }
     catch { flashToast('Local automation server not reachable — open Automation Server settings for setup steps.', 'error'); return; }
 
     openProgressModal(label + ' Assessment — Publish to Topin');
