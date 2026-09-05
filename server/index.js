@@ -5,6 +5,7 @@
 // Vercel — because it drives a real Chromium browser via Playwright.
 const fs           = require("fs");
 const path         = require("path");
+const crypto       = require("crypto");
 const express      = require("express");
 const cors         = require("cors");
 const { chromium } = require("playwright");
@@ -15,6 +16,34 @@ const app  = express();
 const PORT = process.env.PORT || 3001;
 const BASE_URL     = "https://config.topin.tech/";
 const SESSION_FILE = path.join(__dirname, "topin-session.json");
+const KEY_FILE     = path.join(__dirname, "automation-key.json");
+
+// ── Shared automation key ───────────────────────────────────────
+// This server has no login of its own and can trigger real Topin OTP sends
+// and real publishes, so every route except /api/health requires this key —
+// generated once and persisted locally, or set via the AUTOMATION_KEY env
+// var. Share it with teammates who need to publish from their own machine;
+// they paste it into the app's Automation Server settings.
+function loadOrCreateAutomationKey() {
+  try {
+    if (fs.existsSync(KEY_FILE)) {
+      const data = JSON.parse(fs.readFileSync(KEY_FILE, "utf8"));
+      if (data.key) return data.key;
+    }
+  } catch { /* fall through to generating a new one */ }
+  const key = crypto.randomBytes(24).toString("base64url");
+  fs.writeFileSync(KEY_FILE, JSON.stringify({ key }, null, 2));
+  return key;
+}
+const AUTOMATION_KEY = process.env.AUTOMATION_KEY || loadOrCreateAutomationKey();
+
+function requireKey(req, res, next) {
+  const provided = req.get("X-Automation-Key") || req.query.key;
+  if (provided !== AUTOMATION_KEY) {
+    return res.status(401).json({ error: "Missing or incorrect automation key." });
+  }
+  next();
+}
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -39,13 +68,13 @@ app.get("/api/health", (_req, res) => res.json({ status: "ok", ts: Date.now() })
 // Publishing drives the real Topin UI via a saved browser session (cookies),
 // not a JWT token pair. We can only confirm the session file exists here —
 // whether it's still valid is checked for real when a publish actually runs.
-app.get("/api/publish/token-status", (_req, res) => {
+app.get("/api/publish/token-status", requireKey, (_req, res) => {
   const hasSession = fs.existsSync(SESSION_FILE);
   res.json({ hasValidToken: hasSession, hasTopin: hasSession, hasIB: false, hasRefresh: false, expiresIn: 0 });
 });
 
 // ── SSE stream ────────────────────────────────────────────────
-app.get("/api/publish/progress", (req, res) => {
+app.get("/api/publish/progress", requireKey, (req, res) => {
   res.setHeader("Content-Type",  "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection",    "keep-alive");
@@ -121,7 +150,7 @@ function setupTokenCapture(context) {
 }
 
 // ── Step 1: Start OTP login ───────────────────────────────────
-app.post("/api/publish/start", async (req, res) => {
+app.post("/api/publish/start", requireKey, async (req, res) => {
   const { mobile } = req.body || {};
   if (!mobile) return res.status(400).json({ error: "mobile number required" });
 
@@ -176,7 +205,7 @@ app.post("/api/publish/start", async (req, res) => {
 });
 
 // ── Step 2: Verify OTP (token capture happens via setupTokenCapture) ──
-app.post("/api/publish/verify-otp", async (req, res) => {
+app.post("/api/publish/verify-otp", requireKey, async (req, res) => {
   const { otp } = req.body || {};
   if (!otp || String(otp).length !== 6) return res.status(400).json({ error: "6-digit OTP required" });
   if (!pendingAuthCtx) return res.status(400).json({ error: "No login in progress — call /start first" });
@@ -259,7 +288,7 @@ app.post("/api/publish/verify-otp", async (req, res) => {
 });
 
 // ── Step 3: Publish by cloning the existing config in the real Topin UI ──
-app.post("/api/publish/run", async (req, res) => {
+app.post("/api/publish/run", requireKey, async (req, res) => {
   if (jobRunning) return res.status(409).json({ error: "A publish job is already running" });
 
   const {
@@ -323,7 +352,7 @@ app.post("/api/publish/run", async (req, res) => {
 });
 
 // ── Cancel ────────────────────────────────────────────────────
-app.post("/api/publish/cancel", (_req, res) => {
+app.post("/api/publish/cancel", requireKey, (_req, res) => {
   cancelRequested = true;
   broadcast("info", "Cancellation requested...");
   res.json({ status: "cancelling" });
@@ -335,5 +364,6 @@ app.listen(PORT, () => {
   console.log(`  Running at: http://localhost:${PORT}`);
   console.log(`  Health:     http://localhost:${PORT}/api/health`);
   console.log(`  Session:    ${SESSION_FILE}`);
+  console.log(`  Automation key (share with your team): ${AUTOMATION_KEY}`);
   console.log("─────────────────────────────────────────────");
 });

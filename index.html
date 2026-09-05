@@ -929,11 +929,15 @@ function boot(seedBatches, seedStudents) {
           <button type="button" class="modal-close" data-action="close-automation-settings" aria-label="Close">&times;</button>
         </div>
         <div class="modal-body">
-          <p class="section-desc">Publishing to Topin and inviting students runs through a local automation server on your own machine &mdash; it drives a real browser session against config.topin.tech. Start it once (<code>server/start.ps1</code>, or <code>cd server &amp;&amp; npm install &amp;&amp; node index.js</code>), then set its address here.</p>
+          <p class="section-desc">Publishing to Topin and inviting students runs through a local automation server &mdash; it drives a real browser session against config.topin.tech. Start it once (<code>server/start.ps1</code>, or <code>cd server &amp;&amp; npm install &amp;&amp; node index.js</code>) and set its address here. If someone on your team is hosting it for everyone, use their machine's address instead of localhost, and ask them for the automation key their server printed on startup &mdash; every request needs it.</p>
           <div class="modal-field-stack">
             <div class="filter-field">
               <label for="automation-server-url">Local Server URL</label>
               <input type="text" id="automation-server-url" placeholder="http://localhost:3001">
+            </div>
+            <div class="filter-field">
+              <label for="automation-key">Automation Key</label>
+              <input type="text" id="automation-key" placeholder="Printed in the server's console on startup">
             </div>
             <div class="server-health-row">
               <span class="server-health-dot" id="automation-health-dot"></span>
@@ -1758,10 +1762,20 @@ function boot(seedBatches, seedStudents) {
     return localStorage.getItem('topinServerUrl') || 'http://localhost:3001';
   }
 
+  function topinAutomationKey() {
+    return localStorage.getItem('topinAutomationKey') || '';
+  }
+
+  function automationHeaders() {
+    const key = topinAutomationKey();
+    return key ? { 'X-Automation-Key': key } : {};
+  }
+
   function openAutomationSettings() {
     const overlay = document.getElementById('automation-modal-overlay');
     if (!overlay) return;
     document.getElementById('automation-server-url').value = topinServerUrl();
+    document.getElementById('automation-key').value = topinAutomationKey();
     document.getElementById('automation-mobile').value = localStorage.getItem('topinMobile') || '';
     document.getElementById('automation-otp').value = localStorage.getItem('topinFixedOtp') || '';
     const dot = document.getElementById('automation-health-dot'); if (dot) dot.className = 'server-health-dot';
@@ -1776,9 +1790,11 @@ function boot(seedBatches, seedStudents) {
 
   function saveAutomationSettings() {
     const url = (document.getElementById('automation-server-url').value || '').trim() || 'http://localhost:3001';
+    const key = (document.getElementById('automation-key').value || '').trim();
     const mobile = (document.getElementById('automation-mobile').value || '').trim();
     const otp = (document.getElementById('automation-otp').value || '').trim();
     localStorage.setItem('topinServerUrl', url);
+    if (key) localStorage.setItem('topinAutomationKey', key); else localStorage.removeItem('topinAutomationKey');
     if (mobile) localStorage.setItem('topinMobile', mobile); else localStorage.removeItem('topinMobile');
     if (otp) localStorage.setItem('topinFixedOtp', otp); else localStorage.removeItem('topinFixedOtp');
     closeAutomationSettings();
@@ -1787,18 +1803,24 @@ function boot(seedBatches, seedStudents) {
 
   async function checkServerHealth() {
     const url = (document.getElementById('automation-server-url').value || '').trim() || 'http://localhost:3001';
+    const key = (document.getElementById('automation-key').value || '').trim();
     const dot = document.getElementById('automation-health-dot');
     const txt = document.getElementById('automation-health-txt');
     if (txt) txt.textContent = 'Checking…';
     try {
       const resp = await fetch(url + '/api/health', { signal: AbortSignal.timeout(4000) });
-      if (resp.ok) {
-        if (dot) dot.className = 'server-health-dot server-health-dot--ok';
-        if (txt) txt.textContent = 'Connected';
-      } else {
+      if (!resp.ok) throw new Error('unhealthy');
+      const authResp = await fetch(url + '/api/publish/token-status', {
+        headers: key ? { 'X-Automation-Key': key } : {},
+        signal: AbortSignal.timeout(4000)
+      });
+      if (authResp.status === 401) {
         if (dot) dot.className = 'server-health-dot server-health-dot--bad';
-        if (txt) txt.textContent = 'Server returned an error';
+        if (txt) txt.textContent = 'Connected, but the automation key is missing or incorrect';
+        return;
       }
+      if (dot) dot.className = 'server-health-dot server-health-dot--ok';
+      if (txt) txt.textContent = 'Connected';
     } catch (e) {
       if (dot) dot.className = 'server-health-dot server-health-dot--bad';
       if (txt) txt.textContent = 'Not reachable — is the server running?';
@@ -1891,7 +1913,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   async function cancelAutomation() {
-    try { await fetch(topinServerUrl() + '/api/publish/cancel', { method: 'POST' }); } catch (e) {}
+    try { await fetch(topinServerUrl() + '/api/publish/cancel', { method: 'POST', headers: automationHeaders() }); } catch (e) {}
     closeProgressModal();
   }
 
@@ -1919,7 +1941,9 @@ function boot(seedBatches, seedStudents) {
   function connectSSE(serverUrl, id, type) {
     if (sseSource) { sseSource.close(); sseSource = null; }
     let finished = false;
-    sseSource = new EventSource(serverUrl + '/api/publish/progress');
+    // EventSource can't send custom headers, so the key travels as a query param here.
+    const key = topinAutomationKey();
+    sseSource = new EventSource(serverUrl + '/api/publish/progress' + (key ? '?key=' + encodeURIComponent(key) : ''));
     sseSource.onmessage = e => {
       let data; try { data = JSON.parse(e.data); } catch (err) { return; }
       if (data.type === 'connected') return;
@@ -1937,7 +1961,7 @@ function boot(seedBatches, seedStudents) {
   async function postPublishRun(serverUrl, type, params) {
     try {
       const resp = await fetch(serverUrl + '/api/publish/run', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...automationHeaders() },
         body: JSON.stringify({
           configUrl: params.configUrl, title: params.title,
           assessmentDate: params.assessDate, startTime: params.startTime, endTime: params.endTime,
@@ -1962,12 +1986,12 @@ function boot(seedBatches, seedStudents) {
 
   async function autoOtpLogin(serverUrl, mobile, otp) {
     try {
-      const startResp = await fetch(serverUrl + '/api/publish/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile }) });
+      const startResp = await fetch(serverUrl + '/api/publish/start', { method: 'POST', headers: { 'Content-Type': 'application/json', ...automationHeaders() }, body: JSON.stringify({ mobile }) });
       const startData = await startResp.json();
       if (startData.status === 'already_authenticated') { logProgress('success', 'Already logged in.'); return true; }
       if (startData.status !== 'otp_sent') { logProgress('error', startData.error || 'Failed to start Topin login'); return false; }
       logProgress('info', 'Verifying with saved OTP...');
-      const verifyResp = await fetch(serverUrl + '/api/publish/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp }) });
+      const verifyResp = await fetch(serverUrl + '/api/publish/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json', ...automationHeaders() }, body: JSON.stringify({ otp }) });
       const verifyData = await verifyResp.json();
       if (verifyData.status === 'authenticated') { logProgress('success', 'Logged in with saved credentials.'); return true; }
       logProgress('error', verifyData.error || 'OTP verification failed');
@@ -1983,7 +2007,7 @@ function boot(seedBatches, seedStudents) {
     const btn = document.getElementById('progress-get-otp-btn');
     if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
     try {
-      const resp = await fetch(serverUrl + '/api/publish/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mobile }) });
+      const resp = await fetch(serverUrl + '/api/publish/start', { method: 'POST', headers: { 'Content-Type': 'application/json', ...automationHeaders() }, body: JSON.stringify({ mobile }) });
       const data = await resp.json();
       if (data.status === 'otp_sent') {
         setCredsStatus('OTP sent to ' + mobile.replace(/\d(?=\d{4})/g, '*') + ' — check your phone', 'success');
@@ -2006,7 +2030,7 @@ function boot(seedBatches, seedStudents) {
     const btn = document.getElementById('progress-otp-btn');
     if (btn) { btn.textContent = 'Verifying…'; btn.disabled = true; }
     try {
-      const resp = await fetch(serverUrl + '/api/publish/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp }) });
+      const resp = await fetch(serverUrl + '/api/publish/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json', ...automationHeaders() }, body: JSON.stringify({ otp }) });
       const data = await resp.json();
       if (data.status === 'authenticated') {
         progressShowCreds = false;
