@@ -2063,6 +2063,7 @@ function boot(seedBatches, seedStudents) {
       assessDate = b.mockDate; startTime = b.mockStart; endTime = b.mockEnd;
     }
     if (!assessDate || !startTime || !endTime) { flashToast('Set the ' + label.toLowerCase() + ' assessment date and times first.', 'error'); return; }
+    if (assessDate < todayISO()) { flashToast('The ' + label.toLowerCase() + ' assessment date (' + fmtDate(assessDate) + ') is in the past — Topin can only schedule future assessments. Update the date first.', 'error'); return; }
     const uniqueExamId = (type === 'main' ? b.mainTag : b.mockTag) || (b.batch + ' ' + label);
     const isSEB = b.mainSebStatus === 'SEB';
 
