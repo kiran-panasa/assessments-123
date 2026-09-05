@@ -19,17 +19,14 @@ const SESSION_FILE = path.join(__dirname, "topin-session.json");
 const KEY_FILE     = path.join(__dirname, "automation-key.json");
 
 // ── Shared automation key ───────────────────────────────────────
-// The intended, reliable setup — matching how the IOE Admin Portal this was
-// ported from actually runs in production — is one person per machine: you
-// run this server locally and the app talks to it at localhost, nothing
-// else involved. In that setup this key doesn't matter, so requests from
-// the machine the server itself is running on skip the check entirely.
-// It only starts mattering if you deliberately expose this server beyond
-// localhost (a LAN address, a tunnel) — then every route except
-// /api/health requires it, since this server has no login of its own and
-// can trigger real Topin OTP sends and real publishes. Share it with
-// teammates who need to reach your machine that way; they paste it into
-// the app's Automation Server settings.
+// One machine (yours) runs this server and everyone else's browser reaches
+// it through a tunnel — so this server has no login of its own and can
+// trigger real Topin OTP sends and real publishes, every route except
+// /api/health requires this key. It's tempting to skip the check for
+// "local" requests, but a tunnel agent (ngrok, cloudflared) relays traffic
+// by making its own local connection to this server, so tunneled requests
+// look identical to a real local request at this layer — there's no way
+// to tell them apart from here. So the key is always required.
 function loadOrCreateAutomationKey() {
   try {
     if (fs.existsSync(KEY_FILE)) {
@@ -43,13 +40,7 @@ function loadOrCreateAutomationKey() {
 }
 const AUTOMATION_KEY = process.env.AUTOMATION_KEY || loadOrCreateAutomationKey();
 
-function isLoopback(req) {
-  const ip = req.ip || req.socket.remoteAddress || "";
-  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
-}
-
 function requireKey(req, res, next) {
-  if (isLoopback(req)) return next();
   const provided = req.get("X-Automation-Key") || req.query.key;
   if (provided !== AUTOMATION_KEY) {
     return res.status(401).json({ error: "Missing or incorrect automation key." });
