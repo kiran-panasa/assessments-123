@@ -261,6 +261,71 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .progress-result--ok{background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--accent);}
 .progress-result--err{background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger);}
 .progress-result a{display:block;margin-top:6px;font-size:11.5px;word-break:break-all;color:inherit;}
+
+/* ── Presentation polish pass ─────────────────────────────────
+   Layered on top of the rules above rather than rewriting them, so every
+   existing selector JS depends on keeps working exactly as before. */
+@keyframes cardIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+@keyframes modalPop{from{opacity:0;transform:scale(.96) translateY(8px);}to{opacity:1;transform:scale(1) translateY(0);}}
+@keyframes overlayFade{from{opacity:0;}to{opacity:1;}}
+@keyframes toastRing{0%{box-shadow:0 4px 16px rgba(0,0,0,.22),0 0 0 0 var(--accent-soft);}60%{box-shadow:0 4px 16px rgba(0,0,0,.22),0 0 0 7px transparent;}100%{box-shadow:0 4px 16px rgba(0,0,0,.22),0 0 0 0 transparent;}}
+
+body{
+  background-image:
+    radial-gradient(1100px 460px at 8% -10%, var(--accent-soft) 0%, transparent 60%),
+    radial-gradient(900px 420px at 104% 0%, var(--blue-soft) 0%, transparent 55%);
+  background-repeat:no-repeat;
+  background-attachment:fixed;
+}
+
+.app-title{
+  background:linear-gradient(120deg,var(--ink) 35%,var(--accent-ink) 100%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;
+}
+@supports not (background-clip: text){
+  .app-title{-webkit-text-fill-color:initial;background:none;color:var(--ink);}
+}
+
+.btn{transition:background-color .18s ease,border-color .18s ease,color .18s ease,transform .15s ease,box-shadow .2s ease;}
+.btn:active{transform:translateY(1px) scale(.98);}
+.btn--primary{background:linear-gradient(135deg,var(--accent),var(--accent-ink));box-shadow:0 1px 2px rgba(0,0,0,.08),0 6px 16px -8px var(--accent);}
+.btn--primary:hover{box-shadow:0 2px 4px rgba(0,0,0,.1),0 10px 22px -8px var(--accent);transform:translateY(-1px);}
+.btn--ghost:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(0,0,0,.07);}
+.btn--xs:hover,.btn--sm:hover{transform:translateY(-1px);}
+
+.kpi-card,button.kpi-card{position:relative;overflow:hidden;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;animation:cardIn .45s cubic-bezier(.2,.7,.3,1) backwards;}
+.cards-grid > *:nth-child(1){animation-delay:.02s;}
+.cards-grid > *:nth-child(2){animation-delay:.07s;}
+.cards-grid > *:nth-child(3){animation-delay:.12s;}
+.cards-grid > *:nth-child(4){animation-delay:.17s;}
+.cards-grid > *:nth-child(5){animation-delay:.22s;}
+.kpi-card::before,button.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--blue));opacity:.9;}
+button.kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px -14px rgba(0,0,0,.28),0 2px 8px rgba(0,0,0,.06);}
+.kpi-value{transition:color .2s ease;}
+
+.sidebar-link{transition:background-color .18s ease,color .18s ease,transform .15s ease;}
+.sidebar-link:hover{transform:translateX(2px);}
+.sidebar-link.active{position:relative;box-shadow:inset 0 0 0 1px var(--accent-soft);}
+.sidebar-link.active::before{content:'';position:absolute;left:-11px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:linear-gradient(180deg,var(--accent),var(--blue));}
+
+.table-wrap{transition:box-shadow .25s ease;}
+tbody tr:not(.row-editing){transition:background-color .15s ease,box-shadow .15s ease;}
+tbody tr:not(.row-editing):hover td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 var(--border);}
+
+.badge{position:relative;transition:box-shadow .15s ease;}
+.badge--yes{padding-left:20px;box-shadow:0 0 0 1px var(--accent-soft) inset;}
+.badge--yes::before{content:'';position:absolute;left:9px;top:50%;width:6px;height:6px;margin-top:-3px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+
+.modal-overlay:not([hidden]){animation:overlayFade .16s ease;}
+.modal{animation:modalPop .22s cubic-bezier(.2,.8,.3,1.15);}
+
+.toast.show{animation:toastRing .9s ease;}
+
+button.kpi-card:focus-visible,.sidebar-link:focus-visible{transition:none;}
+
+@media (prefers-reduced-motion: reduce){
+  .kpi-card,button.kpi-card,.modal,.modal-overlay,.toast.show{animation:none !important;}
+}
 `;
 document.getElementById('app-style').textContent = CSS;
 
