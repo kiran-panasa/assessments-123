@@ -405,12 +405,12 @@ function boot(seedBatches, seedStudents) {
 
   let stored = null;
   try { const raw = localStorage.getItem(LS_KEY); if (raw) stored = JSON.parse(raw); } catch (e) {}
-  const base = (stored && Array.isArray(stored) && stored.length) ? stored : seedBatches;
+  const base = Array.isArray(stored) ? stored : seedBatches;
   let batches = base.map(normalizeBatch);
 
   let studentsStored = null;
   try { const raw2 = localStorage.getItem(LS_KEY_STUDENTS); if (raw2) studentsStored = JSON.parse(raw2); } catch (e) {}
-  const studentsBase = (studentsStored && Array.isArray(studentsStored) && studentsStored.length) ? studentsStored : seedStudents;
+  const studentsBase = Array.isArray(studentsStored) ? studentsStored : seedStudents;
   let students = studentsBase.map(normalizeStudent);
 
   let editingId = null;
@@ -494,10 +494,6 @@ function boot(seedBatches, seedStudents) {
       syncMode = 'firebase';
       const col = fs.collection(db, 'batches');
       fs.onSnapshot(col, snap => {
-        if (snap.empty && !snap.metadata.fromCache) {
-          seedFirestore();
-          return;
-        }
         const list = snap.docs.map(d => normalizeBatch({ id: d.id, ...d.data() }));
         list.sort((a, b) => (a.batch || '').localeCompare(b.batch));
         applyRemoteBatches(list);
@@ -509,10 +505,6 @@ function boot(seedBatches, seedStudents) {
       });
       const studentsCol = fs.collection(db, 'students');
       fs.onSnapshot(studentsCol, snap => {
-        if (snap.empty && !snap.metadata.fromCache) {
-          seedFirestoreStudents();
-          return;
-        }
         const list = snap.docs.map(d => normalizeStudent({ id: d.id, ...d.data() }));
         list.sort((a, b) => (a.batch || '').localeCompare(b.batch) || (a.name || '').localeCompare(b.name));
         applyRemoteStudents(list);
@@ -624,29 +616,9 @@ function boot(seedBatches, seedStudents) {
     };
   }
 
-  let seeded = false;
-  function seedFirestore() {
-    if (seeded || !db || !fs) return;
-    seeded = true;
-    batches.forEach(b => {
-      const { id, ...data } = b;
-      fs.setDoc(fs.doc(db, 'batches', id), data).catch(e => console.error('Seed failed', e));
-    });
-  }
-
   function applyRemoteBatches(list) {
     latestRemote = list;
     if (editingId === null) { batches = list; render(); }
-  }
-
-  let seededStudents = false;
-  function seedFirestoreStudents() {
-    if (seededStudents || !db || !fs) return;
-    seededStudents = true;
-    students.forEach(s => {
-      const { id, ...data } = s;
-      fs.setDoc(fs.doc(db, 'students', id), data).catch(e => console.error('Seed students failed', e));
-    });
   }
 
   function applyRemoteStudents(list) {
