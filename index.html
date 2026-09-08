@@ -191,7 +191,8 @@ button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px
 .syllabus-pairs{display:flex;flex-direction:column;}
 .syllabus-pair-row{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border-soft);}
 .syllabus-pair-row:last-child{border-bottom:none;}
-.syllabus-pair-subject{font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--ink);padding-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.syllabus-pair-subject{font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--ink);padding-top:1px;white-space:normal;word-break:break-word;overflow-wrap:anywhere;}
+.col-wrap-text{max-width:180px;white-space:normal;word-break:break-word;overflow-wrap:anywhere;}
 .syllabus-pair-topics-wrap{min-width:0;}
 .syllabus-pair-topics{white-space:pre-wrap;font-size:12.5px;color:var(--ink-2);line-height:1.5;max-height:3em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
 .syllabus-pair-topics.expanded{max-height:none;display:block;-webkit-line-clamp:unset;}
@@ -1300,18 +1301,18 @@ function boot(seedBatches, seedStudents) {
     const id = b.id;
 
     const mockCols = d.mockRequired
-      ? '<td>'+textCell('mockTitle', d.mockTitle, editing, 'Title')+'</td>'
+      ? '<td class="col-wrap-text">'+textCell('mockTitle', d.mockTitle, editing, 'Title')+'</td>'
         + '<td>'+dateCell('mockDate', d, editing)+'</td>'
         + '<td>'+timeCell('mockStart', d, editing)+'</td>'
         + '<td>'+timeCell('mockEnd', d, editing)+errSpan('mock', id, errors.mock)+'</td>'
-        + '<td>'+textCell('mockTag', d.mockTag, editing, 'Tag')+'</td>'
+        + '<td class="col-wrap-text">'+textCell('mockTag', d.mockTag, editing, 'Tag')+'</td>'
       : '<td class="muted-cell">Not Required</td>'.repeat(5);
 
     const mainCols =
-        '<td>'+textCell('mainTitle', d.mainTitle, editing, 'Title')+'</td>'
+        '<td class="col-wrap-text">'+textCell('mainTitle', d.mainTitle, editing, 'Title')+'</td>'
       + '<td>'+dateTimeCell('mainStartAt', d, editing)+'</td>'
       + '<td>'+dateTimeCell('mainEndAt', d, editing)+errSpan('main', id, errors.main)+'</td>'
-      + '<td>'+textCell('mainTag', d.mainTag, editing, 'Tag')+'</td>';
+      + '<td class="col-wrap-text">'+textCell('mainTag', d.mainTag, editing, 'Tag')+'</td>';
 
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + programCell(d.program, editing) + '</td>'
