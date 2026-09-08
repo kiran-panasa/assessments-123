@@ -63,7 +63,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-body);-webkit-
 .btn--sm{padding:6px 12px;font-size:12px;}
 .btn--xs{padding:4px 9px;font-size:11.5px;}
 .btn--primary{background:var(--accent);color:#fff;}
-.btn--primary:hover{background:var(--accent-ink);}
+.btn--primary:hover{filter:brightness(0.9);}
 .btn--primary:disabled{opacity:.5;cursor:not-allowed;}
 .btn--ghost{background:transparent;border-color:var(--border);color:var(--ink-2);}
 .btn--ghost:hover{background:var(--surface-2);}
@@ -338,6 +338,7 @@ document.getElementById('app-style').textContent = CSS;
 
 const LS_KEY = 'cohort-ledger:batches:v1';
 const LS_KEY_STUDENTS = 'cohort-ledger:students:v1';
+const LS_KEY_PROGRAMS = 'cohort-ledger:programs:v1';
 const FIREBASE_SDK_VERSION = '12.18.0';
 const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyA-2dM3Tq7z5qv1tdlyhP0GTGVK2dKn4JU',
@@ -348,7 +349,7 @@ const FIREBASE_CONFIG = {
   appId: '1:23558688515:web:7d019cf5427675331ae336'
 };
 
-function fullDocumentHTML(batches, students) {
+function fullDocumentHTML(batches, students, programs) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -367,17 +368,18 @@ const CSS = ${JSON.stringify(CSS)};
 document.getElementById('app-style').textContent = CSS;
 const LS_KEY = ${JSON.stringify(LS_KEY)};
 const LS_KEY_STUDENTS = ${JSON.stringify(LS_KEY_STUDENTS)};
+const LS_KEY_PROGRAMS = ${JSON.stringify(LS_KEY_PROGRAMS)};
 const FIREBASE_SDK_VERSION = ${JSON.stringify(FIREBASE_SDK_VERSION)};
 const FIREBASE_CONFIG = ${JSON.stringify(FIREBASE_CONFIG)};
 ${fullDocumentHTML.toString()}
 ${boot.toString()}
-boot(${JSON.stringify(batches)}, ${JSON.stringify(students)});
+boot(${JSON.stringify(batches)}, ${JSON.stringify(students)}, ${JSON.stringify(programs)});
 <\/script>
 </body>
 </html>`;
 }
 
-function boot(seedBatches, seedStudents) {
+function boot(seedBatches, seedStudents, seedPrograms) {
   const ICON_TRASH = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 4H13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6 4V2.6C6 2.27 6.27 2 6.6 2H9.4C9.73 2 10 2.27 10 2.6V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M4.2 4L4.8 12.6C4.85 13.37 5.48 14 6.26 14H9.74C10.52 14 11.15 13.37 11.2 12.6L11.8 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   // One-time automation setup via a shared link (?serverUrl=...&automationKey=...),
@@ -409,6 +411,11 @@ function boot(seedBatches, seedStudents) {
   const studentsBase = (studentsStored && Array.isArray(studentsStored) && studentsStored.length) ? studentsStored : seedStudents;
   let students = studentsBase.map(normalizeStudent);
 
+  let programsStored = null;
+  try { const raw3 = localStorage.getItem(LS_KEY_PROGRAMS); if (raw3) programsStored = JSON.parse(raw3); } catch (e) {}
+  const programsBase = (programsStored && Array.isArray(programsStored) && programsStored.length) ? programsStored : (seedPrograms || []);
+  let programs = programsBase.map(normalizeProgram);
+
   let editingId = null;
   let draft = null;
   let isNewRow = false;
@@ -438,7 +445,6 @@ function boot(seedBatches, seedStudents) {
   let configDraft = null;
   let configSearchQuery = '';
   let configBatchFilter = '';
-  let configWeekFilter = '';
   let configStatusTab = 'all';
   let configDateFilter = { from: '', to: '' };
   let assessStatusTab = 'all';
@@ -448,6 +454,10 @@ function boot(seedBatches, seedStudents) {
   let interviewDraft = null;
   let interviewSearchQuery = '';
   let interviewBatchFilter = '';
+  let programEditingId = null;
+  let programDraft = null;
+  let programIsNewRow = false;
+  let latestRemotePrograms = null;
   let publishModalTarget = null;
   let publishModalConfirmed = false;
   let pollTimer = null;
@@ -485,7 +495,7 @@ function boot(seedBatches, seedStudents) {
           return;
         }
         const list = snap.docs.map(d => normalizeBatch({ id: d.id, ...d.data() }));
-        list.sort((a, b) => (a.batch || '').localeCompare(b.batch) || (a.week || '').localeCompare(b.week));
+        list.sort((a, b) => (a.batch || '').localeCompare(b.batch));
         applyRemoteBatches(list);
       }, err => {
         console.error('Firestore sync error', err);
@@ -504,6 +514,18 @@ function boot(seedBatches, seedStudents) {
         applyRemoteStudents(list);
       }, err => {
         console.error('Firestore students sync error', err);
+      });
+      const programsCol = fs.collection(db, 'programs');
+      fs.onSnapshot(programsCol, snap => {
+        if (snap.empty && !snap.metadata.fromCache) {
+          seedFirestorePrograms();
+          return;
+        }
+        const list = snap.docs.map(d => normalizeProgram({ id: d.id, ...d.data() }));
+        list.sort((a, b) => (a.name || '').localeCompare(b.name));
+        applyRemotePrograms(list);
+      }, err => {
+        console.error('Firestore programs sync error', err);
       });
       updateSyncBadge();
     } catch (err) {
@@ -561,6 +583,17 @@ function boot(seedBatches, seedStudents) {
     };
   }
 
+  function normalizeProgram(p) {
+    return {
+      id: p.id,
+      name: p.name || '',
+      assessmentsRequired: p.assessmentsRequired != null ? !!p.assessmentsRequired : true,
+      nxtmockRequired: !!p.nxtmockRequired,
+      mainInterviewRequired: !!p.mainInterviewRequired,
+      updatedAt: p.updatedAt || ''
+    };
+  }
+
   function normalizeBatch(b) {
     const mockRequired = !!b.mockRequired;
     const inferredMockInterviewRequired = b.mockInterviewRequired != null
@@ -568,8 +601,8 @@ function boot(seedBatches, seedStudents) {
       : !!(b.mockInterviewStartAt || b.mockInterviewDate || b.mockInterviewTitle || b.mockInterviewTag || b.nextDate);
     return {
       id: b.id,
+      programId: b.programId || '',
       batch: b.batch != null ? b.batch : (b.firstBatch || ''),
-      week: b.week || '',
       syllabusItems: normalizeSyllabusItems(b),
       mainSebStatus: (b.mainSebStatus === 'SEB' || b.mainSebStatus === 'Non-SEB') ? b.mainSebStatus : '',
       mockRequired: mockRequired,
@@ -640,6 +673,21 @@ function boot(seedBatches, seedStudents) {
     if (studentEditingId === null) { students = list; render(); }
   }
 
+  let seededPrograms = false;
+  function seedFirestorePrograms() {
+    if (seededPrograms || !db || !fs) return;
+    seededPrograms = true;
+    programs.forEach(p => {
+      const { id, ...data } = p;
+      fs.setDoc(fs.doc(db, 'programs', id), data).catch(e => console.error('Seed programs failed', e));
+    });
+  }
+
+  function applyRemotePrograms(list) {
+    latestRemotePrograms = list;
+    if (programEditingId === null) { programs = list; render(); }
+  }
+
   function updateSyncBadge() {
     const el = document.getElementById('sync-badge');
     if (!el) return;
@@ -691,14 +739,15 @@ function boot(seedBatches, seedStudents) {
           <h1 class="app-title">Assessments Ops</h1>
         </div>
         <div class="header-right">
-          <button type="button" class="btn btn--primary" id="add-batch-btn" data-action="add-batch">+ Add Batch</button>
+          <button type="button" class="btn btn--primary" id="add-batch-btn" data-action="add-batch">+ Add Title</button>
         </div>
       </div>
 
       <div class="shell">
         <nav class="sidebar">
           <button type="button" class="sidebar-link" data-action="nav" data-section="overview">Overview</button>
-          <button type="button" class="sidebar-link" data-action="nav" data-section="records">Batch &amp; Syllabus Details</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="programs">Programs</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="records">Title &amp; Syllabus Details</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="students">Students Data</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="topin">Topin Configs</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="assessments">Assessments</button>
@@ -723,22 +772,43 @@ function boot(seedBatches, seedStudents) {
             <div class="timeline" id="timeline"></div>
           </section>
 
-          <section class="content-section" id="section-records">
-            <h2 class="section-heading">Batch &amp; Syllabus Details</h2>
+          <section class="content-section" id="section-programs">
+            <h2 class="section-heading">Programs</h2>
             <div class="filter-bar">
-              <div class="filter-field"><label for="syllabus-search">Search</label><input type="text" id="syllabus-search" placeholder="Search batch, subject, topic&hellip;"></div>
+              <button type="button" class="btn btn--primary btn--sm" id="add-program-btn" data-action="add-program">+ Add Program</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr class="thead-single">
+                    <th class="col-syllabus">Program Name</th>
+                    <th>Assessments Required</th>
+                    <th>NxtMock Required</th>
+                    <th>Main Interview Required</th>
+                    <th class="col-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="programs-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="content-section" id="section-records">
+            <h2 class="section-heading">Title &amp; Syllabus Details</h2>
+            <div class="filter-bar">
+              <div class="filter-field"><label for="syllabus-search">Search</label><input type="text" id="syllabus-search" placeholder="Search title, subject, topic&hellip;"></div>
               <div class="filter-field"><label for="syllabus-filter-from">From</label><input type="date" id="syllabus-filter-from"></div>
               <div class="filter-field"><label for="syllabus-filter-to">To</label><input type="date" id="syllabus-filter-to"></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-syllabus-filter">Clear</button>
               <button type="button" class="btn btn--ghost btn--sm" id="notify-smes-btn" data-action="open-notify" disabled>Notify SMEs</button>
-              <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="import-batches-btn" data-action="open-import">Import Batches</button>
+              <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="import-batches-btn" data-action="open-import">Bulk Import</button>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr class="thead-groups">
-                    <th class="col-syllabus" rowspan="2"><input type="checkbox" id="records-select-all" aria-label="Select all"> Batch</th>
-                    <th rowspan="2">Week</th>
+                    <th class="col-syllabus" rowspan="2"><input type="checkbox" id="records-select-all" aria-label="Select all"> Title</th>
+                    <th rowspan="2">Program</th>
                     <th colspan="2">Syllabus</th>
                     <th rowspan="2">Main Assessment SEB Status</th>
                     <th colspan="6" class="grp-amber">Mock Assessment</th>
@@ -779,8 +849,8 @@ function boot(seedBatches, seedStudents) {
           <section class="content-section" id="section-students">
             <h2 class="section-heading">Students Data</h2>
             <div class="filter-bar">
-              <div class="filter-field"><label for="student-search">Search</label><input type="text" id="student-search" placeholder="Search batch, name, email&hellip;"></div>
-              <div class="filter-field"><label for="student-filter-batch">Batch</label><select id="student-filter-batch"><option value="">All Batches</option></select></div>
+              <div class="filter-field"><label for="student-search">Search</label><input type="text" id="student-search" placeholder="Search title, name, email&hellip;"></div>
+              <div class="filter-field"><label for="student-filter-batch">Title</label><select id="student-filter-batch"><option value="">All Titles</option></select></div>
               <div class="filter-bar-count" id="student-filter-count"></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-student-filter">Clear</button>
               <button type="button" class="btn btn--ghost btn--sm" data-action="download-students">Download CSV</button>
@@ -793,7 +863,7 @@ function boot(seedBatches, seedStudents) {
                 <thead>
                   <tr class="thead-single">
                     <th class="col-syllabus"><input type="checkbox" id="student-select-all" aria-label="Select all"></th>
-                    <th>Batch</th>
+                    <th>Title</th>
                     <th>UID</th>
                     <th>Student ID</th>
                     <th>Name</th>
@@ -815,9 +885,8 @@ function boot(seedBatches, seedStudents) {
               <button type="button" class="tab-btn" data-action="config-tab" data-tab="submitted">Submitted</button>
             </div>
             <div class="filter-bar">
-              <div class="filter-field"><label for="config-search">Search</label><input type="text" id="config-search" placeholder="Search batch or week&hellip;"></div>
-              <div class="filter-field"><label for="config-filter-batch">Batch</label><select id="config-filter-batch"><option value="">All Batches</option></select></div>
-              <div class="filter-field"><label for="config-filter-week">Week</label><select id="config-filter-week"><option value="">All Weeks</option></select></div>
+              <div class="filter-field"><label for="config-search">Search</label><input type="text" id="config-search" placeholder="Search title&hellip;"></div>
+              <div class="filter-field"><label for="config-filter-batch">Title</label><select id="config-filter-batch"><option value="">All Titles</option></select></div>
               <div class="filter-field"><label for="config-filter-from">From</label><input type="date" id="config-filter-from"></div>
               <div class="filter-field"><label for="config-filter-to">To</label><input type="date" id="config-filter-to"></div>
               <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="clear-config-filter">Clear</button>
@@ -827,8 +896,7 @@ function boot(seedBatches, seedStudents) {
                 <thead>
                   <tr class="thead-single">
                     <th>#</th>
-                    <th class="col-syllabus">Batch</th>
-                    <th>Week</th>
+                    <th class="col-syllabus">Title</th>
                     <th>Assessment Type</th>
                     <th>Mock Assessment Config</th>
                     <th>Mock Interview Config</th>
@@ -856,8 +924,8 @@ function boot(seedBatches, seedStudents) {
               <button type="button" class="tab-btn active" data-action="assess-tab" data-tab="all">All</button>
             </div>
             <div class="filter-bar">
-              <div class="filter-field"><label for="assess-search">Search</label><input type="text" id="assess-search" placeholder="Search batch or week&hellip;"></div>
-              <div class="filter-field"><label for="assess-filter-batch">Batch</label><select id="assess-filter-batch"><option value="">All Batches</option></select></div>
+              <div class="filter-field"><label for="assess-search">Search</label><input type="text" id="assess-search" placeholder="Search title&hellip;"></div>
+              <div class="filter-field"><label for="assess-filter-batch">Title</label><select id="assess-filter-batch"><option value="">All Titles</option></select></div>
               <div class="filter-field"><label for="assess-filter-status">Status</label><select id="assess-filter-status">
                 <option value="all">All</option>
                 <option value="ready">Ready to Publish</option>
@@ -873,8 +941,7 @@ function boot(seedBatches, seedStudents) {
                 <thead>
                   <tr class="thead-single">
                     <th>#</th>
-                    <th class="col-syllabus">Batch</th>
-                    <th>Week</th>
+                    <th class="col-syllabus">Title</th>
                     <th>Assessment Type</th>
                     <th>Main Config Link</th>
                     <th>Mock Config Link</th>
@@ -890,8 +957,8 @@ function boot(seedBatches, seedStudents) {
           <section class="content-section" id="section-interviews">
             <h2 class="section-heading">NxtMock Interviews</h2>
             <div class="filter-bar">
-              <div class="filter-field"><label for="interview-search">Search</label><input type="text" id="interview-search" placeholder="Search batch or week&hellip;"></div>
-              <div class="filter-field"><label for="interview-filter-batch">Batch</label><select id="interview-filter-batch"><option value="">All Batches</option></select></div>
+              <div class="filter-field"><label for="interview-search">Search</label><input type="text" id="interview-search" placeholder="Search title&hellip;"></div>
+              <div class="filter-field"><label for="interview-filter-batch">Title</label><select id="interview-filter-batch"><option value="">All Titles</option></select></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-interview-filter">Clear</button>
             </div>
             <div class="table-wrap">
@@ -899,8 +966,7 @@ function boot(seedBatches, seedStudents) {
                 <thead>
                   <tr class="thead-single">
                     <th>#</th>
-                    <th class="col-syllabus">Batch</th>
-                    <th>Week</th>
+                    <th class="col-syllabus">Title</th>
                     <th>Assessment Type</th>
                     <th>Main Interview Link</th>
                     <th>Mock Interview Link</th>
@@ -931,7 +997,7 @@ function boot(seedBatches, seedStudents) {
           <details class="import-help">
             <summary>Which columns can I use?</summary>
             <p class="section-desc">One row per student.</p>
-            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Batch, UID, Student ID, Name, Mobile Number, Email ID. A row needs at least a Name, Student ID, or UID to be imported; unrecognized columns are ignored.</p>
+            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Title, UID, Student ID, Name, Mobile Number, Email ID. A row needs at least a Name, Student ID, or UID to be imported; unrecognized columns are ignored.</p>
           </details>
           <div id="student-import-preview"><p class="section-desc">Choose a CSV file to preview the students it will add before importing.</p></div>
         </div>
@@ -944,7 +1010,7 @@ function boot(seedBatches, seedStudents) {
     <div class="modal-overlay" id="import-modal-overlay" hidden>
       <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
         <div class="modal-header">
-          <h3 id="import-modal-title">Import Batches</h3>
+          <h3 id="import-modal-title">Bulk Import</h3>
           <button type="button" class="modal-close" data-action="close-import" aria-label="Close">&times;</button>
         </div>
         <div class="modal-body">
@@ -954,12 +1020,12 @@ function boot(seedBatches, seedStudents) {
           </div>
           <details class="import-help">
             <summary>Which columns can I use?</summary>
-            <p class="section-desc">One CSV row per subject. Repeat the same <strong>Batch</strong> (and Week) on multiple rows to add several subjects to one batch &mdash; everything else is read from the first row for that batch.</p>
-            <p class="section-desc">These are exactly the fields you'd fill in by hand when editing a batch &mdash; nothing extra.</p>
-            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Batch, Week, Subject, Topics, Mock Assessment Required, Mock Assessment Title, Mock Assessment Date, Mock Assessment Start, Mock Assessment End, Mock Assessment Tag, Mock Interview Required, Mock Interview Title, Mock Interview Start Date &amp; Time, Mock Interview End Date &amp; Time, Mock Interview Tag, Main Assessment Title, Main Assessment Start Date &amp; Time, Main Assessment End Date &amp; Time, Main Assessment Tag, Main Interview Title, Main Interview Start Date &amp; Time, Main Interview End Date &amp; Time, Main Interview Tag, SEB Status. Required fields accept Yes/No; unrecognized columns are ignored.</p>
+            <p class="section-desc">One CSV row per subject. Repeat the same <strong>Title</strong> on multiple rows to add several subjects to one title &mdash; everything else is read from the first row for that title.</p>
+            <p class="section-desc">These are exactly the fields you'd fill in by hand when editing a title &mdash; nothing extra.</p>
+            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Title, Subject, Topics, Mock Assessment Required, Mock Assessment Title, Mock Assessment Date, Mock Assessment Start, Mock Assessment End, Mock Assessment Tag, Mock Interview Required, Mock Interview Title, Mock Interview Start Date &amp; Time, Mock Interview End Date &amp; Time, Mock Interview Tag, Main Assessment Title, Main Assessment Start Date &amp; Time, Main Assessment End Date &amp; Time, Main Assessment Tag, Main Interview Title, Main Interview Start Date &amp; Time, Main Interview End Date &amp; Time, Main Interview Tag, SEB Status. Required fields accept Yes/No; unrecognized columns are ignored.</p>
             <p class="section-desc"><strong>Date &amp; time format:</strong> Mock Assessment Date is a plain date (<code>2026-09-10</code>) with separate Start/End times (<code>10:00</code>, 24-hour). Every other Start/End Date &amp; Time column is one combined value, either <code>YYYY-MM-DD HH:MM</code> (e.g. <code>2026-09-12 11:00</code>) or <code>DD-MM-YYYY HH:MM</code> (e.g. <code>12-09-2026 11:00</code>). Anything else is left blank rather than imported wrong &mdash; the preview will flag it.</p>
           </details>
-          <div id="import-preview"><p class="section-desc">Choose a CSV file to preview the batches it will create before importing.</p></div>
+          <div id="import-preview"><p class="section-desc">Choose a CSV file to preview the titles it will create before importing.</p></div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-import">Cancel</button>
@@ -1092,6 +1158,15 @@ function boot(seedBatches, seedStudents) {
     if (!editing) return esc(value) || dash();
     return '<input type="text" class="cell-input" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'">';
   }
+  function programSelectCell(programId, editing) {
+    if (!editing) {
+      const p = programs.find(pr => pr.id === programId);
+      return p ? esc(p.name) : '<span class="muted-cell">No Program</span>';
+    }
+    const options = ['<option value="">&mdash; No Program &mdash;</option>']
+      .concat(programs.map(p => '<option value="'+esc(p.id)+'"'+(p.id===programId?' selected':'')+'>'+esc(p.name)+'</option>'));
+    return '<select class="cell-input" data-field="programId">' + options.join('') + '</select>';
+  }
   function syllabusPairCell(items, editing, batchId) {
     if (!editing) {
       if (!items.length) return dash();
@@ -1172,7 +1247,7 @@ function boot(seedBatches, seedStudents) {
   function studentBatchSelect(value, editing) {
     if (!editing) return esc(value) || dash();
     const names = allKnownBatchNames();
-    const options = ['<option value=""'+(value?'':' selected')+'>&mdash; Select Batch &mdash;</option>']
+    const options = ['<option value=""'+(value?'':' selected')+'>&mdash; Select Title &mdash;</option>']
       .concat(names.map(n => '<option value="'+esc(n)+'"'+(n===value?' selected':'')+'>'+esc(n)+'</option>'));
     return '<select class="cell-input student-cell-input" data-field="batch">' + options.join('') + '</select>';
   }
@@ -1243,7 +1318,6 @@ function boot(seedBatches, seedStudents) {
     return '<tr class="'+(editing?'row-editing':'')+'" id="crow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
-      + '<td>' + (esc(b.week) || dash()) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -1290,8 +1364,8 @@ function boot(seedBatches, seedStudents) {
       + '<td>'+textCell('mainInterviewTag', d.mainInterviewTag, editing, 'Tag')+'</td>';
 
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
-      + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + textCell('batch', d.batch, editing, 'Batch name') + '</td>'
-      + '<td>' + textCell('week', d.week, editing, 'Week 1') + '</td>'
+      + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + textCell('batch', d.batch, editing, 'Title') + '</td>'
+      + '<td>' + programSelectCell(d.programId, editing) + '</td>'
       + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing, id) + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
       + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
@@ -1395,7 +1469,7 @@ function boot(seedBatches, seedStudents) {
     syncOverviewFilterInputs();
     const c = computeOverviewCounts(overviewDateRange.from, overviewDateRange.to);
     el.innerHTML =
-      kpiCard('Batch', c.batch, '', 'batch') +
+      kpiCard('Title', c.batch, '', 'batch') +
       kpiCard('Mock Assessment', c.mock, '', 'mock') +
       kpiCard('Mock Interview', c.mockInterview, '', 'mockInterview') +
       kpiCard('Main Assessment', c.main, '', 'main') +
@@ -1450,7 +1524,7 @@ function boot(seedBatches, seedStudents) {
     return batches.filter(b => {
       if (q) {
         const syllabusText = b.syllabusItems.map(it => it.subject + ' ' + it.topics).join(' ');
-        const hay = [b.batch, b.week, syllabusText, b.mockTitle, b.mockTag, b.mockInterviewTitle, b.mockInterviewTag, b.mainTitle, b.mainTag, b.mainInterviewTitle, b.mainInterviewTag].join(' ').toLowerCase();
+        const hay = [b.batch, syllabusText, b.mockTitle, b.mockTag, b.mockInterviewTitle, b.mockInterviewTag, b.mainTitle, b.mainTag, b.mainInterviewTitle, b.mainInterviewTag].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return batchMatchesDateRange(b, dateFilter.from, dateFilter.to);
@@ -1480,7 +1554,7 @@ function boot(seedBatches, seedStudents) {
     }
     updateRecordsSelectionUI(filtered);
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="25"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Batch</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="25"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Title</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
@@ -1502,7 +1576,7 @@ function boot(seedBatches, seedStudents) {
     const sel = document.getElementById('student-filter-batch');
     if (!sel) return;
     const names = Array.from(new Set(students.map(s => s.batch).filter(Boolean))).sort();
-    sel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===studentBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
+    sel.innerHTML = '<option value="">All Titles</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===studentBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
   }
 
   function updateStudentSelectionUI(filtered) {
@@ -1546,12 +1620,7 @@ function boot(seedBatches, seedStudents) {
     const batchSel = document.getElementById('config-filter-batch');
     if (batchSel) {
       const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
-      batchSel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===configBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
-    }
-    const weekSel = document.getElementById('config-filter-week');
-    if (weekSel) {
-      const weeks = Array.from(new Set(batches.map(b => b.week).filter(Boolean))).sort();
-      weekSel.innerHTML = '<option value="">All Weeks</option>' + weeks.map(w => '<option value="'+esc(w)+'"'+(w===configWeekFilter?' selected':'')+'>'+esc(w)+'</option>').join('');
+      batchSel.innerHTML = '<option value="">All Titles</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===configBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
     }
   }
 
@@ -1562,11 +1631,10 @@ function boot(seedBatches, seedStudents) {
     const q = configSearchQuery.trim().toLowerCase();
     let filtered = batches.filter(b => {
       if (q) {
-        const hay = [b.batch, b.week].join(' ').toLowerCase();
+        const hay = b.batch.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (configBatchFilter && b.batch !== configBatchFilter) return false;
-      if (configWeekFilter && b.week !== configWeekFilter) return false;
       if (configStatusTab !== 'all' && configStatus(b) !== configStatusTab) return false;
       if (configDateFilter.from || configDateFilter.to) {
         const d = b.updatedAt ? b.updatedAt.slice(0, 10) : '';
@@ -1581,7 +1649,7 @@ function boot(seedBatches, seedStudents) {
       if (eb) filtered = [eb].concat(filtered);
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => configRowHTML(b, i + 1)).join('');
@@ -1629,7 +1697,7 @@ function boot(seedBatches, seedStudents) {
     const sel = document.getElementById('assess-filter-batch');
     if (!sel) return;
     const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
-    sel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===assessBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
+    sel.innerHTML = '<option value="">All Titles</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===assessBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
   }
 
   function assessInviteButton(b, type) {
@@ -1729,7 +1797,6 @@ function boot(seedBatches, seedStudents) {
     return '<tr id="arow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '<div class="muted-cell">' + count + ' student' + (count === 1 ? '' : 's') + '</div></td>'
-      + '<td>' + (esc(b.week) || dash()) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td>' + (status === 'published' ? publishedLinkCell(b.mainConfigUrl, b.mainAssessmentLink) : configField('mainConfigUrl', b.mainConfigUrl, false)) + '</td>'
       + '<td>' + (b.mockRequired ? (status === 'published' ? publishedLinkCell(b.mockConfigUrl, b.mockAssessmentLink) : configField('mockConfigUrl', b.mockConfigUrl, false)) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -1753,7 +1820,7 @@ function boot(seedBatches, seedStudents) {
     const q = assessSearchQuery.trim().toLowerCase();
     const filtered = batches.filter(b => {
       if (q) {
-        const hay = [b.batch, b.week].join(' ').toLowerCase();
+        const hay = b.batch.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (assessBatchFilter && b.batch !== assessBatchFilter) return false;
@@ -1761,7 +1828,7 @@ function boot(seedBatches, seedStudents) {
       return true;
     });
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => assessRowHTML(b, i + 1)).join('');
@@ -1805,7 +1872,7 @@ function boot(seedBatches, seedStudents) {
     overlay.hidden = false;
     const type = publishModalTarget.type;
     const subtitleEl = document.getElementById('publish-modal-subtitle');
-    if (subtitleEl) subtitleEl.innerHTML = 'Marking <strong>' + esc(b.batch) + (b.week ? ' &mdash; ' + esc(b.week) : '') + '</strong> as published.';
+    if (subtitleEl) subtitleEl.innerHTML = 'Marking <strong>' + esc(b.batch) + '</strong> as published.';
     const badgeEl = document.getElementById('publish-modal-badge');
     if (badgeEl) badgeEl.textContent = type === 'main' ? 'Main Assessment' : 'Mock Assessment';
     const detailsEl = document.getElementById('publish-modal-details');
@@ -2290,7 +2357,6 @@ function boot(seedBatches, seedStudents) {
     return '<tr class="'+(editing?'row-editing':'')+'" id="irow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
-      + '<td>' + (esc(b.week) || dash()) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockInterviewRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockInterviewRequired?'✓':'✗')+'</span></td>'
       + '<td>' + interviewLinkField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewLinkField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -2304,7 +2370,7 @@ function boot(seedBatches, seedStudents) {
     const sel = document.getElementById('interview-filter-batch');
     if (!sel) return;
     const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
-    sel.innerHTML = '<option value="">All Batches</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===interviewBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
+    sel.innerHTML = '<option value="">All Titles</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===interviewBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
   }
 
   function renderInterviewsTable() {
@@ -2314,14 +2380,14 @@ function boot(seedBatches, seedStudents) {
     const q = interviewSearchQuery.trim().toLowerCase();
     const filtered = batches.filter(b => {
       if (q) {
-        const hay = [b.batch, b.week].join(' ').toLowerCase();
+        const hay = b.batch.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (interviewBatchFilter && b.batch !== interviewBatchFilter) return false;
       return true;
     });
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => interviewRowHTML(b, i + 1)).join('');
@@ -2379,6 +2445,7 @@ function boot(seedBatches, seedStudents) {
 
     renderKPICards();
     renderTimeline();
+    renderProgramsTable();
     renderRecordsTable();
     renderStudentsTable();
     renderConfigsTable();
@@ -2417,7 +2484,7 @@ function boot(seedBatches, seedStudents) {
         try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
       });
     } else if (artifactAPI) {
-      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(err => {
+      artifactAPI.publish(fullDocumentHTML(batches, students, programs)).catch(err => {
         const code = err && err.code;
         if (code === 'not_writer' || code === 'not_granted') {
           canWrite = false; render();
@@ -2442,7 +2509,7 @@ function boot(seedBatches, seedStudents) {
         flashToast('Live sync failed to delete.', 'error');
       });
     } else if (artifactAPI) {
-      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(() => {
+      artifactAPI.publish(fullDocumentHTML(batches, students, programs)).catch(() => {
         try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
       });
     } else {
@@ -2459,7 +2526,7 @@ function boot(seedBatches, seedStudents) {
         try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
       });
     } else if (artifactAPI) {
-      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(err => {
+      artifactAPI.publish(fullDocumentHTML(batches, students, programs)).catch(err => {
         const code = err && err.code;
         if (code === 'not_writer' || code === 'not_granted') {
           canWrite = false; render();
@@ -2484,12 +2551,147 @@ function boot(seedBatches, seedStudents) {
         flashToast('Live sync failed to delete.', 'error');
       });
     } else if (artifactAPI) {
-      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(() => {
+      artifactAPI.publish(fullDocumentHTML(batches, students, programs)).catch(() => {
         try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
       });
     } else {
       try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
     }
+  }
+
+  function persistProgramSave(programObj) {
+    if (syncMode === 'firebase' && db && fs) {
+      const { id, ...data } = programObj;
+      fs.setDoc(fs.doc(db, 'programs', id), data).catch(err => {
+        console.error('Firestore program save failed', err);
+        flashToast('Live sync failed — saved to this browser only.', 'error');
+        try { localStorage.setItem(LS_KEY_PROGRAMS, JSON.stringify(programs)); } catch (e) {}
+      });
+    } else if (artifactAPI) {
+      artifactAPI.publish(fullDocumentHTML(batches, students, programs)).catch(err => {
+        const code = err && err.code;
+        if (code === 'not_writer' || code === 'not_granted') {
+          canWrite = false; render();
+          flashToast('This view is read-only — changes are not saved.', 'error');
+        } else if (code === 'conflict') {
+          /* the view is being reloaded to the newer version */
+        } else if (code === 'rate_limited') {
+          flashToast('Saving too fast — please wait a moment and try again.', 'error');
+        } else {
+          try { localStorage.setItem(LS_KEY_PROGRAMS, JSON.stringify(programs)); } catch (e) {}
+        }
+      });
+    } else {
+      try { localStorage.setItem(LS_KEY_PROGRAMS, JSON.stringify(programs)); } catch (e) {}
+    }
+  }
+
+  function persistProgramDelete(id) {
+    if (syncMode === 'firebase' && db && fs) {
+      fs.deleteDoc(fs.doc(db, 'programs', id)).catch(err => {
+        console.error('Firestore program delete failed', err);
+        flashToast('Live sync failed to delete.', 'error');
+      });
+    } else if (artifactAPI) {
+      artifactAPI.publish(fullDocumentHTML(batches, students, programs)).catch(() => {
+        try { localStorage.setItem(LS_KEY_PROGRAMS, JSON.stringify(programs)); } catch (e) {}
+      });
+    } else {
+      try { localStorage.setItem(LS_KEY_PROGRAMS, JSON.stringify(programs)); } catch (e) {}
+    }
+  }
+
+  function programToggleCell(value, editing, action) {
+    if (!editing) return '<span class="badge '+(value?'badge--yes':'badge--no')+'">'+(value?'Yes':'No')+'</span>';
+    return '<label class="switch"><input type="checkbox" data-action="'+action+'" '+(value?'checked':'')+'><span class="switch-track"><span class="switch-thumb"></span></span></label>';
+  }
+
+  function programActionsCell(id, editing) {
+    if (!canWrite) return '<span class="muted-cell">Locked</span>';
+    if (editing) {
+      return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save-program">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel-program">Cancel</button></div>';
+    }
+    return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit-program" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete-program" data-id="'+id+'" aria-label="Delete program" title="Delete program">'+ICON_TRASH+'</button></div>';
+  }
+
+  function programNameField(value, editing) {
+    if (!editing) return esc(value) || dash();
+    return '<input type="text" class="cell-input program-cell-input" data-field="name" value="'+esc(value)+'" placeholder="Program name">';
+  }
+
+  function programRowHTML(p) {
+    const editing = programEditingId === p.id;
+    const d = editing ? programDraft : p;
+    return '<tr class="'+(editing?'row-editing':'')+'" id="prow-'+p.id+'" data-id="'+p.id+'">'
+      + '<td class="col-syllabus cell-strong">' + programNameField(d.name, editing) + '</td>'
+      + '<td>' + programToggleCell(d.assessmentsRequired, editing, 'toggle-program-assessments') + '</td>'
+      + '<td>' + programToggleCell(d.nxtmockRequired, editing, 'toggle-program-nxtmock') + '</td>'
+      + '<td>' + programToggleCell(d.mainInterviewRequired, editing, 'toggle-program-maininterview') + '</td>'
+      + '<td class="col-actions">' + programActionsCell(p.id, editing) + '</td>'
+      + '</tr>';
+  }
+
+  function renderProgramsTable() {
+    const tbody = document.getElementById('programs-tbody');
+    if (!tbody) return;
+    if (!programs.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">No programs yet.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-program">+ Add Program</button></div>':'')+'</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = programs.map(programRowHTML).join('');
+  }
+
+  function startProgramEdit(id) {
+    if (!canWrite) return;
+    const p = programs.find(x => x.id === id);
+    if (!p) return;
+    programEditingId = id; programIsNewRow = false;
+    programDraft = { ...p };
+    render();
+  }
+
+  function startAddProgram() {
+    if (!canWrite) return;
+    if (programEditingId && programIsNewRow) programs = programs.filter(p => p.id !== programEditingId);
+    activeSection = 'programs';
+    const id = uid();
+    const blank = normalizeProgram({ id });
+    programs.unshift(blank);
+    programEditingId = id; programIsNewRow = true;
+    programDraft = { ...blank };
+    render();
+    requestAnimationFrame(() => {
+      const el = document.querySelector('#prow-' + id + ' .program-cell-input[data-field="name"]');
+      if (el) el.focus();
+    });
+  }
+
+  function saveProgram() {
+    if (!programDraft.name.trim()) { flashToast('Program name is required.', 'error'); return; }
+    programDraft.updatedAt = new Date().toISOString();
+    const idx = programs.findIndex(p => p.id === programEditingId);
+    if (idx > -1) programs[idx] = { ...programDraft };
+    const saved = { ...programDraft };
+    programEditingId = null; programDraft = null; programIsNewRow = false;
+    render();
+    persistProgramSave(saved);
+    flashToast('Program saved.', 'success');
+  }
+
+  function cancelProgramEdit() {
+    if (programIsNewRow && programEditingId) programs = programs.filter(p => p.id !== programEditingId);
+    programEditingId = null; programDraft = null; programIsNewRow = false;
+    render();
+  }
+
+  function removeProgram(id) {
+    if (!canWrite) return;
+    if (!confirm('Delete this program? This cannot be undone.')) return;
+    programs = programs.filter(p => p.id !== id);
+    if (programEditingId === id) { programEditingId = null; programDraft = null; programIsNewRow = false; }
+    render();
+    persistProgramDelete(id);
+    flashToast('Program deleted.', 'success');
   }
 
   function startEdit(id) {
@@ -2530,7 +2732,7 @@ function boot(seedBatches, seedStudents) {
   function save() {
     const errors = validateDraft(draft);
     if (Object.keys(errors).length) { updateErrorDisplays(); flashToast('Fix the highlighted time ranges before saving.', 'error'); return; }
-    if (!draft.batch.trim()) { flashToast('Batch is required.', 'error'); return; }
+    if (!draft.batch.trim()) { flashToast('Title is required.', 'error'); return; }
     draft.updatedAt = new Date().toISOString();
     const idx = batches.findIndex(b => b.id === editingId);
     if (idx > -1) batches[idx] = { ...draft };
@@ -2538,7 +2740,7 @@ function boot(seedBatches, seedStudents) {
     editingId = null; draft = null; isNewRow = false;
     render();
     persistSave(saved);
-    flashToast('Batch saved.', 'success');
+    flashToast('Title saved.', 'success');
   }
 
   function cancel() {
@@ -2554,7 +2756,7 @@ function boot(seedBatches, seedStudents) {
     if (editingId === id) { editingId = null; draft = null; isNewRow = false; }
     render();
     persistDelete(id);
-    flashToast('Batch deleted.', 'success');
+    flashToast('Title deleted.', 'success');
   }
 
   function startStudentEdit(id) {
@@ -2628,7 +2830,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   function buildStudentsExportCSV(list) {
-    const headers = ['Batch', 'UID', 'Student ID', 'Name', 'Mobile Number', 'Email ID'];
+    const headers = ['Title', 'UID', 'Student ID', 'Name', 'Mobile Number', 'Email ID'];
     const escCsv = v => {
       const s = String(v == null ? '' : v);
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -2779,8 +2981,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   const IMPORT_FIELD_MAP = {
-    batch: 'batch', batchname: 'batch',
-    week: 'week',
+    batch: 'batch', batchname: 'batch', title: 'batch',
     subject: 'subject',
     topics: 'topics', topic: 'topics',
     mockassessmentrequired: 'mockRequired', mockrequired: 'mockRequired',
@@ -2835,7 +3036,7 @@ function boot(seedBatches, seedStudents) {
     mapped.forEach(r => {
       const batchName = (r.batch || '').trim();
       if (!batchName) { skipped++; return; }
-      const key = batchName + '||' + (r.week || '').trim();
+      const key = batchName;
       if (!groups.has(key)) { groups.set(key, []); order.push(key); }
       groups.get(key).push(r);
     });
@@ -2846,11 +3047,10 @@ function boot(seedBatches, seedStudents) {
       const syllabusItems = rowsForBatch
         .filter(r => r.subject || r.topics)
         .map(r => ({ subject: (r.subject || '').trim(), topics: (r.topics || '').trim() }));
-      const existingBatch = batches.find(b => b.batch === first.batch && (b.week || '') === (first.week || '').trim());
+      const existingBatch = batches.find(b => b.batch === first.batch);
       const raw = {
         id: existingBatch ? existingBatch.id : uid(),
         batch: first.batch,
-        week: first.week || '',
         syllabusItems: syllabusItems,
         mockRequired: truthyImport(first.mockRequired),
         mockTitle: first.mockTitle || '',
@@ -2980,7 +3180,7 @@ function boot(seedBatches, seedStudents) {
     const confirmBtn = document.getElementById('confirm-import-btn');
     if (!el) return;
     if (!importPreview || !importPreview.batches.length) {
-      el.innerHTML = '<p class="section-desc">Choose a CSV file to preview the batches it will create before importing.</p>';
+      el.innerHTML = '<p class="section-desc">Choose a CSV file to preview the titles it will create before importing.</p>';
       if (confirmBtn) confirmBtn.disabled = true;
       return;
     }
@@ -2988,29 +3188,28 @@ function boot(seedBatches, seedStudents) {
     const existingIds = new Set(batches.map(b => b.id));
     const newCount = importPreview.batches.filter(b => !existingIds.has(b.id)).length;
     const updCount = importPreview.batches.length - newCount;
-    el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new batch' : ' new batches') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'batch' : 'batches') + ' updated' : '') + ' (matched by Batch + Week).</p>'
-      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Batch</th><th>Week</th><th>Subjects</th><th>Mock Required</th><th>SEB Status</th></tr></thead><tbody>'
+    el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new title' : ' new titles') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'title' : 'titles') + ' updated' : '') + ' (matched by Title).</p>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Title</th><th>Subjects</th><th>Mock Required</th><th>SEB Status</th></tr></thead><tbody>'
       + preview.map(b => '<tr>'
           + '<td><span class="badge '+(existingIds.has(b.id)?'badge--no':'badge--yes')+'">'+(existingIds.has(b.id)?'Update':'New')+'</span></td>'
           + '<td class="cell-strong">' + esc(b.batch) + '</td>'
-          + '<td>' + (esc(b.week) || dash()) + '</td>'
           + '<td>' + (b.syllabusItems.map(it => esc(it.subject)).filter(Boolean).join(', ') || dash()) + '</td>'
           + '<td>' + (b.mockRequired ? 'Yes' : 'No') + '</td>'
           + '<td>' + (esc(b.mainSebStatus) || dash()) + '</td>'
         + '</tr>').join('')
       + '</tbody></table></div>'
       + '<p class="footnote">Showing ' + preview.length + ' of ' + importPreview.batches.length + '.</p>'
-      + (importPreview.skipped ? '<p class="import-skip">Skipped ' + importPreview.skipped + ' row' + (importPreview.skipped === 1 ? '' : 's') + ' with no Batch value.</p>' : '')
+      + (importPreview.skipped ? '<p class="import-skip">Skipped ' + importPreview.skipped + ' row' + (importPreview.skipped === 1 ? '' : 's') + ' with no Title value.</p>' : '')
       + (importPreview.dateWarnings ? '<p class="import-skip">' + importPreview.dateWarnings + ' date/time value' + (importPreview.dateWarnings === 1 ? '' : 's') + " couldn't be understood and " + (importPreview.dateWarnings === 1 ? 'was' : 'were') + ' left blank. Use YYYY-MM-DD HH:MM or DD-MM-YYYY HH:MM.</p>' : '');
     if (confirmBtn) confirmBtn.disabled = false;
   }
 
   function buildSampleCSV() {
-    const headers = ['Batch','Week','Subject','Topics','Mock Assessment Required','Mock Assessment Title','Mock Assessment Date','Mock Assessment Start','Mock Assessment End','Mock Assessment Tag','Mock Interview Required','Mock Interview Title','Mock Interview Start Date & Time','Mock Interview End Date & Time','Mock Interview Tag','Main Assessment Title','Main Assessment Start Date & Time','Main Assessment End Date & Time','Main Assessment Tag','Main Interview Title','Main Interview Start Date & Time','Main Interview End Date & Time','Main Interview Tag','SEB Status'];
+    const headers = ['Title','Subject','Topics','Mock Assessment Required','Mock Assessment Title','Mock Assessment Date','Mock Assessment Start','Mock Assessment End','Mock Assessment Tag','Mock Interview Required','Mock Interview Title','Mock Interview Start Date & Time','Mock Interview End Date & Time','Mock Interview Tag','Main Assessment Title','Main Assessment Start Date & Time','Main Assessment End Date & Time','Main Assessment Tag','Main Interview Title','Main Interview Start Date & Time','Main Interview End Date & Time','Main Interview Tag','SEB Status'];
     const rows = [
-      ['CS25-B10','Week 1','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Yes','Frontend Mock Test','2026-09-10','10:00','12:00','Mock','Yes','Frontend Mock Interview','2026-09-12 11:00','2026-09-12 11:30','Mock Interview','Frontend Main Exam','2026-09-15 09:00','2026-09-15 11:00','Main Exam','Frontend Final Interview','2026-09-18 10:00','2026-09-18 10:30','Final','Non-SEB'],
-      ['CS25-B10','Week 1','Backend Development','Intro to Node.js | REST APIs | Databases','','','','','','','','','','','','','','','','','','','',''],
-      ['CS25-B11','Week 2','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','No','','','','','','No','','','','','DSA Main Exam','2026-09-20 09:00','2026-09-20 11:00','Main Exam','','','','','SEB']
+      ['CS25-B10','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Yes','Frontend Mock Test','2026-09-10','10:00','12:00','Mock','Yes','Frontend Mock Interview','2026-09-12 11:00','2026-09-12 11:30','Mock Interview','Frontend Main Exam','2026-09-15 09:00','2026-09-15 11:00','Main Exam','Frontend Final Interview','2026-09-18 10:00','2026-09-18 10:30','Final','Non-SEB'],
+      ['CS25-B10','Backend Development','Intro to Node.js | REST APIs | Databases','','','','','','','','','','','','','','','','','','','',''],
+      ['CS25-B11','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','No','','','','','','No','','','','','DSA Main Exam','2026-09-20 09:00','2026-09-20 11:00','Main Exam','','','','','SEB']
     ];
     const escCsv = v => {
       const s = String(v == null ? '' : v);
@@ -3026,14 +3225,14 @@ function boot(seedBatches, seedStudents) {
       const downloads = await window.claude.use('downloads');
       if (downloads) {
         try {
-          await downloads.save({ filename: 'batch-import-sample.csv', data: sample });
+          await downloads.save({ filename: 'bulk-import-sample.csv', data: sample });
           flashToast('Sample sheet downloaded.', 'success');
         } catch (err) {
           const code = err && err.code;
           if (code === 'declined') return;
           if (code === 'rejected_extension' || code === 'extension_not_enabled') {
             try {
-              await downloads.save({ filename: 'batch-import-sample.txt', data: sample });
+              await downloads.save({ filename: 'bulk-import-sample.txt', data: sample });
               flashToast('Downloaded as .txt — rename to .csv before importing.', 'success');
             } catch (e2) { flashToast('Could not download the sample sheet.', 'error'); }
           } else {
@@ -3048,7 +3247,7 @@ function boot(seedBatches, seedStudents) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'batch-import-sample.csv';
+      a.download = 'bulk-import-sample.csv';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -3059,7 +3258,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   const STUDENT_IMPORT_FIELD_MAP = {
-    batch: 'batch', batchname: 'batch', studentbatch: 'batch', batchcode: 'batch', batchid: 'batch', cohort: 'batch', cohortname: 'batch',
+    batch: 'batch', batchname: 'batch', studentbatch: 'batch', batchcode: 'batch', batchid: 'batch', cohort: 'batch', cohortname: 'batch', title: 'batch',
     uid: 'uid', userid: 'uid',
     studentid: 'studentId', studentidno: 'studentId', studentidnumber: 'studentId', id: 'studentId', rollnumber: 'studentId', rollno: 'studentId',
     name: 'name', studentname: 'name', fullname: 'name',
@@ -3142,7 +3341,7 @@ function boot(seedBatches, seedStudents) {
     const newCount = studentImportPreview.students.filter(s => !existingIds.has(s.id)).length;
     const updCount = studentImportPreview.students.length - newCount;
     el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new student' : ' new students') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'student' : 'students') + ' updated' : '') + ' (matched by UID or Student ID).</p>'
-      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Batch</th><th>UID</th><th>Student ID</th><th>Name</th><th>Mobile Number</th><th>Email ID</th></tr></thead><tbody>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Title</th><th>UID</th><th>Student ID</th><th>Name</th><th>Mobile Number</th><th>Email ID</th></tr></thead><tbody>'
       + preview.map(s => '<tr>'
           + '<td><span class="badge '+(existingIds.has(s.id)?'badge--no':'badge--yes')+'">'+(existingIds.has(s.id)?'Update':'New')+'</span></td>'
           + '<td class="cell-strong">' + (esc(s.batch) || dash()) + '</td>'
@@ -3159,7 +3358,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   function buildStudentSampleCSV() {
-    const headers = ['Batch', 'UID', 'Student ID', 'Name', 'Mobile Number', 'Email ID'];
+    const headers = ['Title', 'UID', 'Student ID', 'Name', 'Mobile Number', 'Email ID'];
     const rows = [
       ['CS24-B07', 'UID20260001', 'STU1001', 'Aditi Sharma', '9876543210', 'aditi.sharma@example.com'],
       ['CS24-B07', 'UID20260002', 'STU1002', 'Rohan Mehta', '9876543211', 'rohan.mehta@example.com'],
@@ -3221,6 +3420,11 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'save') save();
     else if (action === 'cancel') cancel();
     else if (action === 'add-batch') startAdd();
+    else if (action === 'add-program') startAddProgram();
+    else if (action === 'edit-program') startProgramEdit(id);
+    else if (action === 'save-program') saveProgram();
+    else if (action === 'cancel-program') cancelProgramEdit();
+    else if (action === 'delete-program') removeProgram(id);
     else if (action === 'edit-student') startStudentEdit(id);
     else if (action === 'delete-student') removeStudent(id);
     else if (action === 'save-student') saveStudent();
@@ -3272,7 +3476,7 @@ function boot(seedBatches, seedStudents) {
       renderConfigsTable();
     }
     else if (action === 'clear-config-filter') {
-      configSearchQuery = ''; configBatchFilter = ''; configWeekFilter = ''; configDateFilter = { from: '', to: '' };
+      configSearchQuery = ''; configBatchFilter = ''; configDateFilter = { from: '', to: '' };
       const searchEl = document.getElementById('config-search'); if (searchEl) searchEl.value = '';
       const fromEl = document.getElementById('config-filter-from'); if (fromEl) fromEl.value = '';
       const toEl = document.getElementById('config-filter-to'); if (toEl) toEl.value = '';
@@ -3446,6 +3650,11 @@ function boot(seedBatches, seedStudents) {
       interviewDraft[t.dataset.field] = t.value;
       return;
     }
+    if (t.matches('.program-cell-input')) {
+      if (!programDraft) return;
+      programDraft[t.dataset.field] = t.value;
+      return;
+    }
     if (!draft) return;
     if (t.matches('.syllabus-subject-input')) {
       draft.syllabusItems[Number(t.dataset.index)].subject = t.value;
@@ -3522,7 +3731,18 @@ function boot(seedBatches, seedStudents) {
       toggleInterviewInvited(t.dataset.id, t.dataset.field, t.value === 'yes');
       return;
     }
-    if (t.id === 'config-filter-week') { configWeekFilter = t.value; renderConfigsTable(); return; }
+    if (t.dataset.action === 'toggle-program-assessments') {
+      if (programDraft) { programDraft.assessmentsRequired = t.checked; render(); }
+      return;
+    }
+    if (t.dataset.action === 'toggle-program-nxtmock') {
+      if (programDraft) { programDraft.nxtmockRequired = t.checked; render(); }
+      return;
+    }
+    if (t.dataset.action === 'toggle-program-maininterview') {
+      if (programDraft) { programDraft.mainInterviewRequired = t.checked; render(); }
+      return;
+    }
     if (t.id === 'config-filter-from') { configDateFilter.from = t.value; renderConfigsTable(); return; }
     if (t.id === 'config-filter-to') { configDateFilter.to = t.value; renderConfigsTable(); return; }
     if (!draft) return;
@@ -3546,22 +3766,22 @@ function boot(seedBatches, seedStudents) {
 }
 
 const SEED_BATCHES = [
-  { id:'b1', batch:'CS24-B07', week:'Week 3', subject:'Arrays & Strings, Recursion', topic:'Two Pointers, Backtracking, Sliding Window',
+  { id:'b1', batch:'CS24-B07', subject:'Arrays & Strings, Recursion', topic:'Two Pointers, Backtracking, Sliding Window',
     mockRequired:true, mockTitle:'DSA Mock Test 1', mockDate:'2026-08-30', mockStart:'15:00', mockEnd:'16:00', mockTag:'Mock',
     mockInterviewTitle:'DSA Mock Interview', mockInterviewDate:'2026-09-05', mockInterviewStart:'11:00', mockInterviewEnd:'11:30', mockInterviewTag:'Mock Interview',
     mainDate:'2026-09-02', mainStart:'10:00', mainEnd:'12:00', mainTag:'Main Exam',
     mainInterviewTitle:'DSA Final Interview', mainInterviewDate:'2026-09-08', mainInterviewStart:'10:00', mainInterviewEnd:'10:30', mainInterviewTag:'Final' },
-  { id:'b2', batch:'CS24-B09', week:'Week 6', subject:'Scalability', topic:'Load Balancing, Caching, CDN Routing',
+  { id:'b2', batch:'CS24-B09', subject:'Scalability', topic:'Load Balancing, Caching, CDN Routing',
     mockRequired:false, mockTitle:'', mockDate:'', mockStart:'', mockEnd:'', mockTag:'',
     mockInterviewTitle:'System Design Mock Interview', mockInterviewDate:'2026-09-12', mockInterviewStart:'09:30', mockInterviewEnd:'10:00', mockInterviewTag:'Mock Interview',
     mainDate:'2026-09-10', mainStart:'14:00', mainEnd:'16:00', mainTag:'Main Exam',
     mainInterviewTitle:'System Design Final Interview', mainInterviewDate:'2026-09-14', mainInterviewStart:'15:00', mainInterviewEnd:'15:30', mainInterviewTag:'Final' },
-  { id:'b3', batch:'CS24-B05', week:'Week 2', subject:'Quantitative Aptitude, Logical Reasoning', topic:'Time & Work, Puzzles, Seating Arrangement',
+  { id:'b3', batch:'CS24-B05', subject:'Quantitative Aptitude, Logical Reasoning', topic:'Time & Work, Puzzles, Seating Arrangement',
     mockRequired:true, mockTitle:'Aptitude Mock Test', mockDate:'2026-08-27', mockStart:'17:00', mockEnd:'18:00', mockTag:'Mock',
     mockInterviewTitle:'Aptitude Mock Interview', mockInterviewDate:'2026-08-29', mockInterviewStart:'16:00', mockInterviewEnd:'16:30', mockInterviewTag:'Mock Interview',
     mainDate:'2026-08-28', mainStart:'09:00', mainEnd:'10:30', mainTag:'Main Exam',
     mainInterviewTitle:'Aptitude Final Interview', mainInterviewDate:'2026-09-01', mainInterviewStart:'11:00', mainInterviewEnd:'11:30', mainInterviewTag:'Final' },
-  { id:'b4', batch:'CS24-B12', week:'Week 1', subject:'Verbal Ability', topic:'Group Discussion, Email Etiquette',
+  { id:'b4', batch:'CS24-B12', subject:'Verbal Ability', topic:'Group Discussion, Email Etiquette',
     mockRequired:false, mockTitle:'', mockDate:'', mockStart:'', mockEnd:'', mockTag:'',
     mockInterviewTitle:'Communication Mock Interview', mockInterviewDate:'2026-09-18', mockInterviewStart:'14:00', mockInterviewEnd:'14:30', mockInterviewTag:'Mock Interview',
     mainDate:'2026-09-15', mainStart:'11:00', mainEnd:'12:00', mainTag:'Main Exam',
@@ -3575,7 +3795,9 @@ const SEED_STUDENTS = [
   { id:'s4', batch:'CS24-B05', uid:'UID20260004', studentId:'STU1004', name:'Karthik Iyer', mobile:'9876543213', email:'karthik.iyer@example.com' }
 ];
 
-boot(SEED_BATCHES, SEED_STUDENTS);
+const SEED_PROGRAMS = [];
+
+boot(SEED_BATCHES, SEED_STUDENTS, SEED_PROGRAMS);
 </script>
 </body>
 </html>
