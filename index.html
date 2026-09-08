@@ -156,6 +156,8 @@ button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px
 .modal-field-stack{display:flex;flex-direction:column;gap:14px;}
 .program-option-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
 .program-option-row .cell-input{flex:1;}
+.settings-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:480px;}
+.settings-panel-title{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--ink);margin:0 0 4px;}
 .publish-modal-subtitle{font-size:13px;color:var(--muted);margin:0 0 14px;}
 .publish-modal-subtitle strong{color:var(--ink);}
 .publish-detail-list{display:flex;flex-direction:column;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:4px 14px;margin-bottom:16px;}
@@ -712,6 +714,7 @@ function boot(seedBatches, seedStudents) {
           <button type="button" class="sidebar-link" data-action="nav" data-section="topin">Topin Configs</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="assessments">Assessments</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="interviews">NxtMock Interviews</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="settings">Settings</button>
         </nav>
 
         <div class="content">
@@ -740,7 +743,6 @@ function boot(seedBatches, seedStudents) {
               <div class="filter-field"><label for="syllabus-filter-from">From</label><input type="date" id="syllabus-filter-from"></div>
               <div class="filter-field"><label for="syllabus-filter-to">To</label><input type="date" id="syllabus-filter-to"></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-syllabus-filter">Clear</button>
-              <button type="button" class="btn btn--ghost btn--sm" data-action="open-program-options">Manage Programs</button>
               <button type="button" class="btn btn--ghost btn--sm" id="notify-smes-btn" data-action="open-notify" disabled>Notify SMEs</button>
               <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="import-batches-btn" data-action="open-import">Bulk Import</button>
             </div>
@@ -913,6 +915,22 @@ function boot(seedBatches, seedStudents) {
               </table>
             </div>
           </section>
+
+          <section class="content-section" id="section-settings">
+            <h2 class="section-heading">Settings</h2>
+            <div class="settings-panel">
+              <h3 class="settings-panel-title">Programs</h3>
+              <p class="section-desc">Manage the list of programs available in the Program dropdown across the app.</p>
+              <div id="program-options-list"></div>
+              <div class="filter-field" style="margin-top:14px;max-width:360px;">
+                <label for="new-program-name">Add a program</label>
+                <div style="display:flex;gap:8px;">
+                  <input type="text" id="new-program-name" placeholder="e.g. NIAT" style="flex:1;">
+                  <button type="button" class="btn btn--primary btn--sm" data-action="add-program-option">Add</button>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -1011,27 +1029,6 @@ function boot(seedBatches, seedStudents) {
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-publish-modal">Cancel</button>
           <button type="button" class="btn btn--primary btn--sm" id="publish-modal-submit" data-action="submit-publish-modal" disabled>Publish</button>
-        </div>
-      </div>
-    </div>
-    <div class="modal-overlay" id="program-options-modal-overlay" hidden>
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="program-options-modal-title">
-        <div class="modal-header">
-          <h3 id="program-options-modal-title">Manage Programs</h3>
-          <button type="button" class="modal-close" data-action="close-program-options" aria-label="Close">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div id="program-options-list"></div>
-          <div class="filter-field" style="margin-top:14px;">
-            <label for="new-program-name">Add a program</label>
-            <div style="display:flex;gap:8px;">
-              <input type="text" id="new-program-name" placeholder="e.g. NIAT" style="flex:1;">
-              <button type="button" class="btn btn--primary btn--sm" data-action="add-program-option">Add</button>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn--ghost btn--sm" data-action="close-program-options">Done</button>
         </div>
       </div>
     </div>
@@ -1869,20 +1866,6 @@ function boot(seedBatches, seedStudents) {
     ).join('');
   }
 
-  function openProgramOptionsModal() {
-    const overlay = document.getElementById('program-options-modal-overlay');
-    if (overlay) overlay.hidden = false;
-    const newEl = document.getElementById('new-program-name');
-    if (newEl) newEl.value = '';
-    renderProgramOptionsList();
-  }
-
-  function closeProgramOptionsModal() {
-    const overlay = document.getElementById('program-options-modal-overlay');
-    if (overlay) overlay.hidden = true;
-    render();
-  }
-
   function addProgramOption() {
     const el = document.getElementById('new-program-name');
     const name = el ? el.value.trim() : '';
@@ -2457,6 +2440,7 @@ function boot(seedBatches, seedStudents) {
     renderConfigsTable();
     renderAssessmentsTable();
     renderInterviewsTable();
+    renderProgramOptionsList();
     updateAccessBanner();
     updateSyncBadge();
     renderProgressModal();
@@ -3426,12 +3410,6 @@ function boot(seedBatches, seedStudents) {
     }
     else if (action === 'submit-publish-modal') {
       submitPublishModal();
-    }
-    else if (action === 'open-program-options') {
-      openProgramOptionsModal();
-    }
-    else if (action === 'close-program-options') {
-      closeProgramOptionsModal();
     }
     else if (action === 'add-program-option') {
       addProgramOption();
