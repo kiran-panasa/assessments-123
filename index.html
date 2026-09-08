@@ -1219,7 +1219,7 @@ function boot(seedBatches, seedStudents) {
     const d = editing ? studentDraft : s;
     return '<tr class="'+(editing?'row-editing':'')+'" id="srow-'+s.id+'" data-id="'+s.id+'">'
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox" data-action="toggle-student-select" data-id="'+s.id+'"'+(selectedStudentIds.has(s.id)?' checked':'')+'></td>'
-      + '<td>' + (esc(programForBatchName(s.batch)) || dash()) + '</td>'
+      + '<td>' + (esc(programForBatchName(d.batch)) || dash()) + '</td>'
       + '<td>' + studentBatchSelect(d.batch, editing) + '</td>'
       + '<td>' + studentField('uid', d.uid, editing, 'UID') + '</td>'
       + '<td>' + studentField('studentId', d.studentId, editing, 'Student ID') + '</td>'
@@ -1409,7 +1409,6 @@ function boot(seedBatches, seedStudents) {
     syncOverviewFilterInputs();
     const c = computeOverviewCounts(overviewDateRange.from, overviewDateRange.to);
     el.innerHTML =
-      kpiCard('Title', c.batch, '', 'batch') +
       kpiCard('Mock Assessment', c.mock, '', 'mock') +
       kpiCard('Mock Interview', c.mockInterview, '', 'mockInterview') +
       kpiCard('Main Assessment', c.main, '', 'main') +
@@ -3546,7 +3545,7 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     if (t.matches('.student-cell-input') && t.tagName === 'SELECT') {
-      if (studentDraft) studentDraft[t.dataset.field] = t.value;
+      if (studentDraft) { studentDraft[t.dataset.field] = t.value; renderStudentsTable(); }
       return;
     }
     if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
