@@ -581,9 +581,8 @@ function boot(seedBatches, seedStudents) {
       mainSebStatus: (b.mainSebStatus === 'SEB' || b.mainSebStatus === 'Non-SEB') ? b.mainSebStatus : '',
       mockRequired: mockRequired,
       mockTitle: b.mockTitle || '',
-      mockDate: b.mockDate || '',
-      mockStart: b.mockStart || '',
-      mockEnd: b.mockEnd || '',
+      mockStartAt: coerceDT(b.mockStartAt != null ? b.mockStartAt : combineDT(b.mockDate, b.mockStart)),
+      mockEndAt: coerceDT(b.mockEndAt != null ? b.mockEndAt : combineDT(b.mockDate, b.mockEnd)),
       mockTag: b.mockTag || '',
       mockInterviewRequired: mockRequired ? inferredMockInterviewRequired : false,
       mockInterviewTitle: b.mockInterviewTitle || '',
@@ -662,7 +661,7 @@ function boot(seedBatches, seedStudents) {
 
   function validateDraft(d) {
     const errors = {};
-    if (d.mockRequired && d.mockStart && d.mockEnd && timeToMinutes(d.mockEnd) <= timeToMinutes(d.mockStart)) errors.mock = 'End must be after start.';
+    if (d.mockRequired && d.mockStartAt && d.mockEndAt && d.mockEndAt <= d.mockStartAt) errors.mock = 'End must be after start.';
     if (d.mainStartAt && d.mainEndAt && d.mainEndAt <= d.mainStartAt) errors.main = 'End must be after start.';
     return errors;
   }
@@ -728,7 +727,7 @@ function boot(seedBatches, seedStudents) {
                     <th rowspan="2">Title</th>
                     <th colspan="2">Syllabus</th>
                     <th rowspan="2">Main Assessment SEB Status</th>
-                    <th colspan="6" class="grp-amber">Mock Assessment</th>
+                    <th colspan="5" class="grp-amber">Mock Assessment</th>
                     <th colspan="4" class="grp-blue">Main Assessment</th>
                     <th class="col-actions" rowspan="2">Actions</th>
                   </tr>
@@ -737,9 +736,8 @@ function boot(seedBatches, seedStudents) {
                     <th>Topics</th>
                     <th class="grp-amber">Required</th>
                     <th class="grp-amber">Title</th>
-                    <th class="grp-amber">Date</th>
-                    <th class="grp-amber">Start</th>
-                    <th class="grp-amber">End</th>
+                    <th class="grp-amber">Start Date &amp; Time</th>
+                    <th class="grp-amber">End Date &amp; Time</th>
                     <th class="grp-amber">Tag</th>
                     <th class="grp-blue">Title</th>
                     <th class="grp-blue">Start Date &amp; Time</th>
@@ -982,8 +980,8 @@ function boot(seedBatches, seedStudents) {
             <summary>Which columns can I use?</summary>
             <p class="section-desc">One CSV row per subject. Repeat the same <strong>Title</strong> on multiple rows to add several subjects to one title &mdash; everything else is read from the first row for that title.</p>
             <p class="section-desc">These are exactly the fields you'd fill in by hand when editing a title &mdash; nothing extra.</p>
-            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Program, Title, Subject, Topics, Mock Assessment Required, Mock Assessment Title, Mock Assessment Date, Mock Assessment Start, Mock Assessment End, Mock Assessment Tag, Main Assessment Title, Main Assessment Start Date &amp; Time, Main Assessment End Date &amp; Time, Main Assessment Tag, SEB Status. Required fields accept Yes/No; unrecognized columns are ignored. Program should match a name already in Settings &rarr; Programs; leave it blank to keep a title's existing program when re-importing.</p>
-            <p class="section-desc"><strong>Date &amp; time format:</strong> Mock Assessment Date is a plain date (<code>2026-09-10</code>) with separate Start/End times (<code>10:00</code>, 24-hour). Every other Start/End Date &amp; Time column is one combined value, either <code>YYYY-MM-DD HH:MM</code> (e.g. <code>2026-09-12 11:00</code>) or <code>DD-MM-YYYY HH:MM</code> (e.g. <code>12-09-2026 11:00</code>). Anything else is left blank rather than imported wrong &mdash; the preview will flag it.</p>
+            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Program, Title, Subject, Topics, Mock Assessment Required, Mock Assessment Title, Mock Assessment Start Date &amp; Time, Mock Assessment End Date &amp; Time, Mock Assessment Tag, Main Assessment Title, Main Assessment Start Date &amp; Time, Main Assessment End Date &amp; Time, Main Assessment Tag, SEB Status. Required fields accept Yes/No; unrecognized columns are ignored. Program should match a name already in Settings &rarr; Programs; leave it blank to keep a title's existing program when re-importing.</p>
+            <p class="section-desc"><strong>Date &amp; time format:</strong> Mock and Main Start/End Date &amp; Time columns work the same way &mdash; one combined value per cell, time always in <strong>24-hour</strong> format. Use either <code>YYYY-MM-DD HH:MM</code> (e.g. <code>2026-09-12 14:30</code> &mdash; that's 2:30 PM) or <code>DD-MM-YYYY HH:MM</code> (e.g. <code>12-09-2026 09:00</code> &mdash; that's 9:00 AM). Don't type "AM"/"PM" into the cell itself &mdash; convert to 24-hour first (add 12 to any PM hour except 12 PM itself). Anything else is left blank rather than imported wrong &mdash; the preview will flag it.</p>
           </details>
           <div id="import-preview"><p class="section-desc">Choose a CSV file to preview the titles it will create before importing.</p></div>
         </div>
@@ -1165,14 +1163,6 @@ function boot(seedBatches, seedStudents) {
     if (!editing) return '<span class="badge '+(value?'badge--yes':'badge--no')+'">'+(value?'Yes':'No')+'</span>';
     return '<label class="switch'+(disabled?' switch--disabled':'')+'"><input type="checkbox" data-action="'+action+'" '+(value?'checked':'')+(disabled?' disabled':'')+'><span class="switch-track"><span class="switch-thumb"></span></span></label>';
   }
-  function dateCell(field, d, editing) {
-    if (!editing) return d[field] ? '<span class="mono">'+fmtDate(d[field])+'</span>' : dash();
-    return '<input type="date" class="cell-input cell-input--date" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
-  }
-  function timeCell(field, d, editing) {
-    if (!editing) return d[field] ? '<span class="mono">'+fmt12(d[field])+'</span>' : dash();
-    return '<input type="time" class="cell-input cell-input--time" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
-  }
   function fmtDateTime(dt) {
     if (!dt) return '';
     const parts = dt.split('T');
@@ -1302,11 +1292,10 @@ function boot(seedBatches, seedStudents) {
 
     const mockCols = d.mockRequired
       ? '<td class="col-wrap-text">'+textCell('mockTitle', d.mockTitle, editing, 'Title')+'</td>'
-        + '<td>'+dateCell('mockDate', d, editing)+'</td>'
-        + '<td>'+timeCell('mockStart', d, editing)+'</td>'
-        + '<td>'+timeCell('mockEnd', d, editing)+errSpan('mock', id, errors.mock)+'</td>'
+        + '<td>'+dateTimeCell('mockStartAt', d, editing)+'</td>'
+        + '<td>'+dateTimeCell('mockEndAt', d, editing)+errSpan('mock', id, errors.mock)+'</td>'
         + '<td class="col-wrap-text">'+textCell('mockTag', d.mockTag, editing, 'Tag')+'</td>'
-      : '<td class="muted-cell">Not Required</td>'.repeat(5);
+      : '<td class="muted-cell">Not Required</td>'.repeat(4);
 
     const mainCols =
         '<td class="col-wrap-text">'+textCell('mainTitle', d.mainTitle, editing, 'Title')+'</td>'
@@ -1375,7 +1364,7 @@ function boot(seedBatches, seedStudents) {
     const events = [];
     batches.forEach(b => {
       if (b.mainStartAt) events.push({ type:'Main Assessment', cls:'blue', date:b.mainStartAt.split('T')[0], startAt:b.mainStartAt, endAt:b.mainEndAt, batch:b.batch, sub:b.mainTitle||b.mainTag });
-      if (b.mockRequired && b.mockDate) events.push({ type:'Mock Assessment', cls:'amber', date:b.mockDate, start:b.mockStart, end:b.mockEnd, batch:b.batch, sub:b.mockTitle||b.mockTag });
+      if (b.mockRequired && b.mockStartAt) events.push({ type:'Mock Assessment', cls:'amber', date:b.mockStartAt.split('T')[0], startAt:b.mockStartAt, endAt:b.mockEndAt, batch:b.batch, sub:b.mockTitle||b.mockTag });
       if (b.mockInterviewRequired && b.mockInterviewStartAt) events.push({ type:'Mock Interview', cls:'teal', date:b.mockInterviewStartAt.split('T')[0], startAt:b.mockInterviewStartAt, endAt:b.mockInterviewEndAt, batch:b.batch, sub:b.mockInterviewTitle||b.mockInterviewTag });
       if (b.mainInterviewStartAt) events.push({ type:'Main Interview', cls:'rose', date:b.mainInterviewStartAt.split('T')[0], startAt:b.mainInterviewStartAt, endAt:b.mainInterviewEndAt, batch:b.batch, sub:b.mainInterviewTitle||b.mainInterviewTag });
     });
@@ -1393,7 +1382,7 @@ function boot(seedBatches, seedStudents) {
     const batchIds = new Set();
     batches.forEach(b => {
       let matched = false;
-      if (b.mockRequired && inDateRange(b.mockDate, from, to)) { mock++; matched = true; }
+      if (b.mockRequired && b.mockStartAt && inDateRange(b.mockStartAt.split('T')[0], from, to)) { mock++; matched = true; }
       if (b.mockInterviewRequired && b.mockInterviewStartAt && inDateRange(b.mockInterviewStartAt.split('T')[0], from, to)) { mockInterview++; matched = true; }
       if (b.mainStartAt && inDateRange(b.mainStartAt.split('T')[0], from, to)) { main++; matched = true; }
       if (b.mainInterviewStartAt && inDateRange(b.mainInterviewStartAt.split('T')[0], from, to)) { mainInterview++; matched = true; }
@@ -1458,7 +1447,7 @@ function boot(seedBatches, seedStudents) {
     if (!from && !to) return true;
     const dates = [
       b.mainStartAt ? b.mainStartAt.split('T')[0] : '',
-      b.mockRequired ? b.mockDate : '',
+      b.mockRequired && b.mockStartAt ? b.mockStartAt.split('T')[0] : '',
       b.mockInterviewRequired && b.mockInterviewStartAt ? b.mockInterviewStartAt.split('T')[0] : '',
       b.mainInterviewStartAt ? b.mainInterviewStartAt.split('T')[0] : ''
     ].filter(Boolean);
@@ -1809,11 +1798,13 @@ function boot(seedBatches, seedStudents) {
         { label: 'Main Exam Tag', value: b.mainTag },
       ];
     }
+    const mockStart = splitDT(b.mockStartAt);
+    const mockEnd = splitDT(b.mockEndAt);
     return [
       { label: 'Mock Config Link', value: b.mockConfigUrl, isLink: true },
-      { label: 'Assessment Date', value: fmtDate(b.mockDate) },
-      { label: 'Start Time', value: fmt12(b.mockStart) },
-      { label: 'End Time', value: fmt12(b.mockEnd) },
+      { label: 'Assessment Date', value: fmtDate(mockStart.date) },
+      { label: 'Start Time', value: fmt12(mockStart.time) },
+      { label: 'End Time', value: fmt12(mockEnd.time) },
       { label: 'Assessment Title', value: b.mockTitle },
       { label: 'Mock Exam Tag', value: b.mockTag },
     ];
@@ -2238,11 +2229,10 @@ function boot(seedBatches, seedStudents) {
     const title = type === 'main' ? b.mainTitle : b.mockTitle;
     if (!title) { flashToast('Set the ' + label.toLowerCase() + ' assessment title first.', 'error'); return; }
     let assessDate, startTime, endTime;
-    if (type === 'main') {
-      const s = splitDT(b.mainStartAt), e = splitDT(b.mainEndAt);
+    {
+      const s = splitDT(type === 'main' ? b.mainStartAt : b.mockStartAt);
+      const e = splitDT(type === 'main' ? b.mainEndAt : b.mockEndAt);
       assessDate = s.date; startTime = s.time; endTime = e.time;
-    } else {
-      assessDate = b.mockDate; startTime = b.mockStart; endTime = b.mockEnd;
     }
     if (!assessDate || !startTime || !endTime) { flashToast('Set the ' + label.toLowerCase() + ' assessment date and times first.', 'error'); return; }
     if (assessDate < todayISO()) { flashToast('The ' + label.toLowerCase() + ' assessment date (' + fmtDate(assessDate) + ') is in the past — Topin can only schedule future assessments. Update the date first.', 'error'); return; }
@@ -2910,9 +2900,11 @@ function boot(seedBatches, seedStudents) {
     topics: 'topics', topic: 'topics',
     mockassessmentrequired: 'mockRequired', mockrequired: 'mockRequired',
     mockassessmenttitle: 'mockTitle', mocktitle: 'mockTitle',
+    mockassessmentstartdatetime: 'mockStartAt', mockstart: 'mockStartAt', mockassessmentstart: 'mockStartAt',
+    mockassessmentenddatetime: 'mockEndAt', mockend: 'mockEndAt', mockassessmentend: 'mockEndAt',
     mockassessmentdate: 'mockDate', mockdate: 'mockDate',
-    mockassessmentstarttime: 'mockStart', mockassessmentstart: 'mockStart', mockstart: 'mockStart',
-    mockassessmentendtime: 'mockEnd', mockassessmentend: 'mockEnd', mockend: 'mockEnd',
+    mockassessmentstarttime: 'mockStart',
+    mockassessmentendtime: 'mockEnd',
     mockassessmenttag: 'mockTag', mocktag: 'mockTag',
     mainassessmenttitle: 'mainTitle', maintitle: 'mainTitle',
     mainassessmentstartdatetime: 'mainStartAt', mainstart: 'mainStartAt', mainassessmentstart: 'mainStartAt',
@@ -2923,7 +2915,7 @@ function boot(seedBatches, seedStudents) {
     mainassessmenttag: 'mainTag', maintag: 'mainTag',
     mainassessmentsebstatus: 'mainSebStatus', sebstatus: 'mainSebStatus'
   };
-  const IMPORT_DATETIME_FIELDS = ['mainStartAt', 'mainEndAt'];
+  const IMPORT_DATETIME_FIELDS = ['mockStartAt', 'mockEndAt', 'mainStartAt', 'mainEndAt'];
 
   function normHeader(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); }
   function truthyImport(v) { return /^(y|yes|true|1)$/i.test(String(v || '').trim()); }
@@ -2964,6 +2956,8 @@ function boot(seedBatches, seedStudents) {
         syllabusItems: syllabusItems,
         mockRequired: truthyImport(first.mockRequired),
         mockTitle: first.mockTitle || '',
+        mockStartAt: first.mockStartAt || '',
+        mockEndAt: first.mockEndAt || '',
         mockDate: first.mockDate || '',
         mockStart: first.mockStart || '',
         mockEnd: first.mockEnd || '',
@@ -3100,11 +3094,11 @@ function boot(seedBatches, seedStudents) {
   }
 
   function buildSampleCSV() {
-    const headers = ['Program','Title','Subject','Topics','Mock Assessment Required','Mock Assessment Title','Mock Assessment Date','Mock Assessment Start','Mock Assessment End','Mock Assessment Tag','Main Assessment Title','Main Assessment Start Date & Time','Main Assessment End Date & Time','Main Assessment Tag','SEB Status'];
+    const headers = ['Program','Title','Subject','Topics','Mock Assessment Required','Mock Assessment Title','Mock Assessment Start Date & Time','Mock Assessment End Date & Time','Mock Assessment Tag','Main Assessment Title','Main Assessment Start Date & Time','Main Assessment End Date & Time','Main Assessment Tag','SEB Status'];
     const rows = [
-      ['Intensive Offline','CS25-B10','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Yes','Frontend Mock Test','2026-09-10','10:00','12:00','Mock','Frontend Main Exam','2026-09-15 09:00','2026-09-15 11:00','Main Exam','Non-SEB'],
-      ['Intensive Offline','CS25-B10','Backend Development','Intro to Node.js | REST APIs | Databases','','','','','','','','','','',''],
-      ['NIAT','CS25-B11','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','No','','','','','','DSA Main Exam','2026-09-20 09:00','2026-09-20 11:00','Main Exam','SEB']
+      ['Intensive Offline','CS25-B10','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Yes','Frontend Mock Test','2026-09-10 10:00','2026-09-10 12:00','Mock','Frontend Main Exam','2026-09-15 09:00','2026-09-15 11:00','Main Exam','Non-SEB'],
+      ['Intensive Offline','CS25-B10','Backend Development','Intro to Node.js | REST APIs | Databases','','','','','','','','','',''],
+      ['NIAT','CS25-B11','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','No','','','','','DSA Main Exam','2026-09-20 09:00','2026-09-20 11:00','Main Exam','SEB']
     ];
     const escCsv = v => {
       const s = String(v == null ? '' : v);
