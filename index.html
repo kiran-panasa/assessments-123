@@ -675,7 +675,7 @@ function boot(seedBatches, seedStudents) {
           <h1 class="app-title">Assessments Ops</h1>
         </div>
         <div class="header-right">
-          <button type="button" class="btn btn--primary" id="add-batch-btn" data-action="add-batch">+ Add Title</button>
+          <button type="button" class="btn btn--primary" id="add-batch-btn" data-action="add-batch">Raise Request</button>
         </div>
       </div>
 
@@ -1508,7 +1508,7 @@ function boot(seedBatches, seedStudents) {
     }
     updateRecordsSelectionUI(filtered);
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="16"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Title</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="16"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">Raise Request</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
