@@ -795,8 +795,8 @@ function boot(seedBatches, seedStudents) {
                 <thead>
                   <tr class="thead-single">
                     <th class="col-syllabus"><input type="checkbox" id="student-select-all" aria-label="Select all"></th>
-                    <th>Title</th>
                     <th>Program</th>
+                    <th>Title</th>
                     <th>UID</th>
                     <th>Student ID</th>
                     <th>Name</th>
@@ -829,8 +829,8 @@ function boot(seedBatches, seedStudents) {
                 <thead>
                   <tr class="thead-single">
                     <th>#</th>
-                    <th class="col-syllabus">Title</th>
-                    <th>Program</th>
+                    <th class="col-syllabus">Program</th>
+                    <th>Title</th>
                     <th>Assessment Type</th>
                     <th>Mock Assessment Config</th>
                     <th>Mock Interview Config</th>
@@ -875,8 +875,8 @@ function boot(seedBatches, seedStudents) {
                 <thead>
                   <tr class="thead-single">
                     <th>#</th>
-                    <th class="col-syllabus">Title</th>
-                    <th>Program</th>
+                    <th class="col-syllabus">Program</th>
+                    <th>Title</th>
                     <th>Assessment Type</th>
                     <th>Main Config Link</th>
                     <th>Mock Config Link</th>
@@ -901,8 +901,8 @@ function boot(seedBatches, seedStudents) {
                 <thead>
                   <tr class="thead-single">
                     <th>#</th>
-                    <th class="col-syllabus">Title</th>
-                    <th>Program</th>
+                    <th class="col-syllabus">Program</th>
+                    <th>Title</th>
                     <th>Assessment Type</th>
                     <th>Main Interview Link</th>
                     <th>Mock Interview Link</th>
@@ -1219,8 +1219,8 @@ function boot(seedBatches, seedStudents) {
     const d = editing ? studentDraft : s;
     return '<tr class="'+(editing?'row-editing':'')+'" id="srow-'+s.id+'" data-id="'+s.id+'">'
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox" data-action="toggle-student-select" data-id="'+s.id+'"'+(selectedStudentIds.has(s.id)?' checked':'')+'></td>'
-      + '<td>' + studentBatchSelect(d.batch, editing) + '</td>'
       + '<td>' + (esc(programForBatchName(s.batch)) || dash()) + '</td>'
+      + '<td>' + studentBatchSelect(d.batch, editing) + '</td>'
       + '<td>' + studentField('uid', d.uid, editing, 'UID') + '</td>'
       + '<td>' + studentField('studentId', d.studentId, editing, 'Student ID') + '</td>'
       + '<td>' + studentField('name', d.name, editing, 'Full name') + '</td>'
@@ -1272,8 +1272,8 @@ function boot(seedBatches, seedStudents) {
     const status = configStatus(b);
     return '<tr class="'+(editing?'row-editing':'')+'" id="crow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
-      + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
-      + '<td>' + (esc(b.program) || dash()) + '</td>'
+      + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
+      + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -1744,8 +1744,8 @@ function boot(seedBatches, seedStudents) {
     const count = studentCountForBatch(b.batch);
     return '<tr id="arow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
-      + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '<div class="muted-cell">' + count + ' student' + (count === 1 ? '' : 's') + '</div></td>'
-      + '<td>' + (esc(b.program) || dash()) + '</td>'
+      + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
+      + '<td class="cell-strong">' + esc(b.batch) + '<div class="muted-cell">' + count + ' student' + (count === 1 ? '' : 's') + '</div></td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td>' + (status === 'published' ? publishedLinkCell(b.mainConfigUrl, b.mainAssessmentLink) : configField('mainConfigUrl', b.mainConfigUrl, false)) + '</td>'
       + '<td>' + (b.mockRequired ? (status === 'published' ? publishedLinkCell(b.mockConfigUrl, b.mockAssessmentLink) : configField('mockConfigUrl', b.mockConfigUrl, false)) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -2345,8 +2345,8 @@ function boot(seedBatches, seedStudents) {
     const d = editing ? interviewDraft : b;
     return '<tr class="'+(editing?'row-editing':'')+'" id="irow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
-      + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
-      + '<td>' + (esc(b.program) || dash()) + '</td>'
+      + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
+      + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockInterviewRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockInterviewRequired?'✓':'✗')+'</span></td>'
       + '<td>' + interviewLinkField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewLinkField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
