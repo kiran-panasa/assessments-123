@@ -448,6 +448,7 @@ function boot(seedBatches, seedStudents) {
   }
   let notifyLastRecipients = '';
   let studentImportPreview = null;
+  let quickAddRows = [];
   let configEditingId = null;
   let configDraft = null;
   let configSearchQuery = '';
@@ -788,6 +789,7 @@ function boot(seedBatches, seedStudents) {
               <button type="button" class="btn btn--ghost btn--sm" data-action="download-students">Download CSV</button>
               <button type="button" class="btn btn--ghost btn--sm" id="delete-selected-students-btn" data-action="delete-selected-students" disabled>Delete Selected</button>
               <button type="button" class="btn btn--ghost btn--sm" id="import-students-btn" data-action="open-student-import">Import Students</button>
+              <button type="button" class="btn btn--ghost btn--sm" id="quick-add-students-btn" data-action="open-quick-add">Quick Add</button>
               <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="add-student-btn" data-action="add-student">+ Add Student</button>
             </div>
             <div class="table-wrap">
@@ -956,6 +958,39 @@ function boot(seedBatches, seedStudents) {
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-student-import">Cancel</button>
           <button type="button" class="btn btn--primary btn--sm" id="confirm-student-import-btn" data-action="confirm-student-import" disabled>Confirm Import</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="quick-add-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="quick-add-modal-title">
+        <div class="modal-header">
+          <h3 id="quick-add-modal-title">Quick Add Students</h3>
+          <button type="button" class="modal-close" data-action="close-quick-add" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc">Pick a Title per row &mdash; Program fills in automatically. Blank rows are skipped when you save.</p>
+          <div class="table-wrap" style="max-height:360px;">
+            <table>
+              <thead>
+                <tr class="thead-single">
+                  <th>Title</th>
+                  <th>Program</th>
+                  <th>UID</th>
+                  <th>Student ID</th>
+                  <th>Name</th>
+                  <th>Mobile Number</th>
+                  <th>Email ID</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="quick-add-tbody"></tbody>
+            </table>
+          </div>
+          <button type="button" class="btn btn--ghost btn--sm" style="margin-top:10px;" data-action="quick-add-row">+ Add Row</button>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-quick-add">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" data-action="save-quick-add">Save Students</button>
         </div>
       </div>
     </div>
@@ -2652,6 +2687,67 @@ function boot(seedBatches, seedStudents) {
     flashToast('Student saved.', 'success');
   }
 
+  function blankQuickAddRow() {
+    return { batch: '', uid: '', studentId: '', name: '', mobile: '', email: '' };
+  }
+
+  function openQuickAddModal() {
+    if (!canWrite) return;
+    quickAddRows = Array.from({ length: 10 }, blankQuickAddRow);
+    const overlay = document.getElementById('quick-add-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    renderQuickAddTable();
+  }
+
+  function closeQuickAddModal() {
+    const overlay = document.getElementById('quick-add-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    quickAddRows = [];
+  }
+
+  function addQuickAddRow() {
+    quickAddRows.push(blankQuickAddRow());
+    renderQuickAddTable();
+  }
+
+  function removeQuickAddRow(index) {
+    quickAddRows.splice(index, 1);
+    renderQuickAddTable();
+  }
+
+  function renderQuickAddTable() {
+    const tbody = document.getElementById('quick-add-tbody');
+    if (!tbody) return;
+    const names = allKnownBatchNames();
+    tbody.innerHTML = quickAddRows.map((row, i) => {
+      const opts = ['<option value=""'+(row.batch?'':' selected')+'>&mdash; Select Title &mdash;</option>']
+        .concat(names.map(n => '<option value="'+esc(n)+'"'+(n===row.batch?' selected':'')+'>'+esc(n)+'</option>'))
+        .join('');
+      return '<tr data-index="'+i+'">'
+        + '<td><select class="cell-input quick-add-input" data-index="'+i+'" data-field="batch">' + opts + '</select></td>'
+        + '<td>' + (esc(programForBatchName(row.batch)) || dash()) + '</td>'
+        + '<td><input type="text" class="cell-input quick-add-input" data-index="'+i+'" data-field="uid" value="'+esc(row.uid)+'"></td>'
+        + '<td><input type="text" class="cell-input quick-add-input" data-index="'+i+'" data-field="studentId" value="'+esc(row.studentId)+'"></td>'
+        + '<td><input type="text" class="cell-input quick-add-input" data-index="'+i+'" data-field="name" value="'+esc(row.name)+'"></td>'
+        + '<td><input type="text" class="cell-input quick-add-input" data-index="'+i+'" data-field="mobile" value="'+esc(row.mobile)+'"></td>'
+        + '<td><input type="text" class="cell-input quick-add-input" data-index="'+i+'" data-field="email" value="'+esc(row.email)+'"></td>'
+        + '<td><button type="button" class="btn--icon-danger" data-action="quick-add-remove-row" data-index="'+i+'" aria-label="Remove row" title="Remove row">'+ICON_TRASH+'</button></td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  function saveQuickAdd() {
+    if (!canWrite) return;
+    const usable = quickAddRows.filter(row => row.name.trim() || row.studentId.trim() || row.uid.trim());
+    if (!usable.length) { flashToast('Fill in at least one row (Name, Student ID, or UID) first.', 'error'); return; }
+    const saved = usable.map(row => normalizeStudent({ id: uid(), ...row }));
+    students = saved.concat(students);
+    closeQuickAddModal();
+    render();
+    saved.forEach(persistStudentSave);
+    flashToast(saved.length + (saved.length === 1 ? ' student added.' : ' students added.'), 'success');
+  }
+
   function cancelStudent() {
     if (studentIsNewRow) students = students.filter(s => s.id !== studentEditingId);
     studentEditingId = null; studentDraft = null; studentIsNewRow = false;
@@ -3259,6 +3355,21 @@ function boot(seedBatches, seedStudents) {
       if (!canWrite) return;
       openStudentImportModal();
     }
+    else if (action === 'open-quick-add') {
+      openQuickAddModal();
+    }
+    else if (action === 'close-quick-add') {
+      closeQuickAddModal();
+    }
+    else if (action === 'quick-add-row') {
+      addQuickAddRow();
+    }
+    else if (action === 'quick-add-remove-row') {
+      removeQuickAddRow(Number(btn.dataset.index));
+    }
+    else if (action === 'save-quick-add') {
+      saveQuickAdd();
+    }
     else if (action === 'close-student-import') {
       closeStudentImportModal();
     }
@@ -3462,6 +3573,11 @@ function boot(seedBatches, seedStudents) {
       studentDraft[t.dataset.field] = t.value;
       return;
     }
+    if (t.matches('.quick-add-input') && t.tagName !== 'SELECT') {
+      const row = quickAddRows[Number(t.dataset.index)];
+      if (row) row[t.dataset.field] = t.value;
+      return;
+    }
     if (t.id === 'config-search') { configSearchQuery = t.value; renderConfigsTable(); return; }
     if (t.id === 'assess-search') { assessSearchQuery = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'interview-search') { interviewSearchQuery = t.value; renderInterviewsTable(); return; }
@@ -3546,6 +3662,11 @@ function boot(seedBatches, seedStudents) {
     }
     if (t.matches('.student-cell-input') && t.tagName === 'SELECT') {
       if (studentDraft) { studentDraft[t.dataset.field] = t.value; renderStudentsTable(); }
+      return;
+    }
+    if (t.matches('.quick-add-input') && t.tagName === 'SELECT') {
+      const row = quickAddRows[Number(t.dataset.index)];
+      if (row) { row[t.dataset.field] = t.value; renderQuickAddTable(); }
       return;
     }
     if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
