@@ -154,6 +154,8 @@ button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px
 .filter-field input[type="date"]{font-family:var(--font-mono);min-width:130px;}
 .filter-field textarea{width:100%;resize:vertical;min-height:70px;}
 .modal-field-stack{display:flex;flex-direction:column;gap:14px;}
+.program-option-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.program-option-row .cell-input{flex:1;}
 .publish-modal-subtitle{font-size:13px;color:var(--muted);margin:0 0 14px;}
 .publish-modal-subtitle strong{color:var(--ink);}
 .publish-detail-list{display:flex;flex-direction:column;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:4px 14px;margin-bottom:16px;}
@@ -432,6 +434,16 @@ function boot(seedBatches, seedStudents) {
   let studentBatchFilter = '';
   let selectedStudentIds = new Set();
   let selectedBatchIds = new Set();
+  let syllabusProgramFilter = '';
+  const PROGRAM_OPTIONS_LS_KEY = 'cohort-ledger:program-options:v1';
+  let programOptions = [];
+  try {
+    const rawProgramOptions = localStorage.getItem(PROGRAM_OPTIONS_LS_KEY);
+    programOptions = rawProgramOptions ? JSON.parse(rawProgramOptions) : ['NIAT', 'Intensive Offline', 'Academy', 'Edge 2.0'];
+  } catch (e) { programOptions = ['NIAT', 'Intensive Offline', 'Academy', 'Edge 2.0']; }
+  function saveProgramOptions() {
+    try { localStorage.setItem(PROGRAM_OPTIONS_LS_KEY, JSON.stringify(programOptions)); } catch (e) {}
+  }
   let notifyLastRecipients = '';
   let studentImportPreview = null;
   let configEditingId = null;
@@ -568,6 +580,7 @@ function boot(seedBatches, seedStudents) {
     return {
       id: b.id,
       batch: b.batch != null ? b.batch : (b.firstBatch || ''),
+      program: b.program || '',
       syllabusItems: normalizeSyllabusItems(b),
       mainSebStatus: (b.mainSebStatus === 'SEB' || b.mainSebStatus === 'Non-SEB') ? b.mainSebStatus : '',
       mockRequired: mockRequired,
@@ -723,9 +736,11 @@ function boot(seedBatches, seedStudents) {
             <h2 class="section-heading">Title &amp; Syllabus Details</h2>
             <div class="filter-bar">
               <div class="filter-field"><label for="syllabus-search">Search</label><input type="text" id="syllabus-search" placeholder="Search title, subject, topic&hellip;"></div>
+              <div class="filter-field"><label for="syllabus-filter-program">Program</label><select id="syllabus-filter-program"><option value="">All Programs</option></select></div>
               <div class="filter-field"><label for="syllabus-filter-from">From</label><input type="date" id="syllabus-filter-from"></div>
               <div class="filter-field"><label for="syllabus-filter-to">To</label><input type="date" id="syllabus-filter-to"></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-syllabus-filter">Clear</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="open-program-options">Manage Programs</button>
               <button type="button" class="btn btn--ghost btn--sm" id="notify-smes-btn" data-action="open-notify" disabled>Notify SMEs</button>
               <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="import-batches-btn" data-action="open-import">Bulk Import</button>
             </div>
@@ -733,7 +748,8 @@ function boot(seedBatches, seedStudents) {
               <table>
                 <thead>
                   <tr class="thead-groups">
-                    <th class="col-syllabus" rowspan="2"><input type="checkbox" id="records-select-all" aria-label="Select all"> Title</th>
+                    <th class="col-syllabus" rowspan="2"><input type="checkbox" id="records-select-all" aria-label="Select all"> Program</th>
+                    <th rowspan="2">Title</th>
                     <th colspan="2">Syllabus</th>
                     <th rowspan="2">Main Assessment SEB Status</th>
                     <th colspan="6" class="grp-amber">Mock Assessment</th>
@@ -778,6 +794,7 @@ function boot(seedBatches, seedStudents) {
                   <tr class="thead-single">
                     <th class="col-syllabus"><input type="checkbox" id="student-select-all" aria-label="Select all"></th>
                     <th>Title</th>
+                    <th>Program</th>
                     <th>UID</th>
                     <th>Student ID</th>
                     <th>Name</th>
@@ -811,6 +828,7 @@ function boot(seedBatches, seedStudents) {
                   <tr class="thead-single">
                     <th>#</th>
                     <th class="col-syllabus">Title</th>
+                    <th>Program</th>
                     <th>Assessment Type</th>
                     <th>Mock Assessment Config</th>
                     <th>Mock Interview Config</th>
@@ -856,6 +874,7 @@ function boot(seedBatches, seedStudents) {
                   <tr class="thead-single">
                     <th>#</th>
                     <th class="col-syllabus">Title</th>
+                    <th>Program</th>
                     <th>Assessment Type</th>
                     <th>Main Config Link</th>
                     <th>Mock Config Link</th>
@@ -881,6 +900,7 @@ function boot(seedBatches, seedStudents) {
                   <tr class="thead-single">
                     <th>#</th>
                     <th class="col-syllabus">Title</th>
+                    <th>Program</th>
                     <th>Assessment Type</th>
                     <th>Main Interview Link</th>
                     <th>Mock Interview Link</th>
@@ -994,6 +1014,27 @@ function boot(seedBatches, seedStudents) {
         </div>
       </div>
     </div>
+    <div class="modal-overlay" id="program-options-modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="program-options-modal-title">
+        <div class="modal-header">
+          <h3 id="program-options-modal-title">Manage Programs</h3>
+          <button type="button" class="modal-close" data-action="close-program-options" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="program-options-list"></div>
+          <div class="filter-field" style="margin-top:14px;">
+            <label for="new-program-name">Add a program</label>
+            <div style="display:flex;gap:8px;">
+              <input type="text" id="new-program-name" placeholder="e.g. NIAT" style="flex:1;">
+              <button type="button" class="btn btn--primary btn--sm" data-action="add-program-option">Add</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-program-options">Done</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-overlay" id="automation-modal-overlay" hidden>
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="automation-modal-title">
         <div class="modal-header">
@@ -1071,6 +1112,12 @@ function boot(seedBatches, seedStudents) {
   function textCell(field, value, editing, placeholder) {
     if (!editing) return esc(value) || dash();
     return '<input type="text" class="cell-input" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'">';
+  }
+  function programCell(value, editing) {
+    if (!editing) return value ? esc(value) : dash();
+    const known = programOptions.includes(value) || !value ? programOptions : programOptions.concat(value);
+    const opts = ['<option value="">&mdash; Select &mdash;</option>'].concat(known.map(p => '<option value="'+esc(p)+'"'+(p===value?' selected':'')+'>'+esc(p)+'</option>'));
+    return '<select class="cell-input" data-field="program">' + opts.join('') + '</select>';
   }
   function syllabusPairCell(items, editing, batchId) {
     if (!editing) {
@@ -1165,12 +1212,18 @@ function boot(seedBatches, seedStudents) {
     return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit-student" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete-student" data-id="'+id+'" aria-label="Delete student" title="Delete student">'+ICON_TRASH+'</button></div>';
   }
 
+  function programForBatchName(name) {
+    const b = batches.find(x => x.batch === name);
+    return b ? b.program : '';
+  }
+
   function studentRowHTML(s) {
     const editing = studentEditingId === s.id;
     const d = editing ? studentDraft : s;
     return '<tr class="'+(editing?'row-editing':'')+'" id="srow-'+s.id+'" data-id="'+s.id+'">'
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox" data-action="toggle-student-select" data-id="'+s.id+'"'+(selectedStudentIds.has(s.id)?' checked':'')+'></td>'
       + '<td>' + studentBatchSelect(d.batch, editing) + '</td>'
+      + '<td>' + (esc(programForBatchName(s.batch)) || dash()) + '</td>'
       + '<td>' + studentField('uid', d.uid, editing, 'UID') + '</td>'
       + '<td>' + studentField('studentId', d.studentId, editing, 'Student ID') + '</td>'
       + '<td>' + studentField('name', d.name, editing, 'Full name') + '</td>'
@@ -1223,6 +1276,7 @@ function boot(seedBatches, seedStudents) {
     return '<tr class="'+(editing?'row-editing':'')+'" id="crow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
+      + '<td>' + (esc(b.program) || dash()) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -1256,7 +1310,8 @@ function boot(seedBatches, seedStudents) {
       + '<td>'+textCell('mainTag', d.mainTag, editing, 'Tag')+'</td>';
 
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
-      + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + textCell('batch', d.batch, editing, 'Title') + '</td>'
+      + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + programCell(d.program, editing) + '</td>'
+      + '<td>' + textCell('batch', d.batch, editing, 'Title') + '</td>'
       + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing, id) + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
       + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
@@ -1415,8 +1470,15 @@ function boot(seedBatches, seedStudents) {
         const hay = [b.batch, syllabusText, b.mockTitle, b.mockTag, b.mockInterviewTitle, b.mockInterviewTag, b.mainTitle, b.mainTag, b.mainInterviewTitle, b.mainInterviewTag].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
+      if (syllabusProgramFilter && b.program !== syllabusProgramFilter) return false;
       return batchMatchesDateRange(b, dateFilter.from, dateFilter.to);
     });
+  }
+
+  function populateSyllabusProgramFilterOptions() {
+    const sel = document.getElementById('syllabus-filter-program');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">All Programs</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===syllabusProgramFilter?' selected':'')+'>'+esc(p)+'</option>').join('');
   }
 
   function updateRecordsSelectionUI(filtered) {
@@ -1435,6 +1497,7 @@ function boot(seedBatches, seedStudents) {
   function renderRecordsTable() {
     const tbody = document.getElementById('tbody');
     if (!tbody) return;
+    populateSyllabusProgramFilterOptions();
     let filtered = getFilteredBatches();
     if (editingId && !filtered.some(b => b.id === editingId)) {
       const editingBatch = batches.find(b => b.id === editingId);
@@ -1442,7 +1505,7 @@ function boot(seedBatches, seedStudents) {
     }
     updateRecordsSelectionUI(filtered);
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="15"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Title</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="16"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">+ Add Title</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
@@ -1498,7 +1561,7 @@ function boot(seedBatches, seedStudents) {
     }
     updateStudentSelectionUI(filtered);
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No students match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-student">+ Add Student</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No students match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-student">+ Add Student</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(studentRowHTML).join('');
@@ -1537,7 +1600,7 @@ function boot(seedBatches, seedStudents) {
       if (eb) filtered = [eb].concat(filtered);
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => configRowHTML(b, i + 1)).join('');
@@ -1685,6 +1748,7 @@ function boot(seedBatches, seedStudents) {
     return '<tr id="arow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '<div class="muted-cell">' + count + ' student' + (count === 1 ? '' : 's') + '</div></td>'
+      + '<td>' + (esc(b.program) || dash()) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td>' + (status === 'published' ? publishedLinkCell(b.mainConfigUrl, b.mainAssessmentLink) : configField('mainConfigUrl', b.mainConfigUrl, false)) + '</td>'
       + '<td>' + (b.mockRequired ? (status === 'published' ? publishedLinkCell(b.mockConfigUrl, b.mockAssessmentLink) : configField('mockConfigUrl', b.mockConfigUrl, false)) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -1716,7 +1780,7 @@ function boot(seedBatches, seedStudents) {
       return true;
     });
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => assessRowHTML(b, i + 1)).join('');
@@ -1791,6 +1855,60 @@ function boot(seedBatches, seedStudents) {
     publishModalConfirmed = false;
     const overlay = document.getElementById('publish-modal-overlay');
     if (overlay) overlay.hidden = true;
+  }
+
+  function renderProgramOptionsList() {
+    const el = document.getElementById('program-options-list');
+    if (!el) return;
+    if (!programOptions.length) { el.innerHTML = '<p class="muted-cell">No programs yet.</p>'; return; }
+    el.innerHTML = programOptions.map((p, i) =>
+      '<div class="program-option-row">'
+      + '<input type="text" class="cell-input program-option-input" data-index="'+i+'" value="'+esc(p)+'">'
+      + '<button type="button" class="btn--icon-danger" data-action="delete-program-option" data-index="'+i+'" aria-label="Delete program" title="Delete program">'+ICON_TRASH+'</button>'
+      + '</div>'
+    ).join('');
+  }
+
+  function openProgramOptionsModal() {
+    const overlay = document.getElementById('program-options-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    const newEl = document.getElementById('new-program-name');
+    if (newEl) newEl.value = '';
+    renderProgramOptionsList();
+  }
+
+  function closeProgramOptionsModal() {
+    const overlay = document.getElementById('program-options-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    render();
+  }
+
+  function addProgramOption() {
+    const el = document.getElementById('new-program-name');
+    const name = el ? el.value.trim() : '';
+    if (!name) { flashToast('Enter a program name first.', 'error'); return; }
+    if (programOptions.some(p => p.toLowerCase() === name.toLowerCase())) { flashToast('That program already exists.', 'error'); return; }
+    programOptions.push(name);
+    saveProgramOptions();
+    if (el) el.value = '';
+    renderProgramOptionsList();
+    flashToast('Program added.', 'success');
+  }
+
+  function renameProgramOption(index, value) {
+    if (!programOptions[index]) return;
+    programOptions[index] = value;
+    saveProgramOptions();
+  }
+
+  function deleteProgramOption(index) {
+    const name = programOptions[index];
+    if (name == null) return;
+    if (!confirm('Delete "' + name + '" from the program list? Titles already set to this program will keep showing it, but you won\'t be able to pick it again unless you re-add it.')) return;
+    programOptions.splice(index, 1);
+    saveProgramOptions();
+    renderProgramOptionsList();
+    flashToast('Program deleted.', 'success');
   }
 
   function submitPublishModal() {
@@ -2245,6 +2363,7 @@ function boot(seedBatches, seedStudents) {
     return '<tr class="'+(editing?'row-editing':'')+'" id="irow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus cell-strong">' + esc(b.batch) + '</td>'
+      + '<td>' + (esc(b.program) || dash()) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockInterviewRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockInterviewRequired?'✓':'✗')+'</span></td>'
       + '<td>' + interviewLinkField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewLinkField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -2275,7 +2394,7 @@ function boot(seedBatches, seedStudents) {
       return true;
     });
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => interviewRowHTML(b, i + 1)).join('');
@@ -3246,6 +3365,7 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'clear-syllabus-filter') {
       dateFilter = { from: '', to: '' };
       searchQuery = '';
+      syllabusProgramFilter = '';
       const searchEl = document.getElementById('syllabus-search'); if (searchEl) searchEl.value = '';
       const fromEl = document.getElementById('syllabus-filter-from'); if (fromEl) fromEl.value = '';
       const toEl = document.getElementById('syllabus-filter-to'); if (toEl) toEl.value = '';
@@ -3307,6 +3427,18 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'submit-publish-modal') {
       submitPublishModal();
     }
+    else if (action === 'open-program-options') {
+      openProgramOptionsModal();
+    }
+    else if (action === 'close-program-options') {
+      closeProgramOptionsModal();
+    }
+    else if (action === 'add-program-option') {
+      addProgramOption();
+    }
+    else if (action === 'delete-program-option') {
+      deleteProgramOption(Number(btn.dataset.index));
+    }
     else if (action === 'copy-link') {
       const value = btn.dataset.value;
       if (!value) return;
@@ -3356,6 +3488,10 @@ function boot(seedBatches, seedStudents) {
     if (t.id === 'config-search') { configSearchQuery = t.value; renderConfigsTable(); return; }
     if (t.id === 'assess-search') { assessSearchQuery = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'interview-search') { interviewSearchQuery = t.value; renderInterviewsTable(); return; }
+    if (t.matches('.program-option-input')) {
+      renameProgramOption(Number(t.dataset.index), t.value);
+      return;
+    }
     if (t.matches('.config-cell-input')) {
       if (!configDraft) return;
       configDraft[t.dataset.field] = t.value;
@@ -3384,6 +3520,7 @@ function boot(seedBatches, seedStudents) {
     const t = e.target;
     if (t.id === 'syllabus-filter-from') { dateFilter.from = t.value; renderRecordsTable(); return; }
     if (t.id === 'syllabus-filter-to') { dateFilter.to = t.value; renderRecordsTable(); return; }
+    if (t.id === 'syllabus-filter-program') { syllabusProgramFilter = t.value; renderRecordsTable(); return; }
     if (t.id === 'ov-from') { overviewDateRange.from = t.value; renderKPICards(); return; }
     if (t.id === 'ov-to') { overviewDateRange.to = t.value; renderKPICards(); return; }
     if (t.id === 'wn-date') { whatsNextDate = t.value; renderTimeline(); return; }
