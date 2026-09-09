@@ -532,16 +532,15 @@ function boot(seedBatches, seedStudents) {
   let configEditingId = null;
   let configDraft = null;
   let configSearchQuery = '';
-  let configBatchFilter = '';
+  let configProgramFilter = '';
   let configStatusTab = 'all';
-  let configDateFilter = { from: '', to: '' };
   let assessStatusTab = 'all';
   let assessSearchQuery = '';
-  let assessBatchFilter = '';
+  let assessProgramFilter = '';
   let interviewEditingId = null;
   let interviewDraft = null;
   let interviewSearchQuery = '';
-  let interviewBatchFilter = '';
+  let interviewProgramFilter = '';
   let publishModalTarget = null;
   let publishModalConfirmed = false;
   let pollTimer = null;
@@ -1267,9 +1266,7 @@ function boot(seedBatches, seedStudents) {
             </div>
             <div class="filter-bar">
               <div class="filter-field"><label for="config-search">Search</label><input type="text" id="config-search" placeholder="Search title&hellip;"></div>
-              <div class="filter-field"><label for="config-filter-batch">Title</label><select id="config-filter-batch"><option value="">All Titles</option></select></div>
-              <div class="filter-field"><label for="config-filter-from">From</label><input type="date" id="config-filter-from"></div>
-              <div class="filter-field"><label for="config-filter-to">To</label><input type="date" id="config-filter-to"></div>
+              <div class="filter-field"><label for="config-filter-program">Program</label><select id="config-filter-program"><option value="">All Programs</option></select></div>
               <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="clear-config-filter">Clear</button>
             </div>
             <div class="table-wrap">
@@ -1307,7 +1304,7 @@ function boot(seedBatches, seedStudents) {
             </div>
             <div class="filter-bar">
               <div class="filter-field"><label for="assess-search">Search</label><input type="text" id="assess-search" placeholder="Search title&hellip;"></div>
-              <div class="filter-field"><label for="assess-filter-batch">Title</label><select id="assess-filter-batch"><option value="">All Titles</option></select></div>
+              <div class="filter-field"><label for="assess-filter-program">Program</label><select id="assess-filter-program"><option value="">All Programs</option></select></div>
               <div class="filter-field"><label for="assess-filter-status">Status</label><select id="assess-filter-status">
                 <option value="all">All</option>
                 <option value="ready">Ready to Publish</option>
@@ -1341,7 +1338,7 @@ function boot(seedBatches, seedStudents) {
             <h2 class="section-heading">NxtMock Interviews</h2>
             <div class="filter-bar">
               <div class="filter-field"><label for="interview-search">Search</label><input type="text" id="interview-search" placeholder="Search title&hellip;"></div>
-              <div class="filter-field"><label for="interview-filter-batch">Title</label><select id="interview-filter-batch"><option value="">All Titles</option></select></div>
+              <div class="filter-field"><label for="interview-filter-program">Program</label><select id="interview-filter-program"><option value="">All Programs</option></select></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-interview-filter">Clear</button>
             </div>
             <div class="table-wrap">
@@ -2069,10 +2066,9 @@ function boot(seedBatches, seedStudents) {
   }
 
   function populateConfigFilterOptions() {
-    const batchSel = document.getElementById('config-filter-batch');
-    if (batchSel) {
-      const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
-      batchSel.innerHTML = '<option value="">All Titles</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===configBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
+    const sel = document.getElementById('config-filter-program');
+    if (sel) {
+      sel.innerHTML = '<option value="">All Programs</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===configProgramFilter?' selected':'')+'>'+esc(p)+'</option>').join('');
     }
   }
 
@@ -2086,14 +2082,8 @@ function boot(seedBatches, seedStudents) {
         const hay = b.batch.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (configBatchFilter && b.batch !== configBatchFilter) return false;
+      if (configProgramFilter && b.program !== configProgramFilter) return false;
       if (configStatusTab !== 'all' && configStatus(b) !== configStatusTab) return false;
-      if (configDateFilter.from || configDateFilter.to) {
-        const d = b.updatedAt ? b.updatedAt.slice(0, 10) : '';
-        if (!d) return false;
-        if (configDateFilter.from && d < configDateFilter.from) return false;
-        if (configDateFilter.to && d > configDateFilter.to) return false;
-      }
       return true;
     });
     if (configEditingId && !filtered.some(b => b.id === configEditingId)) {
@@ -2146,10 +2136,9 @@ function boot(seedBatches, seedStudents) {
   }
 
   function populateAssessFilterOptions() {
-    const sel = document.getElementById('assess-filter-batch');
+    const sel = document.getElementById('assess-filter-program');
     if (!sel) return;
-    const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
-    sel.innerHTML = '<option value="">All Titles</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===assessBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
+    sel.innerHTML = '<option value="">All Programs</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===assessProgramFilter?' selected':'')+'>'+esc(p)+'</option>').join('');
   }
 
   function assessInviteButton(b, type) {
@@ -2276,7 +2265,7 @@ function boot(seedBatches, seedStudents) {
         const hay = b.batch.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (assessBatchFilter && b.batch !== assessBatchFilter) return false;
+      if (assessProgramFilter && b.program !== assessProgramFilter) return false;
       if (!assessMatchesTab(b, assessStatusTab)) return false;
       return true;
     });
@@ -2862,10 +2851,9 @@ function boot(seedBatches, seedStudents) {
   }
 
   function populateInterviewFilterOptions() {
-    const sel = document.getElementById('interview-filter-batch');
+    const sel = document.getElementById('interview-filter-program');
     if (!sel) return;
-    const names = Array.from(new Set(batches.map(b => b.batch).filter(Boolean))).sort();
-    sel.innerHTML = '<option value="">All Titles</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===interviewBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
+    sel.innerHTML = '<option value="">All Programs</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===interviewProgramFilter?' selected':'')+'>'+esc(p)+'</option>').join('');
   }
 
   function renderInterviewsTable() {
@@ -2878,7 +2866,7 @@ function boot(seedBatches, seedStudents) {
         const hay = b.batch.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (interviewBatchFilter && b.batch !== interviewBatchFilter) return false;
+      if (interviewProgramFilter && b.program !== interviewProgramFilter) return false;
       return true;
     });
     if (!filtered.length) {
@@ -3829,10 +3817,8 @@ function boot(seedBatches, seedStudents) {
       renderAppUsersList();
     }
     else if (action === 'clear-config-filter') {
-      configSearchQuery = ''; configBatchFilter = ''; configDateFilter = { from: '', to: '' };
+      configSearchQuery = ''; configProgramFilter = '';
       const searchEl = document.getElementById('config-search'); if (searchEl) searchEl.value = '';
-      const fromEl = document.getElementById('config-filter-from'); if (fromEl) fromEl.value = '';
-      const toEl = document.getElementById('config-filter-to'); if (toEl) toEl.value = '';
       renderConfigsTable();
     }
     else if (action === 'assess-tab') {
@@ -3840,9 +3826,9 @@ function boot(seedBatches, seedStudents) {
       renderAssessmentsTable();
     }
     else if (action === 'clear-assess-filter') {
-      assessSearchQuery = ''; assessBatchFilter = ''; assessStatusTab = 'all';
+      assessSearchQuery = ''; assessProgramFilter = ''; assessStatusTab = 'all';
       const searchEl = document.getElementById('assess-search'); if (searchEl) searchEl.value = '';
-      const batchEl = document.getElementById('assess-filter-batch'); if (batchEl) batchEl.value = '';
+      const batchEl = document.getElementById('assess-filter-program'); if (batchEl) batchEl.value = '';
       renderAssessmentsTable();
     }
     else if (action === 'assess-card-nav') {
@@ -3859,9 +3845,9 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'cancel-interview') cancelInterviewEdit();
     else if (action === 'save-interview') saveInterview();
     else if (action === 'clear-interview-filter') {
-      interviewSearchQuery = ''; interviewBatchFilter = '';
+      interviewSearchQuery = ''; interviewProgramFilter = '';
       const searchEl = document.getElementById('interview-search'); if (searchEl) searchEl.value = '';
-      const batchEl = document.getElementById('interview-filter-batch'); if (batchEl) batchEl.value = '';
+      const batchEl = document.getElementById('interview-filter-program'); if (batchEl) batchEl.value = '';
       renderInterviewsTable();
     }
     else if (action === 'nav') { activeSection = btn.dataset.section; render(); }
@@ -4096,16 +4082,14 @@ function boot(seedBatches, seedStudents) {
       if (studentDraft) { studentDraft[t.dataset.field] = t.value; renderViewStudentsTable(); }
       return;
     }
-    if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
-    if (t.id === 'assess-filter-batch') { assessBatchFilter = t.value; renderAssessmentsTable(); return; }
+    if (t.id === 'config-filter-program') { configProgramFilter = t.value; renderConfigsTable(); return; }
+    if (t.id === 'assess-filter-program') { assessProgramFilter = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'assess-filter-status') { assessStatusTab = t.value; renderAssessmentsTable(); return; }
-    if (t.id === 'interview-filter-batch') { interviewBatchFilter = t.value; renderInterviewsTable(); return; }
+    if (t.id === 'interview-filter-program') { interviewProgramFilter = t.value; renderInterviewsTable(); return; }
     if (t.matches('.interview-invited-select')) {
       toggleInterviewInvited(t.dataset.id, t.dataset.field, t.value === 'yes');
       return;
     }
-    if (t.id === 'config-filter-from') { configDateFilter.from = t.value; renderConfigsTable(); return; }
-    if (t.id === 'config-filter-to') { configDateFilter.to = t.value; renderConfigsTable(); return; }
     if (!draft) return;
     if (t.dataset.action === 'toggle-mock') {
       draft.mockRequired = t.checked;
