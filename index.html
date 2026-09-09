@@ -1285,9 +1285,7 @@ function boot(seedBatches, seedStudents) {
                     <th>Title</th>
                     <th>Assessment Type</th>
                     <th>Mock Assessment Config</th>
-                    <th>Mock Interview Config</th>
                     <th>Main Assessment Config</th>
-                    <th>Main Interview Config</th>
                     <th>SEB Status</th>
                     <th>Status</th>
                     <th>Updated</th>
@@ -1836,9 +1834,7 @@ function boot(seedBatches, seedStudents) {
 
   function configStatus(b) {
     const required = ['mainConfigUrl'];
-    if (b.mainInterviewRequired) required.push('mainInterviewConfigUrl');
     if (b.mockRequired) required.push('mockConfigUrl');
-    if (b.mockInterviewRequired) required.push('mockInterviewConfigUrl');
     const filled = required.filter(f => b[f]);
     return filled.length === required.length ? 'submitted' : 'pending';
   }
@@ -1881,9 +1877,7 @@ function boot(seedBatches, seedStudents) {
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + (b.mockInterviewRequired ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + configField('mainConfigUrl', d.mainConfigUrl, editing) + '</td>'
-      + '<td>' + (b.mainInterviewRequired ? configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mainSebStatus ? '<span class="badge '+(b.mainSebStatus==='SEB'?'badge--yes':'badge--no')+'">'+esc(b.mainSebStatus)+'</span>' : dash()) + '</td>'
       + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
@@ -2260,7 +2254,7 @@ function boot(seedBatches, seedStudents) {
       if (eb) filtered = [eb].concat(filtered);
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => configRowHTML(b, i + 1)).join('');
@@ -3548,10 +3542,10 @@ function boot(seedBatches, seedStudents) {
 
   function clearConfig(id) {
     if (!canWrite) return;
-    if (!confirm('Clear all config links for this entry? This cannot be undone.')) return;
+    if (!confirm('Clear the Mock Assessment and Main Assessment config links for this entry? This cannot be undone.')) return;
     const idx = batches.findIndex(b => b.id === id);
     if (idx === -1) return;
-    const updated = { ...batches[idx], mockConfigUrl: '', mockInterviewConfigUrl: '', mainConfigUrl: '', mainInterviewConfigUrl: '', updatedAt: new Date().toISOString() };
+    const updated = { ...batches[idx], mockConfigUrl: '', mainConfigUrl: '', updatedAt: new Date().toISOString() };
     batches[idx] = updated;
     if (configEditingId === id) { configEditingId = null; configDraft = null; }
     render();
