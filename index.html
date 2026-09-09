@@ -71,6 +71,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-body);-webkit-
 .btn--ghost{background:transparent;border-color:var(--border);color:var(--ink-2);}
 .btn--ghost:hover{background:var(--surface-2);}
 .btn--icon-danger{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 8px;display:inline-flex;align-items:center;}
+.btn--danger{background:var(--btn-danger-bg);color:var(--btn-danger-text);}
+.btn--danger:hover{background:var(--btn-danger-bg-hover);}
 .btn--icon-danger:hover{color:var(--danger);background:var(--danger-soft);border-color:var(--danger-soft);}
 .btn:focus-visible,.cell-input:focus-visible,.chip-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 .access-banner{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber);border-radius:10px;padding:9px 14px;font-size:12.5px;margin-bottom:14px;font-family:var(--font-body);}
@@ -129,6 +131,9 @@ td.col-actions{padding-left:8px;padding-right:8px;}
 .sidebar-link:hover{background:var(--surface-2);}
 .sidebar-link.active{background:var(--accent-soft);color:var(--accent-ink);}
 .sidebar-link:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+.sidebar-footer{margin-top:auto;padding-top:10px;border-top:1px solid var(--border);}
+.sidebar-link--signout{color:var(--danger);}
+.sidebar-link--signout:hover{background:var(--danger-soft);}
 .content{min-width:0;padding:22px 26px;background:var(--surface);border-radius:0 14px 14px 0;border:1px solid var(--border);}
 .content-section{display:none;}
 .content-section.active{display:block;}
@@ -469,6 +474,8 @@ function boot(seedBatches, seedStudents) {
   let authBusy = false;
   let authStatus = null;
   let appUsers = [];
+  let teamStatusTab = 'all';
+  let teamSearchQuery = '';
   const TEAM_SECTIONS = {
     admin: ['overview', 'records', 'topin', 'assessments', 'interviews', 'settings'],
     content: ['overview', 'records', 'topin'],
@@ -599,11 +606,12 @@ function boot(seedBatches, seedStudents) {
       render();
       return;
     }
-    authUser = { uid: user.uid, email: user.email };
+    authUser = { uid: user.uid, email: user.email, name: '' };
     try {
       const snap = await fs.getDoc(fs.doc(db, 'users', user.uid));
       if (snap.exists()) {
         const data = snap.data();
+        authUser.name = data.name || '';
         authStatus = data.status || 'active';
         authTeam = authStatus === 'active' ? (data.team || null) : null;
       } else {
@@ -727,25 +735,50 @@ function boot(seedBatches, seedStudents) {
     return Object.keys(TEAM_LABELS).map(k => '<option value="' + k + '"' + (k === selected ? ' selected' : '') + '>' + esc(TEAM_LABELS[k]) + '</option>').join('');
   }
 
+  function getFilteredAppUsers() {
+    const q = teamSearchQuery.trim().toLowerCase();
+    return appUsers.filter(u => {
+      const status = u.status === 'active' ? 'active' : 'pending';
+      if (teamStatusTab !== 'all' && teamStatusTab !== status) return false;
+      if (q) {
+        const hay = [u.name, u.email, TEAM_LABELS[u.team] || u.team].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function fmtJoinedDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
   function renderAppUsersList() {
     const el = document.getElementById('app-users-list');
     if (!el) return;
-    const pending = appUsers.filter(u => u.status !== 'active');
-    const active = appUsers.filter(u => u.status === 'active');
     if (!appUsers.length) {
       el.innerHTML = '<p class="section-desc">No one has registered yet.</p>';
       return;
     }
+    const filtered = getFilteredAppUsers();
+    if (!filtered.length) {
+      el.innerHTML = '<p class="section-desc">No teammates match your filters.</p>';
+      return;
+    }
+    const pending = filtered.filter(u => u.status !== 'active');
+    const active = filtered.filter(u => u.status === 'active');
     let html = '';
     if (pending.length) {
       html += '<p class="team-panel-heading">Pending Requests (' + pending.length + ')</p>';
       html += pending.map(u =>
         '<div class="invite-row">'
-        + '<div><span class="invite-email">' + esc(u.name || u.email) + '</span><div class="invite-team">' + esc(u.email) + '</div></div>'
+        + '<div><span class="invite-email">' + esc(u.name || u.email) + '</span><div class="invite-team">' + esc(u.email) + (u.createdAt ? ' &middot; Requested ' + esc(fmtJoinedDate(u.createdAt)) : '') + '</div></div>'
         + '<div style="display:flex;align-items:center;gap:8px;">'
         + '<select class="cell-input pending-team-select" data-id="' + u.id + '">' + teamSelectOptionsHTML(u.team) + '</select>'
         + '<button type="button" class="btn btn--primary btn--xs" data-action="approve-user" data-id="' + u.id + '">Approve</button>'
-        + '<button type="button" class="btn--icon-danger" data-action="reject-user" data-id="' + u.id + '" aria-label="Reject request" title="Reject request">' + ICON_TRASH + '</button>'
+        + '<button type="button" class="btn btn--danger btn--xs" data-action="reject-user" data-id="' + u.id + '">Reject</button>'
         + '</div></div>'
       ).join('');
     }
@@ -853,7 +886,7 @@ function boot(seedBatches, seedStudents) {
     }
     if (badge) {
       badge.hidden = false;
-      badge.innerHTML = '<strong>' + esc(authUser.email) + '</strong> &middot; ' + esc(TEAM_LABELS[authTeam] || authTeam);
+      badge.innerHTML = '<strong>' + esc(authUser.name || authUser.email) + '</strong> &middot; ' + esc(TEAM_LABELS[authTeam] || authTeam);
     }
     if (signOutBtn) signOutBtn.hidden = false;
   }
@@ -1051,7 +1084,6 @@ function boot(seedBatches, seedStudents) {
         </div>
         <div class="header-right">
           <span class="auth-user-badge" id="auth-user-badge" hidden></span>
-          <button type="button" class="btn btn--ghost btn--sm" id="auth-signout-btn" data-action="auth-signout" hidden>Sign Out</button>
           <button type="button" class="btn btn--primary" id="add-batch-btn" data-action="add-batch">Raise Request</button>
         </div>
       </div>
@@ -1064,6 +1096,9 @@ function boot(seedBatches, seedStudents) {
           <button type="button" class="sidebar-link" data-action="nav" data-section="assessments">Assessments</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="interviews">NxtMock Interviews</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="settings">Settings</button>
+          <div class="sidebar-footer">
+            <button type="button" class="sidebar-link sidebar-link--signout" id="auth-signout-btn" data-action="auth-signout" hidden>&#8592; Sign Out</button>
+          </div>
         </nav>
 
         <div class="content">
@@ -1245,9 +1280,17 @@ function boot(seedBatches, seedStudents) {
                 </div>
               </div>
             </div>
-            <div class="settings-panel" id="team-management-panel" style="margin-top:20px;max-width:560px;" hidden>
+            <div class="settings-panel" id="team-management-panel" style="margin-top:20px;max-width:640px;" hidden>
               <h3 class="settings-panel-title">Team Access</h3>
               <p class="section-desc">Anyone can register on the Sign In page. New requests land here for you to approve and assign a team.</p>
+              <div class="tab-row">
+                <button type="button" class="tab-btn active" data-action="team-tab" data-tab="all">All</button>
+                <button type="button" class="tab-btn" data-action="team-tab" data-tab="pending">Pending</button>
+                <button type="button" class="tab-btn" data-action="team-tab" data-tab="active">Active</button>
+              </div>
+              <div class="filter-bar" style="padding:0;border:none;background:none;margin-bottom:12px;">
+                <div class="filter-field" style="flex:1;min-width:200px;"><label for="team-search">Search</label><input type="text" id="team-search" placeholder="Search by name, email or team&hellip;"></div>
+              </div>
               <div id="app-users-list"></div>
             </div>
           </section>
@@ -3637,6 +3680,11 @@ function boot(seedBatches, seedStudents) {
       btn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === configStatusTab));
       renderConfigsTable();
     }
+    else if (action === 'team-tab') {
+      teamStatusTab = btn.dataset.tab;
+      btn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === teamStatusTab));
+      renderAppUsersList();
+    }
     else if (action === 'clear-config-filter') {
       configSearchQuery = ''; configBatchFilter = ''; configDateFilter = { from: '', to: '' };
       const searchEl = document.getElementById('config-search'); if (searchEl) searchEl.value = '';
@@ -3834,6 +3882,7 @@ function boot(seedBatches, seedStudents) {
       if (row) row[t.dataset.field] = t.value;
       return;
     }
+    if (t.id === 'team-search') { teamSearchQuery = t.value; renderAppUsersList(); return; }
     if (t.id === 'config-search') { configSearchQuery = t.value; renderConfigsTable(); return; }
     if (t.id === 'assess-search') { assessSearchQuery = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'interview-search') { interviewSearchQuery = t.value; renderInterviewsTable(); return; }
