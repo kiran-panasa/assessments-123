@@ -113,6 +113,7 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 .badge--yes{background:var(--accent-soft);color:var(--accent-ink);}
 .students-count-badge{font-family:var(--font-display);font-weight:600;font-size:11px;color:var(--accent-ink);background:var(--accent-soft);padding:2px 8px;border-radius:999px;margin-bottom:2px;}
 .badge--no{background:var(--surface-2);color:var(--muted);}
+.badge--attention{background:var(--amber-soft);color:var(--amber);}
 .cell-input{width:100%;min-width:104px;font-family:var(--font-body);font-size:12.5px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--ink);}
 .cell-input--narrow{min-width:68px;}
 .cell-input--date,.cell-input--time{font-family:var(--font-mono);min-width:120px;font-variant-numeric:tabular-nums;}
@@ -1039,9 +1040,18 @@ function boot(seedBatches, seedStudents) {
 
   function normalizeBatch(b) {
     const mockRequired = !!b.mockRequired;
-    const inferredMockInterviewRequired = b.mockInterviewRequired != null
-      ? !!b.mockInterviewRequired
-      : !!(b.mockInterviewStartAt || b.mockInterviewDate || b.mockInterviewTitle || b.mockInterviewTag || b.nextDate);
+    // Interview requirement is a tri-state: true/false once someone has explicitly
+    // chosen it on NxtMock Config, or null ("not set") until they do. A batch that
+    // already has real interview scheduling data (from before this toggle existed)
+    // is treated as an explicit "true" rather than forcing it back to unset.
+    const mockInterviewHasData = !!(b.mockInterviewStartAt || b.mockInterviewDate || b.mockInterviewTitle || b.mockInterviewTag || b.nextDate || b.mockInterviewConfigUrl);
+    const mockInterviewRequired = b.mockInterviewRequired === true ? true
+      : b.mockInterviewRequired === false ? false
+      : (mockInterviewHasData ? true : null);
+    const mainInterviewHasData = !!(b.mainInterviewStartAt || b.mainInterviewDate || b.mainInterviewTitle || b.mainInterviewTag || b.mainInterviewConfigUrl);
+    const mainInterviewRequired = b.mainInterviewRequired === true ? true
+      : b.mainInterviewRequired === false ? false
+      : (mainInterviewHasData ? true : null);
     return {
       id: b.id,
       batch: b.batch != null ? b.batch : (b.firstBatch || ''),
@@ -1053,7 +1063,7 @@ function boot(seedBatches, seedStudents) {
       mockStartAt: coerceDT(b.mockStartAt != null ? b.mockStartAt : combineDT(b.mockDate, b.mockStart)),
       mockEndAt: coerceDT(b.mockEndAt != null ? b.mockEndAt : combineDT(b.mockDate, b.mockEnd)),
       mockTag: b.mockTag || '',
-      mockInterviewRequired: mockRequired ? inferredMockInterviewRequired : false,
+      mockInterviewRequired: mockInterviewRequired,
       mockInterviewTitle: b.mockInterviewTitle || '',
       mockInterviewStartAt: coerceDT(b.mockInterviewStartAt != null ? b.mockInterviewStartAt : combineDT(b.mockInterviewDate || b.nextDate, b.mockInterviewStart || b.nextStart)),
       mockInterviewEndAt: coerceDT(b.mockInterviewEndAt != null ? b.mockInterviewEndAt : combineDT(b.mockInterviewDate || b.nextDate, b.mockInterviewEnd || b.nextEnd)),
@@ -1062,7 +1072,7 @@ function boot(seedBatches, seedStudents) {
       mainStartAt: coerceDT(b.mainStartAt != null ? b.mainStartAt : combineDT(b.mainDate || b.mainExamDate, b.mainStart || b.mainExamStart)),
       mainEndAt: coerceDT(b.mainEndAt != null ? b.mainEndAt : combineDT(b.mainDate || b.mainExamDate, b.mainEnd || b.mainExamEnd)),
       mainTag: b.mainTag || '',
-      mainInterviewRequired: b.mainInterviewRequired != null ? !!b.mainInterviewRequired : true,
+      mainInterviewRequired: mainInterviewRequired,
       mainInterviewTitle: b.mainInterviewTitle || '',
       mainInterviewStartAt: coerceDT(b.mainInterviewStartAt != null ? b.mainInterviewStartAt : combineDT(b.mainInterviewDate, b.mainInterviewStart)),
       mainInterviewEndAt: coerceDT(b.mainInterviewEndAt != null ? b.mainInterviewEndAt : combineDT(b.mainInterviewDate, b.mainInterviewEnd)),
@@ -1885,6 +1895,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   function nxtmockConfigStatus(b) {
+    if (b.mainInterviewRequired === null || b.mockInterviewRequired === null) return 'pending';
     const required = [];
     if (b.mockInterviewRequired) required.push('mockInterviewConfigUrl');
     if (b.mainInterviewRequired) required.push('mainInterviewConfigUrl');
@@ -1907,6 +1918,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   function interviewNeededValue(d) {
+    if (d.mainInterviewRequired === null || d.mockInterviewRequired === null) return 'unset';
     if (d.mainInterviewRequired && d.mockInterviewRequired) return 'both';
     if (d.mainInterviewRequired) return 'main';
     if (d.mockInterviewRequired) return 'mock';
@@ -1914,6 +1926,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   function interviewNeededLabel(b) {
+    if (b.mainInterviewRequired === null || b.mockInterviewRequired === null) return 'Not set';
     if (b.mainInterviewRequired && b.mockInterviewRequired) return 'Main & Mock';
     if (b.mainInterviewRequired) return 'Main only';
     if (b.mockInterviewRequired) return 'Mock only';
@@ -1922,6 +1935,8 @@ function boot(seedBatches, seedStudents) {
 
   function interviewNeededCell(b, d, editing) {
     if (!editing) {
+      const value = interviewNeededValue(b);
+      if (value === 'unset') return '<span class="badge badge--attention" data-action="edit-config" data-id="'+b.id+'" style="cursor:pointer;" title="Click Edit to choose">Not set &mdash; choose</span>';
       const needed = b.mainInterviewRequired || b.mockInterviewRequired;
       return needed
         ? '<span class="badge badge--yes">' + esc(interviewNeededLabel(b)) + '</span>'
@@ -1929,6 +1944,7 @@ function boot(seedBatches, seedStudents) {
     }
     const current = interviewNeededValue(d);
     const opts = [
+      ['unset', 'Not set &mdash; choose one'],
       ['none', 'No interview'],
       ['main', 'Main only'],
       ['mock', 'Mock only'],
@@ -1962,8 +1978,8 @@ function boot(seedBatches, seedStudents) {
       + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td>' + interviewNeededCell(b, d, editing) + '</td>'
-      + '<td>' + (mainInterviewOn ? configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + (mockInterviewOn ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (mainInterviewOn === null ? '<span class="muted-cell">Not set</span>' : mainInterviewOn ? configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (mockInterviewOn === null ? '<span class="muted-cell">Not set</span>' : mockInterviewOn ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
       + '<td class="col-actions">' + nxtmockConfigActionsCell(b.id, editing) + '</td>'
@@ -2995,6 +3011,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   function interviewStatus(b) {
+    if (b.mainInterviewRequired === null || b.mockInterviewRequired === null) return 'not-set';
     if (!b.mainInterviewRequired && !b.mockInterviewRequired) return 'not-required';
     const mainDone = !b.mainInterviewRequired || !!b.mainInterviewInvited;
     const mockDone = !b.mockInterviewRequired || !!b.mockInterviewInvited;
@@ -3030,6 +3047,7 @@ function boot(seedBatches, seedStudents) {
 
   function interviewStatusBadge(b) {
     const s = interviewStatus(b);
+    if (s === 'not-set') return '<span class="badge badge--attention" data-action="edit-interview" data-id="'+b.id+'" style="cursor:pointer;" title="Set this on NxtMock Config">Not set</span>';
     if (s === 'not-required') return '<span class="muted-cell">No interview for this batch</span>';
     return '<span class="badge '+(s==='loaded'?'badge--yes':'badge--no')+'">'+(s==='loaded'?'Loaded in Prod':'Ready to Load in Prod')+'</span>';
   }
@@ -4319,8 +4337,13 @@ function boot(seedBatches, seedStudents) {
     if (t.matches('.interview-needed-select')) {
       if (!configDraft) return;
       const v = t.value;
-      configDraft.mainInterviewRequired = v === 'main' || v === 'both';
-      configDraft.mockInterviewRequired = v === 'mock' || v === 'both';
+      if (v === 'unset') {
+        configDraft.mainInterviewRequired = null;
+        configDraft.mockInterviewRequired = null;
+      } else {
+        configDraft.mainInterviewRequired = v === 'main' || v === 'both';
+        configDraft.mockInterviewRequired = v === 'mock' || v === 'both';
+      }
       renderNxtmockConfigsTable();
       renderConfigsTable();
       return;
