@@ -646,9 +646,12 @@ function boot(seedBatches, seedStudents) {
     if (password !== confirmPassword) { authError = 'Passwords don\'t match.'; renderAuthScreen(); return; }
     authBusy = true; render();
     try {
+      // Create the Auth account first -- this never depends on Firestore rules.
+      // The Firestore reads/writes below only happen once request.auth is set,
+      // so they work under the common "must be signed in" rule pattern.
+      const cred = await authFs.createUserWithEmailAndPassword(authInstance, email, password);
       const bootstrapSnap = await fs.getDoc(fs.doc(db, 'meta', 'bootstrap'));
       const isBootstrap = !bootstrapSnap.exists() || !bootstrapSnap.data().adminCreated;
-      const cred = await authFs.createUserWithEmailAndPassword(authInstance, email, password);
       const record = {
         name: name.trim(),
         email,
@@ -805,8 +808,8 @@ function boot(seedBatches, seedStudents) {
     if (nameField) nameField.hidden = !isSignup;
     if (teamField) teamField.hidden = !isSignup;
     if (confirmField) confirmField.hidden = !isSignup;
-    if (headingEl) headingEl.textContent = isSignup ? 'Request Access' : 'Welcome Back';
-    if (subtitleEl) subtitleEl.textContent = isSignup ? 'Register to request access. Admin will approve your account.' : 'Sign in to continue';
+    if (headingEl) headingEl.textContent = isSignup ? 'Request Access' : 'Sign In';
+    if (subtitleEl) subtitleEl.textContent = isSignup ? 'Register to request access. Admin will approve your account.' : 'Access your portal dashboard';
     if (submitBtn) submitBtn.textContent = isSignup ? 'Request Access' : 'Sign In';
     if (hintEl) hintEl.textContent = '';
     const errEl = document.getElementById('auth-error');
@@ -1032,8 +1035,8 @@ function boot(seedBatches, seedStudents) {
           </div>
           <div class="filter-field"><label for="auth-password">Password</label><input type="password" id="auth-password" autocomplete="current-password" placeholder="Min. 6 characters" required></div>
           <div class="filter-field" id="auth-confirm-field" hidden><label for="auth-confirm-password">Confirm Password</label><input type="password" id="auth-confirm-password" autocomplete="new-password" placeholder="Re-enter password"></div>
-          <p class="auth-error" id="auth-error" hidden></p>
           <button type="submit" class="btn btn--primary" id="auth-submit-btn">Sign In</button>
+          <p class="auth-error" id="auth-error" hidden></p>
         </form>
         <p class="auth-hint" id="auth-hint"></p>
       </div>
