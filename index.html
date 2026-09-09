@@ -1353,7 +1353,6 @@ function boot(seedBatches, seedStudents) {
                     <th>#</th>
                     <th class="col-syllabus">Program</th>
                     <th>Title</th>
-                    <th>Mock Assessment Config</th>
                     <th>Interview Needed</th>
                     <th>Main Interview Config</th>
                     <th>Mock Interview Config</th>
@@ -1887,7 +1886,6 @@ function boot(seedBatches, seedStudents) {
 
   function nxtmockConfigStatus(b) {
     const required = [];
-    if (b.mockRequired) required.push('mockConfigUrl');
     if (b.mockInterviewRequired) required.push('mockInterviewConfigUrl');
     if (b.mainInterviewRequired) required.push('mainInterviewConfigUrl');
     if (!required.length) return 'submitted';
@@ -1897,10 +1895,10 @@ function boot(seedBatches, seedStudents) {
 
   async function clearMockConfig(id) {
     if (!canWrite) return;
-    if (!confirm('Clear the Mock Assessment, Mock Interview and Main Interview config links for this entry? This cannot be undone.')) return;
+    if (!confirm('Clear the Mock Interview and Main Interview config links for this entry? This cannot be undone.')) return;
     const idx = batches.findIndex(b => b.id === id);
     if (idx === -1) return;
-    const updated = { ...batches[idx], mockConfigUrl: '', mockInterviewConfigUrl: '', mainInterviewConfigUrl: '', updatedAt: new Date().toISOString() };
+    const updated = { ...batches[idx], mockInterviewConfigUrl: '', mainInterviewConfigUrl: '', updatedAt: new Date().toISOString() };
     batches[idx] = updated;
     if (configEditingId === id) { configEditingId = null; configDraft = null; }
     render();
@@ -1963,7 +1961,6 @@ function boot(seedBatches, seedStudents) {
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
-      + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + interviewNeededCell(b, d, editing) + '</td>'
       + '<td>' + (mainInterviewOn ? configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (mockInterviewOn ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -1997,7 +1994,7 @@ function boot(seedBatches, seedStudents) {
       if (eb) filtered = [eb].concat(filtered);
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => nxtmockConfigRowHTML(b, i + 1)).join('');
