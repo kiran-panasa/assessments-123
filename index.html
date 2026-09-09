@@ -1186,10 +1186,11 @@ function boot(seedBatches, seedStudents) {
       <div class="shell">
         <nav class="sidebar">
           <button type="button" class="sidebar-link" data-action="nav" data-section="overview">${ICON_DASHBOARD} Dashboard</button>
-          <p class="sidebar-group-label">Workspace</p>
+          <p class="sidebar-group-label">Topin Assessments</p>
           <button type="button" class="sidebar-link" data-action="nav" data-section="records">${ICON_BOOK} Curriculum</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="topin">${ICON_LINK} Topin Configs</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="assessments">${ICON_CHECKLIST} Assessments</button>
+          <p class="sidebar-group-label" id="sidebar-interviews-label">NxtMock Interviews</p>
           <button type="button" class="sidebar-link" data-action="nav" data-section="interviews">${ICON_CHAT} NxtMock Interviews</button>
           <p class="sidebar-group-label" id="sidebar-admin-label">Admin</p>
           <button type="button" class="sidebar-link" data-action="nav" data-section="teams">${ICON_TEAM} Teams</button>
@@ -2934,6 +2935,8 @@ function boot(seedBatches, seedStudents) {
     });
     const adminLabel = document.getElementById('sidebar-admin-label');
     if (adminLabel) adminLabel.hidden = !(sections.includes('teams') || sections.includes('settings'));
+    const interviewsLabel = document.getElementById('sidebar-interviews-label');
+    if (interviewsLabel) interviewsLabel.hidden = !sections.includes('interviews');
     document.querySelectorAll('.content-section').forEach(sec => {
       sec.classList.toggle('active', sec.id === 'section-' + activeSection);
     });
