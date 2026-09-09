@@ -2980,7 +2980,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   function defaultNotifyMessage(batchNames) {
-    const list = batchNames.map((n, i) => n + (i === batchNames.length - 1 ? '.' : ',')).join('\n');
+    const list = batchNames.map((n, i) => '**' + n + '**' + (i === batchNames.length - 1 ? '.' : ',')).join('\n');
     return 'The syllabus has been updated for the following batch(es):\n' + list + '\nKindly start the Topin config preparation accordingly.';
   }
 
@@ -2990,7 +2990,7 @@ function boot(seedBatches, seedStudents) {
     const overlay = document.getElementById('notify-modal-overlay');
     if (overlay) overlay.hidden = false;
     const listEl = document.getElementById('notify-batch-list');
-    if (listEl) listEl.innerHTML = names.length + ' batch' + (names.length === 1 ? '' : 'es') + ' selected:<br>' + names.map(n => '&bull; ' + esc(n)).join('<br>');
+    if (listEl) listEl.innerHTML = names.length + ' batch' + (names.length === 1 ? '' : 'es') + ' selected:<br>' + names.map(n => '&bull; <strong>' + esc(n) + '</strong>').join('<br>');
     const recipientsEl = document.getElementById('notify-recipients');
     if (recipientsEl) recipientsEl.value = notifyLastRecipients;
     const messageEl = document.getElementById('notify-message');
