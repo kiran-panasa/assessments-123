@@ -1061,6 +1061,7 @@ function boot(seedBatches, seedStudents) {
       mainStartAt: coerceDT(b.mainStartAt != null ? b.mainStartAt : combineDT(b.mainDate || b.mainExamDate, b.mainStart || b.mainExamStart)),
       mainEndAt: coerceDT(b.mainEndAt != null ? b.mainEndAt : combineDT(b.mainDate || b.mainExamDate, b.mainEnd || b.mainExamEnd)),
       mainTag: b.mainTag || '',
+      mainInterviewRequired: b.mainInterviewRequired != null ? !!b.mainInterviewRequired : true,
       mainInterviewTitle: b.mainInterviewTitle || '',
       mainInterviewStartAt: coerceDT(b.mainInterviewStartAt != null ? b.mainInterviewStartAt : combineDT(b.mainInterviewDate, b.mainInterviewStart)),
       mainInterviewEndAt: coerceDT(b.mainInterviewEndAt != null ? b.mainInterviewEndAt : combineDT(b.mainInterviewDate, b.mainInterviewEnd)),
@@ -1354,6 +1355,8 @@ function boot(seedBatches, seedStudents) {
                     <th class="col-syllabus">Program</th>
                     <th>Title</th>
                     <th>Mock Assessment Config</th>
+                    <th>Interview Needed</th>
+                    <th>Main Interview Config</th>
                     <th>Mock Interview Config</th>
                     <th>Status</th>
                     <th>Updated</th>
@@ -1819,7 +1822,8 @@ function boot(seedBatches, seedStudents) {
   }
 
   function configStatus(b) {
-    const required = ['mainConfigUrl', 'mainInterviewConfigUrl'];
+    const required = ['mainConfigUrl'];
+    if (b.mainInterviewRequired) required.push('mainInterviewConfigUrl');
     if (b.mockRequired) required.push('mockConfigUrl');
     if (b.mockInterviewRequired) required.push('mockInterviewConfigUrl');
     const filled = required.filter(f => b[f]);
@@ -1866,7 +1870,7 @@ function boot(seedBatches, seedStudents) {
       + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + configField('mainConfigUrl', d.mainConfigUrl, editing) + '</td>'
-      + '<td>' + configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) + '</td>'
+      + '<td>' + (b.mainInterviewRequired ? configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mainSebStatus ? '<span class="badge '+(b.mainSebStatus==='SEB'?'badge--yes':'badge--no')+'">'+esc(b.mainSebStatus)+'</span>' : dash()) + '</td>'
       + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
@@ -1878,6 +1882,7 @@ function boot(seedBatches, seedStudents) {
     const required = [];
     if (b.mockRequired) required.push('mockConfigUrl');
     if (b.mockInterviewRequired) required.push('mockInterviewConfigUrl');
+    if (b.mainInterviewRequired) required.push('mainInterviewConfigUrl');
     if (!required.length) return 'submitted';
     const filled = required.filter(f => b[f]);
     return filled.length === required.length ? 'submitted' : 'pending';
@@ -1885,15 +1890,48 @@ function boot(seedBatches, seedStudents) {
 
   async function clearMockConfig(id) {
     if (!canWrite) return;
-    if (!confirm('Clear the Mock Assessment and Mock Interview config links for this entry? This cannot be undone.')) return;
+    if (!confirm('Clear the Mock Assessment, Mock Interview and Main Interview config links for this entry? This cannot be undone.')) return;
     const idx = batches.findIndex(b => b.id === id);
     if (idx === -1) return;
-    const updated = { ...batches[idx], mockConfigUrl: '', mockInterviewConfigUrl: '', updatedAt: new Date().toISOString() };
+    const updated = { ...batches[idx], mockConfigUrl: '', mockInterviewConfigUrl: '', mainInterviewConfigUrl: '', updatedAt: new Date().toISOString() };
     batches[idx] = updated;
     if (configEditingId === id) { configEditingId = null; configDraft = null; }
     render();
     persistSave(updated);
-    flashToast('Mock config cleared.', 'success');
+    flashToast('Config cleared.', 'success');
+  }
+
+  function interviewNeededValue(d) {
+    if (d.mainInterviewRequired && d.mockInterviewRequired) return 'both';
+    if (d.mainInterviewRequired) return 'main';
+    if (d.mockInterviewRequired) return 'mock';
+    return 'none';
+  }
+
+  function interviewNeededLabel(b) {
+    if (b.mainInterviewRequired && b.mockInterviewRequired) return 'Main & Mock';
+    if (b.mainInterviewRequired) return 'Main only';
+    if (b.mockInterviewRequired) return 'Mock only';
+    return 'No interview for this batch';
+  }
+
+  function interviewNeededCell(b, d, editing) {
+    if (!editing) {
+      const needed = b.mainInterviewRequired || b.mockInterviewRequired;
+      return needed
+        ? '<span class="badge badge--yes">' + esc(interviewNeededLabel(b)) + '</span>'
+        : '<span class="muted-cell">No interview for this batch</span>';
+    }
+    const current = interviewNeededValue(d);
+    const opts = [
+      ['none', 'No interview'],
+      ['main', 'Main only'],
+      ['mock', 'Mock only'],
+      ['both', 'Main &amp; Mock']
+    ];
+    return '<select class="cell-input interview-needed-select" data-id="'+b.id+'">'
+      + opts.map(([v, label]) => '<option value="'+v+'"'+(v===current?' selected':'')+'>'+label+'</option>').join('')
+      + '</select>';
   }
 
   function nxtmockConfigActionsCell(id, editing) {
@@ -1912,12 +1950,16 @@ function boot(seedBatches, seedStudents) {
     const editing = configEditingId === b.id;
     const d = editing ? configDraft : b;
     const status = nxtmockConfigStatus(b);
+    const mainInterviewOn = editing ? d.mainInterviewRequired : b.mainInterviewRequired;
+    const mockInterviewOn = editing ? d.mockInterviewRequired : b.mockInterviewRequired;
     return '<tr class="'+(editing?'row-editing':'')+'" id="mcrow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + (b.mockInterviewRequired ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + interviewNeededCell(b, d, editing) + '</td>'
+      + '<td>' + (mainInterviewOn ? configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (mockInterviewOn ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
       + '<td class="col-actions">' + nxtmockConfigActionsCell(b.id, editing) + '</td>'
@@ -1948,7 +1990,7 @@ function boot(seedBatches, seedStudents) {
       if (eb) filtered = [eb].concat(filtered);
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => nxtmockConfigRowHTML(b, i + 1)).join('');
@@ -2033,7 +2075,7 @@ function boot(seedBatches, seedStudents) {
       if (b.mainStartAt) events.push({ type:'Main Assessment', cls:'blue', date:b.mainStartAt.split('T')[0], startAt:b.mainStartAt, endAt:b.mainEndAt, batch:b.batch, sub:b.mainTitle||b.mainTag });
       if (b.mockRequired && b.mockStartAt) events.push({ type:'Mock Assessment', cls:'amber', date:b.mockStartAt.split('T')[0], startAt:b.mockStartAt, endAt:b.mockEndAt, batch:b.batch, sub:b.mockTitle||b.mockTag });
       if (b.mockInterviewRequired && b.mockInterviewStartAt) events.push({ type:'Mock Interview', cls:'teal', date:b.mockInterviewStartAt.split('T')[0], startAt:b.mockInterviewStartAt, endAt:b.mockInterviewEndAt, batch:b.batch, sub:b.mockInterviewTitle||b.mockInterviewTag });
-      if (b.mainInterviewStartAt) events.push({ type:'Main Interview', cls:'rose', date:b.mainInterviewStartAt.split('T')[0], startAt:b.mainInterviewStartAt, endAt:b.mainInterviewEndAt, batch:b.batch, sub:b.mainInterviewTitle||b.mainInterviewTag });
+      if (b.mainInterviewRequired && b.mainInterviewStartAt) events.push({ type:'Main Interview', cls:'rose', date:b.mainInterviewStartAt.split('T')[0], startAt:b.mainInterviewStartAt, endAt:b.mainInterviewEndAt, batch:b.batch, sub:b.mainInterviewTitle||b.mainInterviewTag });
     });
     events.sort((a, b) => a.date.localeCompare(b.date) || eventTime(a).localeCompare(eventTime(b)));
     return events;
@@ -2052,7 +2094,7 @@ function boot(seedBatches, seedStudents) {
       if (b.mockRequired && b.mockStartAt && inDateRange(b.mockStartAt.split('T')[0], from, to)) { mock++; matched = true; }
       if (b.mockInterviewRequired && b.mockInterviewStartAt && inDateRange(b.mockInterviewStartAt.split('T')[0], from, to)) { mockInterview++; matched = true; }
       if (b.mainStartAt && inDateRange(b.mainStartAt.split('T')[0], from, to)) { main++; matched = true; }
-      if (b.mainInterviewStartAt && inDateRange(b.mainInterviewStartAt.split('T')[0], from, to)) { mainInterview++; matched = true; }
+      if (b.mainInterviewRequired && b.mainInterviewStartAt && inDateRange(b.mainInterviewStartAt.split('T')[0], from, to)) { mainInterview++; matched = true; }
       if (matched) batchIds.add(b.id);
     });
     return { batch: batchIds.size, mock: mock, mockInterview: mockInterview, main: main, mainInterview: mainInterview, assigned: mock + mockInterview + main + mainInterview };
@@ -2955,10 +2997,10 @@ function boot(seedBatches, seedStudents) {
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
-      + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockInterviewRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockInterviewRequired?'✓':'✗')+'</span></td>'
-      + '<td>' + interviewLinkField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) + '</td>'
+      + '<td><span class="badge '+(b.mainInterviewRequired?'badge--yes':'badge--no')+'">Main '+(b.mainInterviewRequired?'✓':'✗')+'</span> <span class="badge '+(b.mockInterviewRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockInterviewRequired?'✓':'✗')+'</span></td>'
+      + '<td>' + (b.mainInterviewRequired ? interviewLinkField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewLinkField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + interviewInvitedSelect(b, 'mainInterviewInvited') + '</td>'
+      + '<td>' + (b.mainInterviewRequired ? interviewInvitedSelect(b, 'mainInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewInvitedSelect(b, 'mockInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td class="col-actions">' + interviewActionsCell(b.id, editing) + '</td>'
       + '</tr>';
@@ -3422,7 +3464,9 @@ function boot(seedBatches, seedStudents) {
       mockConfigUrl: b.mockConfigUrl,
       mockInterviewConfigUrl: b.mockInterviewConfigUrl,
       mainConfigUrl: b.mainConfigUrl,
-      mainInterviewConfigUrl: b.mainInterviewConfigUrl
+      mainInterviewConfigUrl: b.mainInterviewConfigUrl,
+      mainInterviewRequired: b.mainInterviewRequired,
+      mockInterviewRequired: b.mockInterviewRequired
     };
     render();
   }
@@ -4213,6 +4257,15 @@ function boot(seedBatches, seedStudents) {
     if (t.id === 'interview-filter-program') { interviewProgramFilter = t.value; renderInterviewsTable(); return; }
     if (t.matches('.interview-invited-select')) {
       toggleInterviewInvited(t.dataset.id, t.dataset.field, t.value === 'yes');
+      return;
+    }
+    if (t.matches('.interview-needed-select')) {
+      if (!configDraft) return;
+      const v = t.value;
+      configDraft.mainInterviewRequired = v === 'main' || v === 'both';
+      configDraft.mockInterviewRequired = v === 'mock' || v === 'both';
+      renderNxtmockConfigsTable();
+      renderConfigsTable();
       return;
     }
     if (!draft) return;
