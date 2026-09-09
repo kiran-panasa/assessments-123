@@ -544,6 +544,7 @@ function boot(seedBatches, seedStudents) {
   let interviewDraft = null;
   let interviewSearchQuery = '';
   let interviewProgramFilter = '';
+  let interviewStatusTab = 'all';
   let publishModalTarget = null;
   let publishModalConfirmed = false;
   let pollTimer = null;
@@ -1370,9 +1371,20 @@ function boot(seedBatches, seedStudents) {
 
           <section class="content-section" id="section-interviews">
             <h2 class="section-heading">NxtMock Interviews</h2>
+            <div class="cards-grid" id="interview-cards"></div>
+            <div class="tab-row">
+              <button type="button" class="tab-btn" data-action="interview-tab" data-tab="ready">Ready to Load in Prod</button>
+              <button type="button" class="tab-btn" data-action="interview-tab" data-tab="loaded">Loaded in Prod</button>
+              <button type="button" class="tab-btn active" data-action="interview-tab" data-tab="all">All</button>
+            </div>
             <div class="filter-bar">
               <div class="filter-field"><label for="interview-search">Search</label><input type="text" id="interview-search" placeholder="Search title&hellip;"></div>
               <div class="filter-field"><label for="interview-filter-program">Program</label><select id="interview-filter-program"><option value="">All Programs</option></select></div>
+              <div class="filter-field"><label for="interview-filter-status">Status</label><select id="interview-filter-status">
+                <option value="all">All</option>
+                <option value="ready">Ready to Load in Prod</option>
+                <option value="loaded">Loaded in Prod</option>
+              </select></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-interview-filter">Clear</button>
             </div>
             <div class="table-wrap">
@@ -1382,11 +1394,12 @@ function boot(seedBatches, seedStudents) {
                     <th>#</th>
                     <th class="col-syllabus">Program</th>
                     <th>Title</th>
-                    <th>Assessment Type</th>
+                    <th>Interview Type</th>
                     <th>Main Interview Link</th>
                     <th>Mock Interview Link</th>
                     <th>Main Invited</th>
                     <th>Mock Invited</th>
+                    <th>Status</th>
                     <th class="col-actions">Actions</th>
                   </tr>
                 </thead>
@@ -2987,7 +3000,47 @@ function boot(seedBatches, seedStudents) {
     if (editing) {
       return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save-interview">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel-interview">Cancel</button></div>';
     }
-    return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit-interview" data-id="'+id+'">Edit</button></div>';
+    return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit-interview" data-id="'+id+'">Edit</button>' + viewStudentsButton(id) + '</div>';
+  }
+
+  function interviewStatus(b) {
+    if (!b.mainInterviewRequired && !b.mockInterviewRequired) return 'not-required';
+    const mainDone = !b.mainInterviewRequired || !!b.mainInterviewInvited;
+    const mockDone = !b.mockInterviewRequired || !!b.mockInterviewInvited;
+    return (mainDone && mockDone) ? 'loaded' : 'ready';
+  }
+
+  function interviewMatchesTab(b, tab) {
+    if (tab === 'all') return true;
+    return interviewStatus(b) === tab;
+  }
+
+  function interviewCard(label, value, tab) {
+    return '<button type="button" class="kpi-card" data-action="interview-card-nav" data-tab="'+tab+'"><div class="kpi-value">'+value+'</div><div class="kpi-label">'+esc(label)+'</div></button>';
+  }
+
+  function renderInterviewCards() {
+    const el = document.getElementById('interview-cards');
+    if (!el) return;
+    let ready = 0, loaded = 0;
+    batches.forEach(b => {
+      const s = interviewStatus(b);
+      if (s === 'ready') ready++;
+      else if (s === 'loaded') loaded++;
+    });
+    el.innerHTML = interviewCard('Ready to Load in Prod', ready, 'ready') + interviewCard('Loaded in Prod', loaded, 'loaded');
+  }
+
+  function syncInterviewStatusUI() {
+    const sel = document.getElementById('interview-filter-status');
+    if (sel) sel.value = interviewStatusTab;
+    document.querySelectorAll('#section-interviews .tab-row .tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === interviewStatusTab));
+  }
+
+  function interviewStatusBadge(b) {
+    const s = interviewStatus(b);
+    if (s === 'not-required') return '<span class="muted-cell">No interview for this batch</span>';
+    return '<span class="badge '+(s==='loaded'?'badge--yes':'badge--no')+'">'+(s==='loaded'?'Loaded in Prod':'Ready to Load in Prod')+'</span>';
   }
 
   function interviewRowHTML(b, index) {
@@ -3002,6 +3055,7 @@ function boot(seedBatches, seedStudents) {
       + '<td>' + (b.mockInterviewRequired ? interviewLinkField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mainInterviewRequired ? interviewInvitedSelect(b, 'mainInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewInvitedSelect(b, 'mockInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + interviewStatusBadge(b) + '</td>'
       + '<td class="col-actions">' + interviewActionsCell(b.id, editing) + '</td>'
       + '</tr>';
   }
@@ -3015,7 +3069,9 @@ function boot(seedBatches, seedStudents) {
   function renderInterviewsTable() {
     const tbody = document.getElementById('interview-tbody');
     if (!tbody) return;
+    renderInterviewCards();
     populateInterviewFilterOptions();
+    syncInterviewStatusUI();
     const q = interviewSearchQuery.trim().toLowerCase();
     const filtered = batches.filter(b => {
       if (q) {
@@ -3023,10 +3079,11 @@ function boot(seedBatches, seedStudents) {
         if (!hay.includes(q)) return false;
       }
       if (interviewProgramFilter && b.program !== interviewProgramFilter) return false;
+      if (!interviewMatchesTab(b, interviewStatusTab)) return false;
       return true;
     });
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => interviewRowHTML(b, i + 1)).join('');
@@ -4011,8 +4068,16 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'edit-interview') startInterviewEdit(id);
     else if (action === 'cancel-interview') cancelInterviewEdit();
     else if (action === 'save-interview') saveInterview();
+    else if (action === 'interview-tab') {
+      interviewStatusTab = btn.dataset.tab;
+      renderInterviewsTable();
+    }
+    else if (action === 'interview-card-nav') {
+      interviewStatusTab = btn.dataset.tab;
+      renderInterviewsTable();
+    }
     else if (action === 'clear-interview-filter') {
-      interviewSearchQuery = ''; interviewProgramFilter = '';
+      interviewSearchQuery = ''; interviewProgramFilter = ''; interviewStatusTab = 'all';
       const searchEl = document.getElementById('interview-search'); if (searchEl) searchEl.value = '';
       const batchEl = document.getElementById('interview-filter-program'); if (batchEl) batchEl.value = '';
       renderInterviewsTable();
@@ -4255,6 +4320,7 @@ function boot(seedBatches, seedStudents) {
     if (t.id === 'assess-filter-program') { assessProgramFilter = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'assess-filter-status') { assessStatusTab = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'interview-filter-program') { interviewProgramFilter = t.value; renderInterviewsTable(); return; }
+    if (t.id === 'interview-filter-status') { interviewStatusTab = t.value; renderInterviewsTable(); return; }
     if (t.matches('.interview-invited-select')) {
       toggleInterviewInvited(t.dataset.id, t.dataset.field, t.value === 'yes');
       return;
