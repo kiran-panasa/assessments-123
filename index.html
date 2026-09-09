@@ -166,6 +166,9 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .program-option-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
 .program-option-row .cell-input{flex:1;}
 .settings-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:480px;}
+.admin-register-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;}
+@media (max-width:520px){ .admin-register-grid{grid-template-columns:1fr;} }
+.team-edit-select{min-width:150px;}
 .settings-panel-title{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--ink);margin:0 0 4px;}
 .auth-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:500;padding:20px;}
 .auth-screen[hidden]{display:none;}
@@ -487,6 +490,7 @@ function boot(seedBatches, seedStudents) {
   let appUsers = [];
   let teamStatusTab = 'all';
   let teamSearchQuery = '';
+  let teamEditingId = null;
   const TEAM_SECTIONS = {
     admin: ['overview', 'records', 'topin', 'assessments', 'interviews', 'teams', 'settings'],
     content: ['overview', 'records', 'topin'],
@@ -742,6 +746,74 @@ function boot(seedBatches, seedStudents) {
     }
   }
 
+  function startTeamEdit(uid) {
+    if (authTeam !== 'admin') return;
+    teamEditingId = uid;
+    renderAppUsersList();
+  }
+
+  function cancelTeamEdit() {
+    teamEditingId = null;
+    renderAppUsersList();
+  }
+
+  async function saveTeamEdit(uid) {
+    if (authTeam !== 'admin') return;
+    const sel = document.querySelector('.team-edit-select[data-id="' + uid + '"]');
+    const newTeam = sel ? sel.value : '';
+    if (!newTeam) { flashToast('Pick a team first.', 'error'); return; }
+    try {
+      await fs.setDoc(fs.doc(db, 'users', uid), { team: newTeam }, { merge: true });
+      teamEditingId = null;
+      await loadAppUsers();
+      flashToast('Team updated.', 'success');
+    } catch (err) {
+      flashToast('Could not update team.', 'error');
+    }
+  }
+
+  async function adminRegisterUser() {
+    if (authTeam !== 'admin') return;
+    const nameEl = document.getElementById('admin-reg-name');
+    const emailEl = document.getElementById('admin-reg-email');
+    const teamEl = document.getElementById('admin-reg-team');
+    const passwordEl = document.getElementById('admin-reg-password');
+    const name = nameEl ? nameEl.value.trim() : '';
+    const email = emailEl ? emailEl.value.trim() : '';
+    const team = teamEl ? teamEl.value : '';
+    const password = passwordEl ? passwordEl.value : '';
+    if (!name) { flashToast('Enter a full name.', 'error'); return; }
+    if (!email) { flashToast('Enter an email.', 'error'); return; }
+    if (!team) { flashToast('Select a team.', 'error'); return; }
+    if (password.length < 6) { flashToast('Password must be at least 6 characters.', 'error'); return; }
+    let secondaryApp = null;
+    try {
+      // Create the account on a separate, temporary Firebase app instance so
+      // this never touches (or signs out) the admin's own logged-in session.
+      secondaryApp = appMod.initializeApp(FIREBASE_CONFIG, 'admin-create-' + Date.now());
+      const secondaryAuth = authFs.getAuth(secondaryApp);
+      const cred = await authFs.createUserWithEmailAndPassword(secondaryAuth, email, password);
+      const uid = cred.user.uid;
+      await authFs.signOut(secondaryAuth);
+      await fs.setDoc(fs.doc(db, 'users', uid), {
+        name, email, team, status: 'active',
+        createdAt: new Date().toISOString(),
+        approvedAt: new Date().toISOString(),
+        approvedBy: authUser.email
+      });
+      if (nameEl) nameEl.value = '';
+      if (emailEl) emailEl.value = '';
+      if (teamEl) teamEl.value = '';
+      if (passwordEl) passwordEl.value = '';
+      await loadAppUsers();
+      flashToast('User registered and approved.', 'success');
+    } catch (err) {
+      flashToast(authErrorMessage(err), 'error');
+    } finally {
+      if (secondaryApp && appMod.deleteApp) { try { await appMod.deleteApp(secondaryApp); } catch (e) {} }
+    }
+  }
+
   function teamSelectOptionsHTML(selected) {
     return Object.keys(TEAM_LABELS).map(k => '<option value="' + k + '"' + (k === selected ? ' selected' : '') + '>' + esc(TEAM_LABELS[k]) + '</option>').join('');
   }
@@ -766,45 +838,57 @@ function boot(seedBatches, seedStudents) {
     return d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
+  function appUserRowHTML(u) {
+    const isPending = u.status !== 'active';
+    const isEditingTeam = teamEditingId === u.id;
+    const teamCell = isPending
+      ? '<select class="cell-input pending-team-select" data-id="' + u.id + '">' + teamSelectOptionsHTML(u.team) + '</select>'
+      : (isEditingTeam
+          ? '<select class="cell-input team-edit-select" data-id="' + u.id + '">' + teamSelectOptionsHTML(u.team) + '</select>'
+          : (esc(TEAM_LABELS[u.team] || u.team) || dash()));
+    const statusCell = isPending
+      ? '<span class="invite-status invite-status--pending">Pending</span>'
+      : '<span class="invite-status invite-status--active">Active</span>';
+    let actionsCell;
+    if (isPending) {
+      actionsCell = '<div class="actions">'
+        + '<button type="button" class="btn btn--primary btn--xs" data-action="approve-user" data-id="' + u.id + '">Approve</button>'
+        + '<button type="button" class="btn btn--danger btn--xs" data-action="reject-user" data-id="' + u.id + '">Reject</button>'
+        + '</div>';
+    } else if (isEditingTeam) {
+      actionsCell = '<div class="actions">'
+        + '<button type="button" class="btn btn--primary btn--xs" data-action="save-team-edit" data-id="' + u.id + '">Save</button>'
+        + '<button type="button" class="btn btn--ghost btn--xs" data-action="cancel-team-edit" data-id="' + u.id + '">Cancel</button>'
+        + '</div>';
+    } else {
+      actionsCell = '<div class="actions">'
+        + '<button type="button" class="btn btn--ghost btn--xs" data-action="start-team-edit" data-id="' + u.id + '">Edit</button>'
+        + (u.id === (authUser && authUser.uid) ? '' : '<button type="button" class="btn btn--danger btn--xs" data-action="remove-app-user" data-id="' + u.id + '">Delete</button>')
+        + '</div>';
+    }
+    return '<tr>'
+      + '<td>' + (esc(u.name) || dash()) + '</td>'
+      + '<td>' + esc(u.email) + '</td>'
+      + '<td>' + teamCell + '</td>'
+      + '<td>' + (fmtJoinedDate(u.createdAt) || dash()) + '</td>'
+      + '<td>' + statusCell + '</td>'
+      + '<td class="col-actions">' + actionsCell + '</td>'
+      + '</tr>';
+  }
+
   function renderAppUsersList() {
-    const el = document.getElementById('app-users-list');
-    if (!el) return;
+    const tbody = document.getElementById('app-users-tbody');
+    if (!tbody) return;
     if (!appUsers.length) {
-      el.innerHTML = '<p class="section-desc">No one has registered yet.</p>';
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No one has registered yet.</div></td></tr>';
       return;
     }
     const filtered = getFilteredAppUsers();
     if (!filtered.length) {
-      el.innerHTML = '<p class="section-desc">No teammates match your filters.</p>';
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No teammates match your filters.</div></td></tr>';
       return;
     }
-    const pending = filtered.filter(u => u.status !== 'active');
-    const active = filtered.filter(u => u.status === 'active');
-    let html = '';
-    if (pending.length) {
-      html += '<p class="team-panel-heading">Pending Requests (' + pending.length + ')</p>';
-      html += pending.map(u =>
-        '<div class="invite-row">'
-        + '<div><span class="invite-email">' + esc(u.name || u.email) + '</span><div class="invite-team">' + esc(u.email) + (u.createdAt ? ' &middot; Requested ' + esc(fmtJoinedDate(u.createdAt)) : '') + '</div></div>'
-        + '<div style="display:flex;align-items:center;gap:8px;">'
-        + '<select class="cell-input pending-team-select" data-id="' + u.id + '">' + teamSelectOptionsHTML(u.team) + '</select>'
-        + '<button type="button" class="btn btn--primary btn--xs" data-action="approve-user" data-id="' + u.id + '">Approve</button>'
-        + '<button type="button" class="btn btn--danger btn--xs" data-action="reject-user" data-id="' + u.id + '">Reject</button>'
-        + '</div></div>'
-      ).join('');
-    }
-    if (active.length) {
-      html += '<p class="team-panel-heading">Team (' + active.length + ')</p>';
-      html += active.map(u =>
-        '<div class="invite-row">'
-        + '<div><span class="invite-email">' + esc(u.name || u.email) + '</span><div class="invite-team">' + esc(u.email) + ' &middot; ' + esc(TEAM_LABELS[u.team] || u.team || 'Unknown') + '</div></div>'
-        + '<div style="display:flex;align-items:center;gap:8px;">'
-        + '<span class="invite-status invite-status--active">Active</span>'
-        + (u.id === (authUser && authUser.uid) ? '' : '<button type="button" class="btn--icon-danger" data-action="remove-app-user" data-id="' + u.id + '" aria-label="Remove access" title="Remove access">' + ICON_TRASH + '</button>')
-        + '</div></div>'
-      ).join('');
-    }
-    el.innerHTML = html;
+    tbody.innerHTML = filtered.map(appUserRowHTML).join('');
   }
 
   function renderAuthScreen() {
@@ -1298,7 +1382,29 @@ function boot(seedBatches, seedStudents) {
 
           <section class="content-section" id="section-teams">
             <h2 class="section-heading">Teams</h2>
-            <p class="section-desc" style="margin-top:-8px;">Anyone can register on the Sign In page. New requests land here for you to approve and assign a team.</p>
+            <p class="section-desc" style="margin-top:-8px;">Register users, manage access approvals and team memberships.</p>
+
+            <div class="settings-panel" style="max-width:680px;margin-bottom:22px;">
+              <h3 class="settings-panel-title">Register New User</h3>
+              <p class="section-desc">Create an account and immediately approve access. The user can sign in with these credentials.</p>
+              <div class="admin-register-grid">
+                <div class="filter-field"><label for="admin-reg-name">Full Name</label><input type="text" id="admin-reg-name" placeholder="User's full name"></div>
+                <div class="filter-field"><label for="admin-reg-email">Email</label><input type="email" id="admin-reg-email" placeholder="user@nxtwave.co.in"></div>
+                <div class="filter-field">
+                  <label for="admin-reg-team">Team</label>
+                  <select id="admin-reg-team">
+                    <option value="" selected>Select team</option>
+                    <option value="admin">Admin</option>
+                    <option value="content">Content Team</option>
+                    <option value="assessments_ops">Assessments Ops Team</option>
+                    <option value="onground">Onground Team</option>
+                  </select>
+                </div>
+                <div class="filter-field"><label for="admin-reg-password">Initial Password</label><input type="text" id="admin-reg-password" placeholder="Min. 6 characters"></div>
+              </div>
+              <button type="button" class="btn btn--primary btn--sm" style="margin-top:14px;" data-action="admin-register-user">Register &amp; Approve</button>
+            </div>
+
             <div class="tab-row">
               <button type="button" class="tab-btn active" data-action="team-tab" data-tab="all">All</button>
               <button type="button" class="tab-btn" data-action="team-tab" data-tab="pending">Pending</button>
@@ -1306,8 +1412,23 @@ function boot(seedBatches, seedStudents) {
             </div>
             <div class="filter-bar">
               <div class="filter-field" style="flex:1;min-width:200px;"><label for="team-search">Search</label><input type="text" id="team-search" placeholder="Search by name, email or team&hellip;"></div>
+              <button type="button" class="btn btn--ghost btn--sm" data-action="refresh-team-list">Refresh</button>
             </div>
-            <div id="app-users-list"></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr class="thead-single">
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Team</th>
+                    <th>Registered</th>
+                    <th>Status</th>
+                    <th class="col-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="app-users-tbody"></tbody>
+              </table>
+            </div>
           </section>
         </div>
       </div>
@@ -3666,6 +3787,11 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'approve-user') { approveUser(id); return; }
     else if (action === 'reject-user') { rejectUser(id); return; }
     else if (action === 'remove-app-user') { removeAppUser(id); return; }
+    else if (action === 'start-team-edit') { startTeamEdit(id); return; }
+    else if (action === 'save-team-edit') { saveTeamEdit(id); return; }
+    else if (action === 'cancel-team-edit') { cancelTeamEdit(); return; }
+    else if (action === 'admin-register-user') { adminRegisterUser(); return; }
+    else if (action === 'refresh-team-list') { loadAppUsers(); return; }
     else if (action === 'edit') startEdit(id);
     else if (action === 'delete') removeBatch(id);
     else if (action === 'save') save();
