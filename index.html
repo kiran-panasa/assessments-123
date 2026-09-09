@@ -160,13 +160,19 @@ button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px
 .settings-panel-title{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--ink);margin:0 0 4px;}
 .auth-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:500;padding:20px;}
 .auth-screen[hidden]{display:none;}
-.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:340px;max-width:100%;box-shadow:0 12px 32px rgba(0,0,0,.18);}
-.auth-title{font-family:var(--font-display);font-size:20px;margin:0 0 4px;color:var(--ink);}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px;width:380px;max-width:100%;box-shadow:0 12px 32px rgba(0,0,0,.18);}
+.auth-brand{display:flex;align-items:center;gap:12px;margin-bottom:24px;}
+.auth-logo{width:44px;height:44px;border-radius:50%;background:var(--btn-primary-bg);color:var(--btn-primary-text);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:14px;flex-shrink:0;}
+.auth-title{font-family:var(--font-display);font-size:17px;margin:0;color:var(--ink);}
+.auth-brand-sub{color:var(--muted);font-size:12px;margin:2px 0 0;}
+.auth-tabs{display:flex;gap:8px;margin-bottom:20px;background:var(--surface-2);border-radius:10px;padding:4px;}
+.auth-tab{flex:1;border:none;background:none;padding:9px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;font-family:inherit;transition:background .15s,box-shadow .15s;}
+.auth-tab.active{background:var(--surface);color:var(--btn-primary-bg);box-shadow:0 1px 4px rgba(0,0,0,.12);}
+.auth-heading{font-family:var(--font-display);font-size:19px;margin:0 0 4px;color:var(--ink);}
 .auth-subtitle{color:var(--muted);font-size:13px;margin:0 0 18px;}
-.auth-tabs{display:flex;gap:4px;margin-bottom:16px;background:var(--surface-2);border-radius:8px;padding:3px;}
-.auth-tab{flex:1;border:none;background:none;padding:6px;border-radius:6px;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;font-family:inherit;}
-.auth-tab.active{background:var(--surface);color:var(--ink);}
-.auth-form{display:flex;flex-direction:column;gap:12px;}
+.auth-form{display:flex;flex-direction:column;gap:14px;}
+.auth-form label{text-transform:uppercase;letter-spacing:.05em;font-size:10.5px;}
+.auth-form input,.auth-form select{border-radius:10px;}
 .auth-error{color:var(--danger);font-size:12px;margin:0;}
 .auth-hint{color:var(--muted);font-size:11.5px;margin-top:14px;text-align:center;line-height:1.5;}
 .auth-user-badge{font-size:12px;color:var(--muted);margin-right:4px;}
@@ -178,6 +184,8 @@ button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px
 .invite-status{font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:5px;font-weight:600;}
 .invite-status--pending{background:var(--surface-2);color:var(--muted);}
 .invite-status--active{background:var(--accent-soft);color:var(--accent-ink);}
+.team-panel-heading{font-family:var(--font-display);font-size:12.5px;font-weight:600;color:var(--ink);margin:16px 0 4px;}
+.team-panel-heading:first-child{margin-top:0;}
 .publish-modal-subtitle{font-size:13px;color:var(--muted);margin:0 0 14px;}
 .publish-modal-subtitle strong{color:var(--ink);}
 .publish-detail-list{display:flex;flex-direction:column;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:4px 14px;margin-bottom:16px;}
@@ -454,10 +462,8 @@ function boot(seedBatches, seedStudents) {
   let authMode = 'signin';
   let authError = '';
   let authBusy = false;
+  let authStatus = null;
   let appUsers = [];
-  let pendingInvites = [];
-  let newInviteEmail = '';
-  let newInviteTeam = 'content';
   const TEAM_SECTIONS = {
     admin: ['overview', 'records', 'topin', 'assessments', 'interviews', 'settings'],
     content: ['overview', 'records', 'topin'],
@@ -583,7 +589,7 @@ function boot(seedBatches, seedStudents) {
 
   async function handleAuthStateChanged(user) {
     if (!user) {
-      authUser = null; authTeam = null; appUsers = []; pendingInvites = [];
+      authUser = null; authTeam = null; authStatus = null; appUsers = [];
       authReady = true;
       render();
       return;
@@ -591,14 +597,20 @@ function boot(seedBatches, seedStudents) {
     authUser = { uid: user.uid, email: user.email };
     try {
       const snap = await fs.getDoc(fs.doc(db, 'users', user.uid));
-      authTeam = snap.exists() ? (snap.data().team || null) : null;
+      if (snap.exists()) {
+        const data = snap.data();
+        authStatus = data.status || 'active';
+        authTeam = authStatus === 'active' ? (data.team || null) : null;
+      } else {
+        authStatus = null; authTeam = null;
+      }
     } catch (err) {
       console.error('Could not load team assignment', err);
-      authTeam = null;
+      authStatus = null; authTeam = null;
     }
     authReady = true;
     render();
-    if (authTeam === 'admin') loadAppUsersAndInvites();
+    if (authTeam === 'admin') loadAppUsers();
   }
 
   function authErrorMessage(err) {
@@ -622,29 +634,26 @@ function boot(seedBatches, seedStudents) {
     authBusy = false; render();
   }
 
-  async function signUpUser(email, password) {
-    authError = ''; authBusy = true; render();
-    const emailKey = email.trim().toLowerCase();
+  async function submitRegistration(name, email, team, password, confirmPassword) {
+    authError = '';
+    if (!name.trim()) { authError = 'Enter your full name.'; renderAuthScreen(); return; }
+    if (!team) { authError = 'Select your team.'; renderAuthScreen(); return; }
+    if (password.length < 6) { authError = 'Password must be at least 6 characters.'; renderAuthScreen(); return; }
+    if (password !== confirmPassword) { authError = 'Passwords don\'t match.'; renderAuthScreen(); return; }
+    authBusy = true; render();
     try {
-      let team = null;
-      const inviteSnap = await fs.getDoc(fs.doc(db, 'invites', emailKey));
-      if (inviteSnap.exists()) {
-        team = inviteSnap.data().team || 'content';
-      } else {
-        const bootstrapSnap = await fs.getDoc(fs.doc(db, 'meta', 'bootstrap'));
-        if (!bootstrapSnap.exists() || !bootstrapSnap.data().adminCreated) {
-          team = 'admin';
-        }
-      }
-      if (!team) {
-        authError = 'No invite found for this email — ask an admin to invite you first.';
-        authBusy = false; render();
-        return;
-      }
+      const bootstrapSnap = await fs.getDoc(fs.doc(db, 'meta', 'bootstrap'));
+      const isBootstrap = !bootstrapSnap.exists() || !bootstrapSnap.data().adminCreated;
       const cred = await authFs.createUserWithEmailAndPassword(authInstance, email, password);
-      await fs.setDoc(fs.doc(db, 'users', cred.user.uid), { email, team, createdAt: new Date().toISOString() });
-      if (inviteSnap.exists()) await fs.deleteDoc(fs.doc(db, 'invites', emailKey));
-      if (team === 'admin') await fs.setDoc(fs.doc(db, 'meta', 'bootstrap'), { adminCreated: true });
+      const record = {
+        name: name.trim(),
+        email,
+        team: isBootstrap ? 'admin' : team,
+        status: isBootstrap ? 'active' : 'pending',
+        createdAt: new Date().toISOString()
+      };
+      await fs.setDoc(fs.doc(db, 'users', cred.user.uid), record);
+      if (isBootstrap) await fs.setDoc(fs.doc(db, 'meta', 'bootstrap'), { adminCreated: true });
     } catch (err) {
       authError = authErrorMessage(err);
     }
@@ -656,86 +665,94 @@ function boot(seedBatches, seedStudents) {
     try { await authFs.signOut(authInstance); } catch (err) {}
   }
 
-  async function loadAppUsersAndInvites() {
+  async function loadAppUsers() {
     if (!fs || !db) return;
     try {
-      const [usersSnap, invitesSnap] = await Promise.all([
-        fs.getDocs(fs.collection(db, 'users')),
-        fs.getDocs(fs.collection(db, 'invites'))
-      ]);
+      const usersSnap = await fs.getDocs(fs.collection(db, 'users'));
       appUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.email || '').localeCompare(b.email || ''));
-      pendingInvites = invitesSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.email || '').localeCompare(b.email || ''));
     } catch (err) {
-      console.error('Could not load team access lists', err);
+      console.error('Could not load team access list', err);
     }
     renderAppUsersList();
   }
 
-  async function createInvite() {
+  async function approveUser(uid) {
     if (authTeam !== 'admin') return;
-    const email = newInviteEmail.trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { flashToast('Enter a valid email address.', 'error'); return; }
-    const emailKey = email.toLowerCase();
+    const sel = document.querySelector('.pending-team-select[data-id="' + uid + '"]');
+    const team = sel ? sel.value : '';
+    if (!team) { flashToast('Pick a team before approving.', 'error'); return; }
     try {
-      await fs.setDoc(fs.doc(db, 'invites', emailKey), { email, team: newInviteTeam, invitedBy: authUser.email, createdAt: new Date().toISOString() });
-      newInviteEmail = '';
-      const emailEl = document.getElementById('new-invite-email');
-      if (emailEl) emailEl.value = '';
-      await loadAppUsersAndInvites();
-      flashToast('Invite created — they can now sign up with that email.', 'success');
+      await fs.setDoc(fs.doc(db, 'users', uid), { team, status: 'active', approvedAt: new Date().toISOString() }, { merge: true });
+      await loadAppUsers();
+      flashToast('Approved.', 'success');
     } catch (err) {
-      flashToast('Could not create invite.', 'error');
+      flashToast('Could not approve this request.', 'error');
     }
   }
 
-  async function cancelInvite(emailKey) {
+  async function rejectUser(uid) {
     if (authTeam !== 'admin') return;
+    if (!confirm('Reject this access request? They will need to register again if they still want access.')) return;
     try {
-      await fs.deleteDoc(fs.doc(db, 'invites', emailKey));
-      await loadAppUsersAndInvites();
-      flashToast('Invite cancelled.', 'success');
+      await fs.deleteDoc(fs.doc(db, 'users', uid));
+      await loadAppUsers();
+      flashToast('Request rejected.', 'success');
     } catch (err) {
-      flashToast('Could not cancel invite.', 'error');
+      flashToast('Could not reject this request.', 'error');
     }
   }
 
   async function removeAppUser(uid) {
     if (authTeam !== 'admin') return;
     if (uid === (authUser && authUser.uid)) { flashToast('You can\'t remove your own access.', 'error'); return; }
-    if (!confirm('Remove this person\'s access? Their login still exists, but they will be blocked from the app until re-invited and given a new team.')) return;
+    if (!confirm('Remove this person\'s access? Their login still exists, but they will be blocked from the app until re-approved.')) return;
     try {
       await fs.deleteDoc(fs.doc(db, 'users', uid));
-      await loadAppUsersAndInvites();
+      await loadAppUsers();
       flashToast('Access removed.', 'success');
     } catch (err) {
       flashToast('Could not remove access.', 'error');
     }
   }
 
+  function teamSelectOptionsHTML(selected) {
+    return Object.keys(TEAM_LABELS).map(k => '<option value="' + k + '"' + (k === selected ? ' selected' : '') + '>' + esc(TEAM_LABELS[k]) + '</option>').join('');
+  }
+
   function renderAppUsersList() {
     const el = document.getElementById('app-users-list');
     if (!el) return;
-    if (!appUsers.length && !pendingInvites.length) {
-      el.innerHTML = '<p class="section-desc">No teammates invited yet.</p>';
+    const pending = appUsers.filter(u => u.status !== 'active');
+    const active = appUsers.filter(u => u.status === 'active');
+    if (!appUsers.length) {
+      el.innerHTML = '<p class="section-desc">No one has registered yet.</p>';
       return;
     }
-    const activeRows = appUsers.map(u =>
-      '<div class="invite-row">'
-      + '<div><span class="invite-email">' + esc(u.email) + '</span><div class="invite-team">' + esc(TEAM_LABELS[u.team] || u.team || 'Unknown') + '</div></div>'
-      + '<div style="display:flex;align-items:center;gap:8px;">'
-      + '<span class="invite-status invite-status--active">Active</span>'
-      + (u.id === (authUser && authUser.uid) ? '' : '<button type="button" class="btn--icon-danger" data-action="remove-app-user" data-id="' + u.id + '" aria-label="Remove access" title="Remove access">' + ICON_TRASH + '</button>')
-      + '</div></div>'
-    ).join('');
-    const inviteRows = pendingInvites.map(inv =>
-      '<div class="invite-row">'
-      + '<div><span class="invite-email">' + esc(inv.email) + '</span><div class="invite-team">' + esc(TEAM_LABELS[inv.team] || inv.team || 'Unknown') + '</div></div>'
-      + '<div style="display:flex;align-items:center;gap:8px;">'
-      + '<span class="invite-status invite-status--pending">Pending</span>'
-      + '<button type="button" class="btn--icon-danger" data-action="cancel-invite" data-id="' + inv.id + '" aria-label="Cancel invite" title="Cancel invite">' + ICON_TRASH + '</button>'
-      + '</div></div>'
-    ).join('');
-    el.innerHTML = inviteRows + activeRows;
+    let html = '';
+    if (pending.length) {
+      html += '<p class="team-panel-heading">Pending Requests (' + pending.length + ')</p>';
+      html += pending.map(u =>
+        '<div class="invite-row">'
+        + '<div><span class="invite-email">' + esc(u.name || u.email) + '</span><div class="invite-team">' + esc(u.email) + '</div></div>'
+        + '<div style="display:flex;align-items:center;gap:8px;">'
+        + '<select class="cell-input pending-team-select" data-id="' + u.id + '">' + teamSelectOptionsHTML(u.team) + '</select>'
+        + '<button type="button" class="btn btn--primary btn--xs" data-action="approve-user" data-id="' + u.id + '">Approve</button>'
+        + '<button type="button" class="btn--icon-danger" data-action="reject-user" data-id="' + u.id + '" aria-label="Reject request" title="Reject request">' + ICON_TRASH + '</button>'
+        + '</div></div>'
+      ).join('');
+    }
+    if (active.length) {
+      html += '<p class="team-panel-heading">Team (' + active.length + ')</p>';
+      html += active.map(u =>
+        '<div class="invite-row">'
+        + '<div><span class="invite-email">' + esc(u.name || u.email) + '</span><div class="invite-team">' + esc(u.email) + ' &middot; ' + esc(TEAM_LABELS[u.team] || u.team || 'Unknown') + '</div></div>'
+        + '<div style="display:flex;align-items:center;gap:8px;">'
+        + '<span class="invite-status invite-status--active">Active</span>'
+        + (u.id === (authUser && authUser.uid) ? '' : '<button type="button" class="btn--icon-danger" data-action="remove-app-user" data-id="' + u.id + '" aria-label="Remove access" title="Remove access">' + ICON_TRASH + '</button>')
+        + '</div></div>'
+      ).join('');
+    }
+    el.innerHTML = html;
   }
 
   function renderAuthScreen() {
@@ -743,12 +760,18 @@ function boot(seedBatches, seedStudents) {
     if (tabsEl) {
       tabsEl.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === authMode));
     }
+    const headingEl = document.getElementById('auth-heading');
     const subtitleEl = document.getElementById('auth-subtitle');
     const submitBtn = document.getElementById('auth-submit-btn');
     const hintEl = document.getElementById('auth-hint');
     if (authUser && !authTeam) {
-      if (subtitleEl) subtitleEl.textContent = 'No team assigned yet';
-      if (hintEl) hintEl.textContent = 'Your account (' + authUser.email + ') isn\'t linked to a team yet. Ask an admin to invite this email, then sign out and sign back in.';
+      if (headingEl) headingEl.textContent = authStatus === 'pending' ? 'Request Pending' : 'Access Not Found';
+      if (subtitleEl) subtitleEl.textContent = '';
+      if (hintEl) {
+        hintEl.textContent = authStatus === 'pending'
+          ? 'Your request (' + authUser.email + ') is waiting for an admin to approve it.'
+          : 'Your account (' + authUser.email + ') hasn\'t registered for access, or it was removed. Sign out and use Register to request access again.';
+      }
       const formEl = document.getElementById('auth-form');
       if (formEl) formEl.hidden = true;
       if (tabsEl) tabsEl.hidden = true;
@@ -771,9 +794,17 @@ function boot(seedBatches, seedStudents) {
     if (tabsEl) tabsEl.hidden = false;
     const oldSignOut = document.getElementById('auth-blocked-signout');
     if (oldSignOut) oldSignOut.remove();
-    if (subtitleEl) subtitleEl.textContent = authMode === 'signup' ? 'Create your account' : 'Sign in to continue';
-    if (submitBtn) submitBtn.textContent = authMode === 'signup' ? 'Sign Up' : 'Sign In';
-    if (hintEl) hintEl.textContent = authMode === 'signup' ? 'You need an invite from an admin first — sign up with the email they invited.' : '';
+    const isSignup = authMode === 'signup';
+    const nameField = document.getElementById('auth-name-field');
+    const teamField = document.getElementById('auth-team-field');
+    const confirmField = document.getElementById('auth-confirm-field');
+    if (nameField) nameField.hidden = !isSignup;
+    if (teamField) teamField.hidden = !isSignup;
+    if (confirmField) confirmField.hidden = !isSignup;
+    if (headingEl) headingEl.textContent = isSignup ? 'Request Access' : 'Welcome Back';
+    if (subtitleEl) subtitleEl.textContent = isSignup ? 'Register to request access. Admin will approve your account.' : 'Sign in to continue';
+    if (submitBtn) submitBtn.textContent = isSignup ? 'Request Access' : 'Sign In';
+    if (hintEl) hintEl.textContent = '';
     const errEl = document.getElementById('auth-error');
     if (errEl) { errEl.textContent = authError; errEl.hidden = !authError; }
     const btn = document.getElementById('auth-submit-btn');
@@ -969,15 +1000,34 @@ function boot(seedBatches, seedStudents) {
   root.innerHTML = `
     <div class="auth-screen" id="auth-screen" hidden>
       <div class="auth-card">
-        <h1 class="auth-title">Assessments Ops</h1>
-        <p class="auth-subtitle" id="auth-subtitle">Sign in to continue</p>
+        <div class="auth-brand">
+          <div class="auth-logo">AO</div>
+          <div>
+            <h1 class="auth-title">Assessments Ops</h1>
+            <p class="auth-brand-sub">Assessment Administration</p>
+          </div>
+        </div>
         <div class="auth-tabs" id="auth-tabs">
           <button type="button" class="auth-tab active" data-action="auth-tab" data-mode="signin">Sign In</button>
-          <button type="button" class="auth-tab" data-action="auth-tab" data-mode="signup">Sign Up</button>
+          <button type="button" class="auth-tab" data-action="auth-tab" data-mode="signup">Register</button>
         </div>
+        <h2 class="auth-heading" id="auth-heading">Welcome Back</h2>
+        <p class="auth-subtitle" id="auth-subtitle">Sign in to continue</p>
         <form id="auth-form" class="auth-form" data-action-form="auth-submit">
-          <div class="filter-field"><label for="auth-email">Email</label><input type="email" id="auth-email" autocomplete="username" required></div>
-          <div class="filter-field"><label for="auth-password">Password</label><input type="password" id="auth-password" autocomplete="current-password" required></div>
+          <div class="filter-field" id="auth-name-field" hidden><label for="auth-name">Full Name</label><input type="text" id="auth-name" autocomplete="name" placeholder="Your full name"></div>
+          <div class="filter-field"><label for="auth-email">Email Address</label><input type="email" id="auth-email" autocomplete="username" placeholder="yourname@nxtwave.co.in" required></div>
+          <div class="filter-field" id="auth-team-field" hidden>
+            <label for="auth-team">Team</label>
+            <select id="auth-team">
+              <option value="" selected>Select your team</option>
+              <option value="admin">Admin</option>
+              <option value="content">Content Team</option>
+              <option value="assessments_ops">Assessments Ops Team</option>
+              <option value="onground">Onground Team</option>
+            </select>
+          </div>
+          <div class="filter-field"><label for="auth-password">Password</label><input type="password" id="auth-password" autocomplete="current-password" placeholder="Min. 6 characters" required></div>
+          <div class="filter-field" id="auth-confirm-field" hidden><label for="auth-confirm-password">Confirm Password</label><input type="password" id="auth-confirm-password" autocomplete="new-password" placeholder="Re-enter password"></div>
           <p class="auth-error" id="auth-error" hidden></p>
           <button type="submit" class="btn btn--primary" id="auth-submit-btn">Sign In</button>
         </form>
@@ -1186,24 +1236,10 @@ function boot(seedBatches, seedStudents) {
                 </div>
               </div>
             </div>
-            <div class="settings-panel" id="team-management-panel" style="margin-top:20px;" hidden>
+            <div class="settings-panel" id="team-management-panel" style="margin-top:20px;max-width:560px;" hidden>
               <h3 class="settings-panel-title">Team Access</h3>
-              <p class="section-desc">Invite teammates by email and set their team. They sign up themselves with that email to set their own password.</p>
+              <p class="section-desc">Anyone can register on the Sign In page. New requests land here for you to approve and assign a team.</p>
               <div id="app-users-list"></div>
-              <div class="filter-field" style="margin-top:14px;max-width:360px;">
-                <label for="new-invite-email">Invite by email</label>
-                <input type="email" id="new-invite-email" placeholder="name@nxtwave.co.in">
-              </div>
-              <div class="filter-field" style="margin-top:10px;max-width:360px;">
-                <label for="new-invite-team">Team</label>
-                <select id="new-invite-team">
-                  <option value="admin">Admin</option>
-                  <option value="content" selected>Content Team</option>
-                  <option value="assessments_ops">Assessments Ops Team</option>
-                  <option value="onground">Onground Team</option>
-                </select>
-              </div>
-              <button type="button" class="btn btn--primary btn--sm" style="margin-top:10px;" data-action="create-invite">Send Invite</button>
             </div>
           </section>
         </div>
@@ -3558,8 +3594,8 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     else if (action === 'auth-signout') { signOutUser(); return; }
-    else if (action === 'create-invite') { createInvite(); return; }
-    else if (action === 'cancel-invite') { cancelInvite(id); return; }
+    else if (action === 'approve-user') { approveUser(id); return; }
+    else if (action === 'reject-user') { rejectUser(id); return; }
     else if (action === 'remove-app-user') { removeAppUser(id); return; }
     else if (action === 'edit') startEdit(id);
     else if (action === 'delete') removeBatch(id);
@@ -3755,15 +3791,26 @@ function boot(seedBatches, seedStudents) {
       const email = emailEl ? emailEl.value.trim() : '';
       const password = passwordEl ? passwordEl.value : '';
       if (!email || !password) { authError = 'Enter an email and password.'; renderAuthScreen(); return; }
-      if (authMode === 'signup') signUpUser(email, password);
-      else signInUser(email, password);
+      if (authMode === 'signup') {
+        const nameEl = document.getElementById('auth-name');
+        const teamEl = document.getElementById('auth-team');
+        const confirmEl = document.getElementById('auth-confirm-password');
+        submitRegistration(
+          nameEl ? nameEl.value : '',
+          email,
+          teamEl ? teamEl.value : '',
+          password,
+          confirmEl ? confirmEl.value : ''
+        );
+      } else {
+        signInUser(email, password);
+      }
     }
   });
 
   root.addEventListener('input', e => {
     const t = e.target;
-    if (t.id === 'new-invite-email') { newInviteEmail = t.value; return; }
-    if (t.id === 'auth-email' || t.id === 'auth-password') {
+    if (t.id === 'auth-email' || t.id === 'auth-password' || t.id === 'auth-name' || t.id === 'auth-confirm-password') {
       if (authError) { authError = ''; const errEl = document.getElementById('auth-error'); if (errEl) errEl.hidden = true; }
       return;
     }
@@ -3811,7 +3858,6 @@ function boot(seedBatches, seedStudents) {
 
   root.addEventListener('change', e => {
     const t = e.target;
-    if (t.id === 'new-invite-team') { newInviteTeam = t.value; return; }
     if (t.id === 'syllabus-filter-program') { syllabusProgramFilter = t.value; renderRecordsTable(); return; }
     if (t.id === 'ov-from') { overviewDateRange.from = t.value; renderKPICards(); return; }
     if (t.id === 'ov-to') { overviewDateRange.to = t.value; renderKPICards(); return; }
