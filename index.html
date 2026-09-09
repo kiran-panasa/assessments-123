@@ -433,8 +433,8 @@ function boot(seedBatches, seedStudents) {
   let latestRemoteStudents = null;
   let studentEditingId = null;
   let studentDraft = null;
-  let studentSearchQuery = '';
-  let studentProgramFilter = '';
+  let studentIsNewRow = false;
+  let viewStudentsTargetBatch = null;
   let selectedBatchIds = new Set();
   let syllabusProgramFilter = '';
   const PROGRAM_OPTIONS_LS_KEY = 'cohort-ledger:program-options:v1';
@@ -448,6 +448,7 @@ function boot(seedBatches, seedStudents) {
   }
   let notifyLastRecipients = '';
   let addStudentsTargetBatch = '';
+  let addStudentsTargetBatchId = '';
   let addStudentsRows = [];
   let addStudentsImportPreview = null;
   let configEditingId = null;
@@ -683,7 +684,6 @@ function boot(seedBatches, seedStudents) {
         <nav class="sidebar">
           <button type="button" class="sidebar-link" data-action="nav" data-section="overview">Overview</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="records">Curriculum</button>
-          <button type="button" class="sidebar-link" data-action="nav" data-section="students">Students Data</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="topin">Topin Configs</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="assessments">Assessments</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="interviews">NxtMock Interviews</button>
@@ -745,33 +745,6 @@ function boot(seedBatches, seedStudents) {
                   </tr>
                 </thead>
                 <tbody id="tbody"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="content-section" id="section-students">
-            <h2 class="section-heading">Students Data</h2>
-            <div class="filter-bar">
-              <div class="filter-field"><label for="student-search">Search</label><input type="text" id="student-search" placeholder="Search title, name, email&hellip;"></div>
-              <div class="filter-field"><label for="student-filter-program">Program</label><select id="student-filter-program"><option value="">All Programs</option></select></div>
-              <div class="filter-bar-count" id="student-filter-count"></div>
-              <button type="button" class="btn btn--ghost btn--sm" data-action="clear-student-filter">Clear</button>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr class="thead-single">
-                    <th>Program</th>
-                    <th>Title</th>
-                    <th>UID</th>
-                    <th>Student ID</th>
-                    <th>Name</th>
-                    <th>Mobile Number</th>
-                    <th>Email ID</th>
-                    <th class="col-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="students-tbody"></tbody>
               </table>
             </div>
           </section>
@@ -948,6 +921,38 @@ function boot(seedBatches, seedStudents) {
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-add-students">Close</button>
           <button type="button" class="btn btn--primary btn--sm" id="confirm-add-students-import-btn" data-action="confirm-add-students-import" disabled>Confirm Import</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="view-students-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="view-students-modal-title">
+        <div class="modal-header">
+          <h3 id="view-students-modal-title">Students</h3>
+          <button type="button" class="modal-close" data-action="close-view-students" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc" id="view-students-modal-count"></p>
+          <div class="table-wrap" style="max-height:420px;">
+            <table>
+              <thead>
+                <tr class="thead-single">
+                  <th>Program</th>
+                  <th>Title</th>
+                  <th>UID</th>
+                  <th>Student ID</th>
+                  <th>Name</th>
+                  <th>Mobile Number</th>
+                  <th>Email ID</th>
+                  <th class="col-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="view-students-tbody"></tbody>
+            </table>
+          </div>
+          <button type="button" class="btn btn--ghost btn--sm" style="margin-top:10px;" data-action="view-students-add-row">+ Add Row</button>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-view-students">Close</button>
         </div>
       </div>
     </div>
@@ -1167,8 +1172,12 @@ function boot(seedBatches, seedStudents) {
   }
 
   function studentsButtonCell(id) {
-    if (!canWrite) return '<span class="muted-cell">Locked</span>';
-    return '<button type="button" class="btn btn--ghost btn--xs" data-action="open-add-students" data-id="'+id+'">+ Add Students</button>';
+    const viewBtn = '<button type="button" class="btn btn--ghost btn--xs" data-action="open-view-students" data-id="'+id+'">View Students</button>';
+    if (!canWrite) return viewBtn;
+    return '<div class="actions" style="flex-direction:column;align-items:flex-start;">'
+      + '<button type="button" class="btn btn--ghost btn--xs" data-action="open-add-students" data-id="'+id+'">+ Add Students</button>'
+      + viewBtn
+      + '</div>';
   }
 
   function studentField(field, value, editing, placeholder) {
@@ -1479,40 +1488,18 @@ function boot(seedBatches, seedStudents) {
     tbody.innerHTML = filtered.map(rowHTML).join('');
   }
 
-  function getFilteredStudents() {
-    const q = studentSearchQuery.trim().toLowerCase();
-    return students.filter(s => {
-      if (q) {
-        const hay = [s.batch, s.uid, s.studentId, s.name, s.mobile, s.email].join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      if (studentProgramFilter && programForBatchName(s.batch) !== studentProgramFilter) return false;
-      return true;
-    });
-  }
-
-  function populateStudentProgramFilterOptions() {
-    const sel = document.getElementById('student-filter-program');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">All Programs</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===studentProgramFilter?' selected':'')+'>'+esc(p)+'</option>').join('');
-  }
-
-  function renderStudentsTable() {
-    const tbody = document.getElementById('students-tbody');
-    if (!tbody) return;
-    populateStudentProgramFilterOptions();
-    let filtered = getFilteredStudents();
-    const countEl = document.getElementById('student-filter-count');
-    if (countEl) {
-      const noun = filtered.length === 1 ? ' student' : ' students';
-      countEl.textContent = filtered.length + noun + (studentSearchQuery || studentProgramFilter ? ' match' + (filtered.length === 1 ? 'es' : '') : ' total');
-    }
+  function renderViewStudentsTable() {
+    const tbody = document.getElementById('view-students-tbody');
+    if (!tbody || !viewStudentsTargetBatch) return;
+    let filtered = students.filter(s => s.batch === viewStudentsTargetBatch);
     if (studentEditingId && !filtered.some(s => s.id === studentEditingId)) {
       const editingStudent = students.find(s => s.id === studentEditingId);
       if (editingStudent) filtered = [editingStudent].concat(filtered);
     }
+    const countEl = document.getElementById('view-students-modal-count');
+    if (countEl) countEl.textContent = filtered.length + (filtered.length === 1 ? ' student' : ' students');
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No students match your filters.<div class="footnote" style="margin-top:8px;">Add students from a Title\'s row in Curriculum.</div></div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No students yet for this Title.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(studentRowHTML).join('');
@@ -2391,7 +2378,6 @@ function boot(seedBatches, seedStudents) {
     renderKPICards();
     renderTimeline();
     renderRecordsTable();
-    renderStudentsTable();
     renderConfigsTable();
     renderAssessmentsTable();
     renderInterviewsTable();
@@ -2399,6 +2385,7 @@ function boot(seedBatches, seedStudents) {
     updateAccessBanner();
     updateSyncBadge();
     renderProgressModal();
+    if (viewStudentsTargetBatch) renderViewStudentsTable();
   }
 
   function updateErrorDisplays() {
@@ -2573,7 +2560,7 @@ function boot(seedBatches, seedStudents) {
     if (!canWrite) return;
     const s = students.find(x => x.id === id);
     if (!s) return;
-    studentEditingId = id;
+    studentEditingId = id; studentIsNewRow = false;
     studentDraft = { ...s };
     render();
   }
@@ -2583,14 +2570,15 @@ function boot(seedBatches, seedStudents) {
     const idx = students.findIndex(s => s.id === studentEditingId);
     if (idx > -1) students[idx] = { ...studentDraft };
     const saved = { ...studentDraft };
-    studentEditingId = null; studentDraft = null;
+    studentEditingId = null; studentDraft = null; studentIsNewRow = false;
     render();
     persistStudentSave(saved);
     flashToast('Student saved.', 'success');
   }
 
   function cancelStudent() {
-    studentEditingId = null; studentDraft = null;
+    if (studentIsNewRow) students = students.filter(s => s.id !== studentEditingId);
+    studentEditingId = null; studentDraft = null; studentIsNewRow = false;
     if (latestRemoteStudents) students = latestRemoteStudents;
     render();
   }
@@ -2599,7 +2587,7 @@ function boot(seedBatches, seedStudents) {
     if (!canWrite) return;
     if (!confirm('Delete this student record? This cannot be undone.')) return;
     students = students.filter(s => s.id !== id);
-    if (studentEditingId === id) { studentEditingId = null; studentDraft = null; }
+    if (studentEditingId === id) { studentEditingId = null; studentDraft = null; studentIsNewRow = false; }
     render();
     persistStudentDelete(id);
     flashToast('Student deleted.', 'success');
@@ -2614,6 +2602,7 @@ function boot(seedBatches, seedStudents) {
     const b = batches.find(x => x.id === batchId);
     if (!b) return;
     addStudentsTargetBatch = b.batch;
+    addStudentsTargetBatchId = b.id;
     addStudentsRows = Array.from({ length: 5 }, blankAddStudentsRow);
     addStudentsImportPreview = null;
     const titleEl = document.getElementById('add-students-modal-title');
@@ -2632,6 +2621,7 @@ function boot(seedBatches, seedStudents) {
     const overlay = document.getElementById('add-students-modal-overlay');
     if (overlay) overlay.hidden = true;
     addStudentsTargetBatch = '';
+    addStudentsTargetBatchId = '';
     addStudentsRows = [];
     addStudentsImportPreview = null;
   }
@@ -2667,9 +2657,10 @@ function boot(seedBatches, seedStudents) {
     if (!usable.length) { flashToast('Fill in at least one row (Name, Student ID, or UID) first.', 'error'); return; }
     const saved = usable.map(row => normalizeStudent({ id: uid(), batch: addStudentsTargetBatch, ...row }));
     students = saved.concat(students);
+    const batchId = addStudentsTargetBatchId;
     closeAddStudentsModal();
-    activeSection = 'students';
     render();
+    openViewStudentsModal(batchId);
     saved.forEach(persistStudentSave);
     flashToast(saved.length + (saved.length === 1 ? ' student added.' : ' students added.'), 'success');
   }
@@ -2731,9 +2722,10 @@ function boot(seedBatches, seedStudents) {
     const newOnes = imported.filter(s => !existingIds.has(s.id));
     const updatedOnes = imported.filter(s => existingIds.has(s.id));
     students = newOnes.concat(students.map(ex => updatedOnes.find(u => u.id === ex.id) || ex));
+    const batchId = addStudentsTargetBatchId;
     closeAddStudentsModal();
-    activeSection = 'students';
     render();
+    openViewStudentsModal(batchId);
     imported.forEach(persistStudentSave);
     let msg;
     if (newOnes.length && updatedOnes.length) msg = newOnes.length + ' added, ' + updatedOnes.length + ' updated.';
@@ -2796,13 +2788,39 @@ function boot(seedBatches, seedStudents) {
     const searchEl = document.getElementById('syllabus-search'); if (searchEl) searchEl.value = b.batch;
   }
 
-  function viewStudentsForBatch(id) {
-    const b = batches.find(x => x.id === id);
+  function openViewStudentsModal(batchId) {
+    const b = batches.find(x => x.id === batchId);
     if (!b) return;
-    activeSection = 'students';
-    studentSearchQuery = b.batch;
-    render();
-    const searchEl = document.getElementById('student-search'); if (searchEl) searchEl.value = b.batch;
+    viewStudentsTargetBatch = b.batch;
+    const titleEl = document.getElementById('view-students-modal-title');
+    if (titleEl) titleEl.textContent = 'Students — ' + b.batch;
+    const overlay = document.getElementById('view-students-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    renderViewStudentsTable();
+  }
+
+  function closeViewStudentsModal() {
+    if (studentIsNewRow) cancelStudent();
+    const overlay = document.getElementById('view-students-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    viewStudentsTargetBatch = null;
+  }
+
+  function addRowInViewStudents() {
+    if (!canWrite || !viewStudentsTargetBatch) return;
+    if (studentEditingId) cancelStudent();
+    const id = uid();
+    const blank = normalizeStudent({ id, batch: viewStudentsTargetBatch });
+    students.unshift(blank);
+    studentEditingId = id; studentIsNewRow = true;
+    studentDraft = { ...blank };
+    renderViewStudentsTable();
+    requestAnimationFrame(() => {
+      const el = document.querySelector('#srow-' + id + ' .student-cell-input[data-field="uid"]');
+      if (el) el.focus();
+      const rowEl = document.getElementById('srow-' + id);
+      if (rowEl) rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   }
 
   function parseCSV(text) {
@@ -3194,11 +3212,6 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'delete-student') removeStudent(id);
     else if (action === 'save-student') saveStudent();
     else if (action === 'cancel-student') cancelStudent();
-    else if (action === 'clear-student-filter') {
-      studentSearchQuery = ''; studentProgramFilter = '';
-      const el = document.getElementById('student-search'); if (el) el.value = '';
-      renderStudentsTable();
-    }
     else if (action === 'open-add-students') openAddStudentsModal(id);
     else if (action === 'close-add-students') closeAddStudentsModal();
     else if (action === 'add-students-row') addAddStudentsRow();
@@ -3208,12 +3221,14 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'download-student-sample') {
       downloadStudentSampleCSV();
     }
+    else if (action === 'open-view-students' || action === 'view-students-for-batch') openViewStudentsModal(id);
+    else if (action === 'close-view-students') closeViewStudentsModal();
+    else if (action === 'view-students-add-row') addRowInViewStudents();
     else if (action === 'edit-config') startConfigEdit(id);
     else if (action === 'cancel-config') cancelConfigEdit();
     else if (action === 'save-config') saveConfig();
     else if (action === 'clear-config') clearConfig(id);
     else if (action === 'view-syllabus') viewSyllabus(id);
-    else if (action === 'view-students-for-batch') viewStudentsForBatch(id);
     else if (action === 'config-tab') {
       configStatusTab = btn.dataset.tab;
       btn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === configStatusTab));
@@ -3376,7 +3391,6 @@ function boot(seedBatches, seedStudents) {
   root.addEventListener('input', e => {
     const t = e.target;
     if (t.id === 'syllabus-search') { searchQuery = t.value; renderRecordsTable(); return; }
-    if (t.id === 'student-search') { studentSearchQuery = t.value; renderStudentsTable(); return; }
     if (t.matches('.student-cell-input')) {
       if (!studentDraft) return;
       studentDraft[t.dataset.field] = t.value;
@@ -3434,7 +3448,6 @@ function boot(seedBatches, seedStudents) {
       if (file) handleAddStudentsImportFile(file);
       return;
     }
-    if (t.id === 'student-filter-program') { studentProgramFilter = t.value; renderStudentsTable(); return; }
     if (t.id === 'publish-modal-confirm-check') {
       publishModalConfirmed = t.checked;
       const submitBtn = document.getElementById('publish-modal-submit');
@@ -3455,7 +3468,7 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     if (t.matches('.student-cell-input') && t.tagName === 'SELECT') {
-      if (studentDraft) { studentDraft[t.dataset.field] = t.value; renderStudentsTable(); }
+      if (studentDraft) { studentDraft[t.dataset.field] = t.value; renderViewStudentsTable(); }
       return;
     }
     if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
