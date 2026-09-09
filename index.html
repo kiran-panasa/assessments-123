@@ -229,6 +229,8 @@ tbody td.col-syllabus{border-right:1px solid var(--border);}
 .import-file-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .import-summary{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);margin:0 0 10px;}
 .import-skip{color:var(--danger);font-size:11.5px;margin-top:6px;}
+.modal-subheading{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);margin:4px 0 8px;}
+.modal-divider{border:none;border-top:1px solid var(--border);margin:20px 0;}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
 .modal-header h3{margin:0;font-family:var(--font-display);font-size:16px;color:var(--ink);}
 .modal-close{background:none;border:none;font-size:20px;line-height:1;color:var(--muted);cursor:pointer;padding:4px;}
@@ -431,10 +433,8 @@ function boot(seedBatches, seedStudents) {
   let latestRemoteStudents = null;
   let studentEditingId = null;
   let studentDraft = null;
-  let studentIsNewRow = false;
   let studentSearchQuery = '';
-  let studentBatchFilter = '';
-  let selectedStudentIds = new Set();
+  let studentProgramFilter = '';
   let selectedBatchIds = new Set();
   let syllabusProgramFilter = '';
   const PROGRAM_OPTIONS_LS_KEY = 'cohort-ledger:program-options:v1';
@@ -447,8 +447,9 @@ function boot(seedBatches, seedStudents) {
     try { localStorage.setItem(PROGRAM_OPTIONS_LS_KEY, JSON.stringify(programOptions)); } catch (e) {}
   }
   let notifyLastRecipients = '';
-  let studentImportPreview = null;
-  let quickAddRows = [];
+  let addStudentsTargetBatch = '';
+  let addStudentsRows = [];
+  let addStudentsImportPreview = null;
   let configEditingId = null;
   let configDraft = null;
   let configSearchQuery = '';
@@ -722,6 +723,7 @@ function boot(seedBatches, seedStudents) {
                   <tr class="thead-groups">
                     <th class="col-syllabus" rowspan="2"><input type="checkbox" id="records-select-all" aria-label="Select all"> Program</th>
                     <th rowspan="2">Title</th>
+                    <th rowspan="2">Students</th>
                     <th colspan="2">Syllabus</th>
                     <th rowspan="2">Main Assessment SEB Status</th>
                     <th colspan="5" class="grp-amber">Mock Assessment</th>
@@ -751,20 +753,14 @@ function boot(seedBatches, seedStudents) {
             <h2 class="section-heading">Students Data</h2>
             <div class="filter-bar">
               <div class="filter-field"><label for="student-search">Search</label><input type="text" id="student-search" placeholder="Search title, name, email&hellip;"></div>
-              <div class="filter-field"><label for="student-filter-batch">Title</label><select id="student-filter-batch"><option value="">All Titles</option></select></div>
+              <div class="filter-field"><label for="student-filter-program">Program</label><select id="student-filter-program"><option value="">All Programs</option></select></div>
               <div class="filter-bar-count" id="student-filter-count"></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-student-filter">Clear</button>
-              <button type="button" class="btn btn--ghost btn--sm" data-action="download-students">Download CSV</button>
-              <button type="button" class="btn btn--ghost btn--sm" id="delete-selected-students-btn" data-action="delete-selected-students" disabled>Delete Selected</button>
-              <button type="button" class="btn btn--ghost btn--sm" id="import-students-btn" data-action="open-student-import">Import Students</button>
-              <button type="button" class="btn btn--ghost btn--sm" id="quick-add-students-btn" data-action="open-quick-add">Quick Add</button>
-              <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="add-student-btn" data-action="add-student">+ Add Student</button>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr class="thead-single">
-                    <th class="col-syllabus"><input type="checkbox" id="student-select-all" aria-label="Select all"></th>
                     <th>Program</th>
                     <th>Title</th>
                     <th>UID</th>
@@ -905,44 +901,20 @@ function boot(seedBatches, seedStudents) {
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <div class="modal-overlay" id="student-import-modal-overlay" hidden>
-      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="student-import-modal-title">
+    <div class="modal-overlay" id="add-students-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="add-students-modal-title">
         <div class="modal-header">
-          <h3 id="student-import-modal-title">Import Students</h3>
-          <button type="button" class="modal-close" data-action="close-student-import" aria-label="Close">&times;</button>
+          <h3 id="add-students-modal-title">Add Students</h3>
+          <button type="button" class="modal-close" data-action="close-add-students" aria-label="Close">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="import-file-row">
-            <input type="file" id="student-import-file-input" accept=".csv">
-            <button type="button" class="btn btn--ghost btn--sm" data-action="download-student-sample">Download sample sheet</button>
-          </div>
-          <details class="import-help">
-            <summary>Which columns can I use?</summary>
-            <p class="section-desc">One row per student.</p>
-            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Title, UID, Student ID, Name, Mobile Number, Email ID. A row needs at least a Name, Student ID, or UID to be imported; unrecognized columns are ignored.</p>
-          </details>
-          <div id="student-import-preview"><p class="section-desc">Choose a CSV file to preview the students it will add before importing.</p></div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn--ghost btn--sm" data-action="close-student-import">Cancel</button>
-          <button type="button" class="btn btn--primary btn--sm" id="confirm-student-import-btn" data-action="confirm-student-import" disabled>Confirm Import</button>
-        </div>
-      </div>
-    </div>
-    <div class="modal-overlay" id="quick-add-modal-overlay" hidden>
-      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="quick-add-modal-title">
-        <div class="modal-header">
-          <h3 id="quick-add-modal-title">Quick Add Students</h3>
-          <button type="button" class="modal-close" data-action="close-quick-add" aria-label="Close">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p class="section-desc">Pick a Title per row &mdash; Program fills in automatically. Blank rows are skipped when you save.</p>
-          <div class="table-wrap" style="max-height:360px;">
+          <p class="section-desc" id="add-students-modal-context"></p>
+
+          <p class="modal-subheading">Add rows</p>
+          <div class="table-wrap" style="max-height:280px;">
             <table>
               <thead>
                 <tr class="thead-single">
-                  <th>Title</th>
-                  <th>Program</th>
                   <th>UID</th>
                   <th>Student ID</th>
                   <th>Name</th>
@@ -951,14 +923,31 @@ function boot(seedBatches, seedStudents) {
                   <th></th>
                 </tr>
               </thead>
-              <tbody id="quick-add-tbody"></tbody>
+              <tbody id="add-students-tbody"></tbody>
             </table>
           </div>
-          <button type="button" class="btn btn--ghost btn--sm" style="margin-top:10px;" data-action="quick-add-row">+ Add Row</button>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+            <button type="button" class="btn btn--ghost btn--sm" data-action="add-students-row">+ Add Row</button>
+            <button type="button" class="btn btn--primary btn--sm" data-action="save-add-students-rows">Save Rows</button>
+          </div>
+
+          <hr class="modal-divider">
+
+          <p class="modal-subheading">Or upload a CSV</p>
+          <div class="import-file-row">
+            <input type="file" id="add-students-file-input" accept=".csv">
+            <button type="button" class="btn btn--ghost btn--sm" data-action="download-student-sample">Download sample sheet</button>
+          </div>
+          <details class="import-help">
+            <summary>Which columns can I use?</summary>
+            <p class="section-desc">One row per student.</p>
+            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): UID, Student ID, Name, Mobile Number, Email ID. A row needs at least a Name, Student ID, or UID to be imported; unrecognized columns are ignored. Program and Title are set automatically from this Title &mdash; you don&rsquo;t need to include them in the sheet.</p>
+          </details>
+          <div id="add-students-import-preview"><p class="section-desc">Choose a CSV file to preview the students it will add before importing.</p></div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn--ghost btn--sm" data-action="close-quick-add">Cancel</button>
-          <button type="button" class="btn btn--primary btn--sm" data-action="save-quick-add">Save Students</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-add-students">Close</button>
+          <button type="button" class="btn btn--primary btn--sm" id="confirm-add-students-import-btn" data-action="confirm-add-students-import" disabled>Confirm Import</button>
         </div>
       </div>
     </div>
@@ -1177,6 +1166,11 @@ function boot(seedBatches, seedStudents) {
     return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
   }
 
+  function studentsButtonCell(id) {
+    if (!canWrite) return '<span class="muted-cell">Locked</span>';
+    return '<button type="button" class="btn btn--ghost btn--xs" data-action="open-add-students" data-id="'+id+'">+ Add Students</button>';
+  }
+
   function studentField(field, value, editing, placeholder) {
     if (!editing) return esc(value) || dash();
     return '<input type="text" class="cell-input student-cell-input" data-field="'+field+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'">';
@@ -1213,7 +1207,6 @@ function boot(seedBatches, seedStudents) {
     const editing = studentEditingId === s.id;
     const d = editing ? studentDraft : s;
     return '<tr class="'+(editing?'row-editing':'')+'" id="srow-'+s.id+'" data-id="'+s.id+'">'
-      + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox" data-action="toggle-student-select" data-id="'+s.id+'"'+(selectedStudentIds.has(s.id)?' checked':'')+'></td>'
       + '<td>' + (esc(programForBatchName(d.batch)) || dash()) + '</td>'
       + '<td>' + studentBatchSelect(d.batch, editing) + '</td>'
       + '<td>' + studentField('uid', d.uid, editing, 'UID') + '</td>'
@@ -1303,6 +1296,7 @@ function boot(seedBatches, seedStudents) {
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + programCell(d.program, editing) + '</td>'
       + '<td>' + textCell('batch', d.batch, editing, 'Title') + '</td>'
+      + '<td>' + studentsButtonCell(id) + '</td>'
       + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing, id) + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
       + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
@@ -1319,10 +1313,6 @@ function boot(seedBatches, seedStudents) {
     if (addBtn) addBtn.disabled = !canWrite;
     const importBtn = document.getElementById('import-batches-btn');
     if (importBtn) importBtn.disabled = !canWrite;
-    const addStudentBtn = document.getElementById('add-student-btn');
-    if (addStudentBtn) addStudentBtn.disabled = !canWrite;
-    const importStudentsBtn = document.getElementById('import-students-btn');
-    if (importStudentsBtn) importStudentsBtn.disabled = !canWrite;
   }
 
   function todayISO() {
@@ -1483,7 +1473,7 @@ function boot(seedBatches, seedStudents) {
     }
     updateRecordsSelectionUI(filtered);
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="16"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">Raise Request</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="17"><div class="empty-state">No records match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-batch">Raise Request</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
@@ -1496,50 +1486,33 @@ function boot(seedBatches, seedStudents) {
         const hay = [s.batch, s.uid, s.studentId, s.name, s.mobile, s.email].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (studentBatchFilter && s.batch !== studentBatchFilter) return false;
+      if (studentProgramFilter && programForBatchName(s.batch) !== studentProgramFilter) return false;
       return true;
     });
   }
 
-  function populateStudentFilterOptions() {
-    const sel = document.getElementById('student-filter-batch');
+  function populateStudentProgramFilterOptions() {
+    const sel = document.getElementById('student-filter-program');
     if (!sel) return;
-    const names = Array.from(new Set(students.map(s => s.batch).filter(Boolean))).sort();
-    sel.innerHTML = '<option value="">All Titles</option>' + names.map(n => '<option value="'+esc(n)+'"'+(n===studentBatchFilter?' selected':'')+'>'+esc(n)+'</option>').join('');
-  }
-
-  function updateStudentSelectionUI(filtered) {
-    const btn = document.getElementById('delete-selected-students-btn');
-    if (btn) {
-      btn.disabled = !canWrite || selectedStudentIds.size === 0;
-      btn.textContent = 'Delete Selected' + (selectedStudentIds.size ? ' (' + selectedStudentIds.size + ')' : '');
-    }
-    const selectAll = document.getElementById('student-select-all');
-    if (selectAll) {
-      const visibleIds = filtered.map(s => s.id);
-      selectAll.checked = visibleIds.length > 0 && visibleIds.every(id => selectedStudentIds.has(id));
-    }
+    sel.innerHTML = '<option value="">All Programs</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===studentProgramFilter?' selected':'')+'>'+esc(p)+'</option>').join('');
   }
 
   function renderStudentsTable() {
     const tbody = document.getElementById('students-tbody');
     if (!tbody) return;
-    populateStudentFilterOptions();
+    populateStudentProgramFilterOptions();
     let filtered = getFilteredStudents();
     const countEl = document.getElementById('student-filter-count');
     if (countEl) {
       const noun = filtered.length === 1 ? ' student' : ' students';
-      countEl.textContent = studentBatchFilter
-        ? filtered.length + noun + ' in ' + studentBatchFilter
-        : filtered.length + noun + (studentSearchQuery ? ' match' + (filtered.length === 1 ? 'es' : '') : ' total');
+      countEl.textContent = filtered.length + noun + (studentSearchQuery || studentProgramFilter ? ' match' + (filtered.length === 1 ? 'es' : '') : ' total');
     }
     if (studentEditingId && !filtered.some(s => s.id === studentEditingId)) {
       const editingStudent = students.find(s => s.id === studentEditingId);
       if (editingStudent) filtered = [editingStudent].concat(filtered);
     }
-    updateStudentSelectionUI(filtered);
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No students match your filters.'+(canWrite?'<div><button type="button" class="btn btn--primary" data-action="add-student">+ Add Student</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No students match your filters.<div class="footnote" style="margin-top:8px;">Add students from a Title\'s row in Curriculum.</div></div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(studentRowHTML).join('');
@@ -2600,28 +2573,9 @@ function boot(seedBatches, seedStudents) {
     if (!canWrite) return;
     const s = students.find(x => x.id === id);
     if (!s) return;
-    studentEditingId = id; studentIsNewRow = false;
+    studentEditingId = id;
     studentDraft = { ...s };
     render();
-  }
-
-  function startAddStudent() {
-    if (!canWrite) return;
-    if (studentEditingId && studentIsNewRow) students = students.filter(s => s.id !== studentEditingId);
-    activeSection = 'students';
-    const id = uid();
-    const blank = normalizeStudent({ id });
-    students.unshift(blank);
-    studentEditingId = id; studentIsNewRow = true;
-    studentDraft = { ...blank };
-    render();
-    const wrap = document.querySelector('#section-students .table-wrap'); if (wrap) wrap.scrollLeft = 0;
-    requestAnimationFrame(() => {
-      const el = document.querySelector('#srow-' + id + ' .student-cell-input[data-field="batch"]');
-      if (el) el.focus();
-      const rowEl = document.getElementById('srow-' + id);
-      if (rowEl) rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
   }
 
   function saveStudent() {
@@ -2629,76 +2583,14 @@ function boot(seedBatches, seedStudents) {
     const idx = students.findIndex(s => s.id === studentEditingId);
     if (idx > -1) students[idx] = { ...studentDraft };
     const saved = { ...studentDraft };
-    studentEditingId = null; studentDraft = null; studentIsNewRow = false;
+    studentEditingId = null; studentDraft = null;
     render();
     persistStudentSave(saved);
     flashToast('Student saved.', 'success');
   }
 
-  function blankQuickAddRow() {
-    return { batch: '', uid: '', studentId: '', name: '', mobile: '', email: '' };
-  }
-
-  function openQuickAddModal() {
-    if (!canWrite) return;
-    quickAddRows = Array.from({ length: 10 }, blankQuickAddRow);
-    const overlay = document.getElementById('quick-add-modal-overlay');
-    if (overlay) overlay.hidden = false;
-    renderQuickAddTable();
-  }
-
-  function closeQuickAddModal() {
-    const overlay = document.getElementById('quick-add-modal-overlay');
-    if (overlay) overlay.hidden = true;
-    quickAddRows = [];
-  }
-
-  function addQuickAddRow() {
-    quickAddRows.push(blankQuickAddRow());
-    renderQuickAddTable();
-  }
-
-  function removeQuickAddRow(index) {
-    quickAddRows.splice(index, 1);
-    renderQuickAddTable();
-  }
-
-  function renderQuickAddTable() {
-    const tbody = document.getElementById('quick-add-tbody');
-    if (!tbody) return;
-    const names = allKnownBatchNames();
-    tbody.innerHTML = quickAddRows.map((row, i) => {
-      const opts = ['<option value=""'+(row.batch?'':' selected')+'>&mdash; Select Title &mdash;</option>']
-        .concat(names.map(n => '<option value="'+esc(n)+'"'+(n===row.batch?' selected':'')+'>'+esc(n)+'</option>'))
-        .join('');
-      return '<tr data-index="'+i+'">'
-        + '<td><select class="cell-input quick-add-input" data-index="'+i+'" data-field="batch">' + opts + '</select></td>'
-        + '<td>' + (esc(programForBatchName(row.batch)) || dash()) + '</td>'
-        + '<td><input type="text" class="cell-input quick-add-input" data-index="'+i+'" data-field="uid" value="'+esc(row.uid)+'"></td>'
-        + '<td><input type="text" class="cell-input quick-add-input" data-index="'+i+'" data-field="studentId" value="'+esc(row.studentId)+'"></td>'
-        + '<td><input type="text" class="cell-input quick-add-input" data-index="'+i+'" data-field="name" value="'+esc(row.name)+'"></td>'
-        + '<td><input type="text" class="cell-input quick-add-input" data-index="'+i+'" data-field="mobile" value="'+esc(row.mobile)+'"></td>'
-        + '<td><input type="text" class="cell-input quick-add-input" data-index="'+i+'" data-field="email" value="'+esc(row.email)+'"></td>'
-        + '<td><button type="button" class="btn--icon-danger" data-action="quick-add-remove-row" data-index="'+i+'" aria-label="Remove row" title="Remove row">'+ICON_TRASH+'</button></td>'
-        + '</tr>';
-    }).join('');
-  }
-
-  function saveQuickAdd() {
-    if (!canWrite) return;
-    const usable = quickAddRows.filter(row => row.name.trim() || row.studentId.trim() || row.uid.trim());
-    if (!usable.length) { flashToast('Fill in at least one row (Name, Student ID, or UID) first.', 'error'); return; }
-    const saved = usable.map(row => normalizeStudent({ id: uid(), ...row }));
-    students = saved.concat(students);
-    closeQuickAddModal();
-    render();
-    saved.forEach(persistStudentSave);
-    flashToast(saved.length + (saved.length === 1 ? ' student added.' : ' students added.'), 'success');
-  }
-
   function cancelStudent() {
-    if (studentIsNewRow) students = students.filter(s => s.id !== studentEditingId);
-    studentEditingId = null; studentDraft = null; studentIsNewRow = false;
+    studentEditingId = null; studentDraft = null;
     if (latestRemoteStudents) students = latestRemoteStudents;
     render();
   }
@@ -2707,75 +2599,147 @@ function boot(seedBatches, seedStudents) {
     if (!canWrite) return;
     if (!confirm('Delete this student record? This cannot be undone.')) return;
     students = students.filter(s => s.id !== id);
-    if (studentEditingId === id) { studentEditingId = null; studentDraft = null; studentIsNewRow = false; }
-    selectedStudentIds.delete(id);
+    if (studentEditingId === id) { studentEditingId = null; studentDraft = null; }
     render();
     persistStudentDelete(id);
     flashToast('Student deleted.', 'success');
   }
 
-  function deleteSelectedStudents() {
-    if (!canWrite || !selectedStudentIds.size) return;
-    const count = selectedStudentIds.size;
-    if (!confirm('Delete ' + count + (count === 1 ? ' selected student record' : ' selected student records') + '? This cannot be undone.')) return;
-    const ids = Array.from(selectedStudentIds);
-    students = students.filter(s => !selectedStudentIds.has(s.id));
-    if (studentEditingId && selectedStudentIds.has(studentEditingId)) { studentEditingId = null; studentDraft = null; studentIsNewRow = false; }
-    selectedStudentIds = new Set();
+  function blankAddStudentsRow() {
+    return { uid: '', studentId: '', name: '', mobile: '', email: '' };
+  }
+
+  function openAddStudentsModal(batchId) {
+    if (!canWrite) return;
+    const b = batches.find(x => x.id === batchId);
+    if (!b) return;
+    addStudentsTargetBatch = b.batch;
+    addStudentsRows = Array.from({ length: 5 }, blankAddStudentsRow);
+    addStudentsImportPreview = null;
+    const titleEl = document.getElementById('add-students-modal-title');
+    if (titleEl) titleEl.textContent = 'Add Students — ' + b.batch;
+    const contextEl = document.getElementById('add-students-modal-context');
+    if (contextEl) contextEl.textContent = 'Program: ' + (b.program || '—') + '   ·   Title: ' + b.batch;
+    const fileInput = document.getElementById('add-students-file-input');
+    if (fileInput) fileInput.value = '';
+    const overlay = document.getElementById('add-students-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    renderAddStudentsRows();
+    renderAddStudentsImportPreview();
+  }
+
+  function closeAddStudentsModal() {
+    const overlay = document.getElementById('add-students-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    addStudentsTargetBatch = '';
+    addStudentsRows = [];
+    addStudentsImportPreview = null;
+  }
+
+  function addAddStudentsRow() {
+    addStudentsRows.push(blankAddStudentsRow());
+    renderAddStudentsRows();
+  }
+
+  function removeAddStudentsRow(index) {
+    addStudentsRows.splice(index, 1);
+    renderAddStudentsRows();
+  }
+
+  function renderAddStudentsRows() {
+    const tbody = document.getElementById('add-students-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = addStudentsRows.map((row, i) =>
+      '<tr data-index="'+i+'">'
+      + '<td><input type="text" class="cell-input add-students-input" data-index="'+i+'" data-field="uid" value="'+esc(row.uid)+'"></td>'
+      + '<td><input type="text" class="cell-input add-students-input" data-index="'+i+'" data-field="studentId" value="'+esc(row.studentId)+'"></td>'
+      + '<td><input type="text" class="cell-input add-students-input" data-index="'+i+'" data-field="name" value="'+esc(row.name)+'"></td>'
+      + '<td><input type="text" class="cell-input add-students-input" data-index="'+i+'" data-field="mobile" value="'+esc(row.mobile)+'"></td>'
+      + '<td><input type="text" class="cell-input add-students-input" data-index="'+i+'" data-field="email" value="'+esc(row.email)+'"></td>'
+      + '<td><button type="button" class="btn--icon-danger" data-action="add-students-remove-row" data-index="'+i+'" aria-label="Remove row" title="Remove row">'+ICON_TRASH+'</button></td>'
+      + '</tr>'
+    ).join('');
+  }
+
+  function saveAddStudentsRows() {
+    if (!canWrite || !addStudentsTargetBatch) return;
+    const usable = addStudentsRows.filter(row => row.name.trim() || row.studentId.trim() || row.uid.trim());
+    if (!usable.length) { flashToast('Fill in at least one row (Name, Student ID, or UID) first.', 'error'); return; }
+    const saved = usable.map(row => normalizeStudent({ id: uid(), batch: addStudentsTargetBatch, ...row }));
+    students = saved.concat(students);
+    closeAddStudentsModal();
+    activeSection = 'students';
     render();
-    ids.forEach(persistStudentDelete);
-    flashToast(count + (count === 1 ? ' student deleted.' : ' students deleted.'), 'success');
+    saved.forEach(persistStudentSave);
+    flashToast(saved.length + (saved.length === 1 ? ' student added.' : ' students added.'), 'success');
   }
 
-  function buildStudentsExportCSV(list) {
-    const headers = ['Title', 'UID', 'Student ID', 'Name', 'Mobile Number', 'Email ID'];
-    const escCsv = v => {
-      const s = String(v == null ? '' : v);
-      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
-    const rows = list.map(s => [s.batch, s.uid, s.studentId, s.name, s.mobile, s.email]);
-    const lines = [headers.map(escCsv).join(',')].concat(rows.map(r => r.map(escCsv).join(',')));
-    return lines.join('\r\n');
-  }
-
-  async function downloadStudentsCSV() {
-    const list = getFilteredStudents();
-    if (!list.length) { flashToast('No students to download.', 'error'); return; }
-    const csv = buildStudentsExportCSV(list);
-    if (window.claude && typeof window.claude.use === 'function') {
-      const downloads = await window.claude.use('downloads');
-      if (downloads) {
-        try {
-          await downloads.save({ filename: 'students-export.csv', data: csv });
-          flashToast('Download ready.', 'success');
-        } catch (err) {
-          const code = err && err.code;
-          if (code === 'declined') return;
-          if (code === 'rejected_extension' || code === 'extension_not_enabled') {
-            try {
-              await downloads.save({ filename: 'students-export.txt', data: csv });
-              flashToast('Downloaded as .txt.', 'success');
-            } catch (e2) { flashToast('Could not download the file.', 'error'); }
-          } else {
-            flashToast('Could not download the file.', 'error');
-          }
-        }
-        return;
+  function handleAddStudentsImportFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = parseCSV(String(reader.result));
+        if (!parsed.rows.length) { flashToast('No rows found in that file.', 'error'); addStudentsImportPreview = null; }
+        else addStudentsImportPreview = buildStudentsFromImport(parsed.headers, parsed.rows, addStudentsTargetBatch);
+      } catch (err) {
+        addStudentsImportPreview = null;
+        flashToast('Could not read that file — make sure it’s a CSV.', 'error');
       }
+      renderAddStudentsImportPreview();
+    };
+    reader.onerror = () => {
+      addStudentsImportPreview = null;
+      renderAddStudentsImportPreview();
+      flashToast('Could not read that file.', 'error');
+    };
+    reader.readAsText(file);
+  }
+
+  function renderAddStudentsImportPreview() {
+    const el = document.getElementById('add-students-import-preview');
+    const confirmBtn = document.getElementById('confirm-add-students-import-btn');
+    if (!el) return;
+    if (!addStudentsImportPreview || !addStudentsImportPreview.students.length) {
+      el.innerHTML = '<p class="section-desc">Choose a CSV file to preview the students it will add before importing.</p>';
+      if (confirmBtn) confirmBtn.disabled = true;
+      return;
     }
-    try {
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'students-export.csv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e) {
-      flashToast('Could not download the file.', 'error');
-    }
+    const preview = addStudentsImportPreview.students.slice(0, 20);
+    const existingIds = new Set(students.map(s => s.id));
+    const newCount = addStudentsImportPreview.students.filter(s => !existingIds.has(s.id)).length;
+    const updCount = addStudentsImportPreview.students.length - newCount;
+    el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new student' : ' new students') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'student' : 'students') + ' updated' : '') + ' (matched by UID or Student ID).</p>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>UID</th><th>Student ID</th><th>Name</th><th>Mobile Number</th><th>Email ID</th></tr></thead><tbody>'
+      + preview.map(s => '<tr>'
+          + '<td><span class="badge '+(existingIds.has(s.id)?'badge--no':'badge--yes')+'">'+(existingIds.has(s.id)?'Update':'New')+'</span></td>'
+          + '<td>' + (esc(s.uid) || dash()) + '</td>'
+          + '<td>' + (esc(s.studentId) || dash()) + '</td>'
+          + '<td>' + (esc(s.name) || dash()) + '</td>'
+          + '<td>' + (esc(s.mobile) || dash()) + '</td>'
+          + '<td>' + (esc(s.email) || dash()) + '</td>'
+        + '</tr>').join('')
+      + '</tbody></table></div>'
+      + '<p class="footnote">Showing ' + preview.length + ' of ' + addStudentsImportPreview.students.length + '.</p>'
+      + (addStudentsImportPreview.skipped ? '<p class="import-skip">Skipped ' + addStudentsImportPreview.skipped + ' row' + (addStudentsImportPreview.skipped === 1 ? '' : 's') + ' with no Name, Student ID, or UID.</p>' : '');
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+
+  function confirmAddStudentsImport() {
+    if (!canWrite || !addStudentsImportPreview || !addStudentsImportPreview.students.length) return;
+    const imported = addStudentsImportPreview.students;
+    const existingIds = new Set(students.map(s => s.id));
+    const newOnes = imported.filter(s => !existingIds.has(s.id));
+    const updatedOnes = imported.filter(s => existingIds.has(s.id));
+    students = newOnes.concat(students.map(ex => updatedOnes.find(u => u.id === ex.id) || ex));
+    closeAddStudentsModal();
+    activeSection = 'students';
+    render();
+    imported.forEach(persistStudentSave);
+    let msg;
+    if (newOnes.length && updatedOnes.length) msg = newOnes.length + ' added, ' + updatedOnes.length + ' updated.';
+    else if (newOnes.length) msg = newOnes.length + (newOnes.length === 1 ? ' student imported.' : ' students imported.');
+    else msg = updatedOnes.length + (updatedOnes.length === 1 ? ' student updated.' : ' students updated.');
+    flashToast(msg, 'success');
   }
 
   function startConfigEdit(id) {
@@ -2836,11 +2800,9 @@ function boot(seedBatches, seedStudents) {
     const b = batches.find(x => x.id === id);
     if (!b) return;
     activeSection = 'students';
-    studentSearchQuery = '';
-    studentBatchFilter = b.batch;
+    studentSearchQuery = b.batch;
     render();
-    const searchEl = document.getElementById('student-search'); if (searchEl) searchEl.value = '';
-    const batchEl = document.getElementById('student-filter-batch'); if (batchEl) batchEl.value = b.batch;
+    const searchEl = document.getElementById('student-search'); if (searchEl) searchEl.value = b.batch;
   }
 
   function parseCSV(text) {
@@ -3149,12 +3111,13 @@ function boot(seedBatches, seedStudents) {
     return out;
   }
 
-  function buildStudentsFromImport(headers, rows) {
+  function buildStudentsFromImport(headers, rows, forcedBatch) {
     let skipped = 0;
     const built = [];
     rows.forEach(r => {
       const mapped = mapStudentImportRow(r, headers);
       if (!mapped.name && !mapped.studentId && !mapped.uid) { skipped++; return; }
+      if (forcedBatch) mapped.batch = forcedBatch;
       const existing = students.find(s =>
         (mapped.uid && s.uid && s.uid === mapped.uid) ||
         (mapped.studentId && s.studentId && s.studentId === mapped.studentId)
@@ -3165,78 +3128,11 @@ function boot(seedBatches, seedStudents) {
     return { students: built, skipped: skipped };
   }
 
-  function openStudentImportModal() {
-    studentImportPreview = null;
-    const overlay = document.getElementById('student-import-modal-overlay');
-    if (overlay) overlay.hidden = false;
-    const fileInput = document.getElementById('student-import-file-input');
-    if (fileInput) fileInput.value = '';
-    renderStudentImportPreview();
-  }
-
-  function closeStudentImportModal() {
-    const overlay = document.getElementById('student-import-modal-overlay');
-    if (overlay) overlay.hidden = true;
-    studentImportPreview = null;
-  }
-
-  function handleStudentImportFile(file) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = parseCSV(String(reader.result));
-        if (!parsed.rows.length) { flashToast('No rows found in that file.', 'error'); studentImportPreview = null; }
-        else studentImportPreview = buildStudentsFromImport(parsed.headers, parsed.rows);
-      } catch (err) {
-        studentImportPreview = null;
-        flashToast('Could not read that file — make sure it’s a CSV.', 'error');
-      }
-      renderStudentImportPreview();
-    };
-    reader.onerror = () => {
-      studentImportPreview = null;
-      renderStudentImportPreview();
-      flashToast('Could not read that file.', 'error');
-    };
-    reader.readAsText(file);
-  }
-
-  function renderStudentImportPreview() {
-    const el = document.getElementById('student-import-preview');
-    const confirmBtn = document.getElementById('confirm-student-import-btn');
-    if (!el) return;
-    if (!studentImportPreview || !studentImportPreview.students.length) {
-      el.innerHTML = '<p class="section-desc">Choose a CSV file to preview the students it will add before importing.</p>';
-      if (confirmBtn) confirmBtn.disabled = true;
-      return;
-    }
-    const preview = studentImportPreview.students.slice(0, 20);
-    const existingIds = new Set(students.map(s => s.id));
-    const newCount = studentImportPreview.students.filter(s => !existingIds.has(s.id)).length;
-    const updCount = studentImportPreview.students.length - newCount;
-    el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new student' : ' new students') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'student' : 'students') + ' updated' : '') + ' (matched by UID or Student ID).</p>'
-      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Title</th><th>UID</th><th>Student ID</th><th>Name</th><th>Mobile Number</th><th>Email ID</th></tr></thead><tbody>'
-      + preview.map(s => '<tr>'
-          + '<td><span class="badge '+(existingIds.has(s.id)?'badge--no':'badge--yes')+'">'+(existingIds.has(s.id)?'Update':'New')+'</span></td>'
-          + '<td class="cell-strong">' + (esc(s.batch) || dash()) + '</td>'
-          + '<td>' + (esc(s.uid) || dash()) + '</td>'
-          + '<td>' + (esc(s.studentId) || dash()) + '</td>'
-          + '<td>' + (esc(s.name) || dash()) + '</td>'
-          + '<td>' + (esc(s.mobile) || dash()) + '</td>'
-          + '<td>' + (esc(s.email) || dash()) + '</td>'
-        + '</tr>').join('')
-      + '</tbody></table></div>'
-      + '<p class="footnote">Showing ' + preview.length + ' of ' + studentImportPreview.students.length + '.</p>'
-      + (studentImportPreview.skipped ? '<p class="import-skip">Skipped ' + studentImportPreview.skipped + ' row' + (studentImportPreview.skipped === 1 ? '' : 's') + ' with no Name, Student ID, or UID.</p>' : '');
-    if (confirmBtn) confirmBtn.disabled = false;
-  }
-
   function buildStudentSampleCSV() {
-    const headers = ['Title', 'UID', 'Student ID', 'Name', 'Mobile Number', 'Email ID'];
+    const headers = ['UID', 'Student ID', 'Name', 'Mobile Number', 'Email ID'];
     const rows = [
-      ['CS24-B07', 'UID20260001', 'STU1001', 'Aditi Sharma', '9876543210', 'aditi.sharma@example.com'],
-      ['CS24-B07', 'UID20260002', 'STU1002', 'Rohan Mehta', '9876543211', 'rohan.mehta@example.com'],
-      ['CS24-B09', 'UID20260003', 'STU1003', 'Priya Nair', '9876543212', 'priya.nair@example.com']
+      ['UID20260001', 'STU1001', 'Aditi Sharma', '9876543210', 'aditi.sharma@example.com'],
+      ['UID20260002', 'STU1002', 'Rohan Mehta', '9876543211', 'rohan.mehta@example.com']
     ];
     const escCsv = v => {
       const s = String(v == null ? '' : v);
@@ -3298,53 +3194,17 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'delete-student') removeStudent(id);
     else if (action === 'save-student') saveStudent();
     else if (action === 'cancel-student') cancelStudent();
-    else if (action === 'add-student') startAddStudent();
     else if (action === 'clear-student-filter') {
-      studentSearchQuery = ''; studentBatchFilter = '';
+      studentSearchQuery = ''; studentProgramFilter = '';
       const el = document.getElementById('student-search'); if (el) el.value = '';
       renderStudentsTable();
     }
-    else if (action === 'download-students') downloadStudentsCSV();
-    else if (action === 'delete-selected-students') deleteSelectedStudents();
-    else if (action === 'open-student-import') {
-      if (!canWrite) return;
-      openStudentImportModal();
-    }
-    else if (action === 'open-quick-add') {
-      openQuickAddModal();
-    }
-    else if (action === 'close-quick-add') {
-      closeQuickAddModal();
-    }
-    else if (action === 'quick-add-row') {
-      addQuickAddRow();
-    }
-    else if (action === 'quick-add-remove-row') {
-      removeQuickAddRow(Number(btn.dataset.index));
-    }
-    else if (action === 'save-quick-add') {
-      saveQuickAdd();
-    }
-    else if (action === 'close-student-import') {
-      closeStudentImportModal();
-    }
-    else if (action === 'confirm-student-import') {
-      if (!canWrite || !studentImportPreview || !studentImportPreview.students.length) return;
-      const imported = studentImportPreview.students;
-      const existingIds = new Set(students.map(s => s.id));
-      const newOnes = imported.filter(s => !existingIds.has(s.id));
-      const updatedOnes = imported.filter(s => existingIds.has(s.id));
-      students = newOnes.concat(students.map(ex => updatedOnes.find(u => u.id === ex.id) || ex));
-      closeStudentImportModal();
-      activeSection = 'students';
-      render();
-      imported.forEach(persistStudentSave);
-      let msg;
-      if (newOnes.length && updatedOnes.length) msg = newOnes.length + ' added, ' + updatedOnes.length + ' updated.';
-      else if (newOnes.length) msg = newOnes.length + (newOnes.length === 1 ? ' student imported.' : ' students imported.');
-      else msg = updatedOnes.length + (updatedOnes.length === 1 ? ' student updated.' : ' students updated.');
-      flashToast(msg, 'success');
-    }
+    else if (action === 'open-add-students') openAddStudentsModal(id);
+    else if (action === 'close-add-students') closeAddStudentsModal();
+    else if (action === 'add-students-row') addAddStudentsRow();
+    else if (action === 'add-students-remove-row') removeAddStudentsRow(Number(btn.dataset.index));
+    else if (action === 'save-add-students-rows') saveAddStudentsRows();
+    else if (action === 'confirm-add-students-import') confirmAddStudentsImport();
     else if (action === 'download-student-sample') {
       downloadStudentSampleCSV();
     }
@@ -3522,8 +3382,8 @@ function boot(seedBatches, seedStudents) {
       studentDraft[t.dataset.field] = t.value;
       return;
     }
-    if (t.matches('.quick-add-input') && t.tagName !== 'SELECT') {
-      const row = quickAddRows[Number(t.dataset.index)];
+    if (t.matches('.add-students-input')) {
+      const row = addStudentsRows[Number(t.dataset.index)];
       if (row) row[t.dataset.field] = t.value;
       return;
     }
@@ -3569,25 +3429,12 @@ function boot(seedBatches, seedStudents) {
       if (file) handleImportFile(file);
       return;
     }
-    if (t.id === 'student-import-file-input') {
+    if (t.id === 'add-students-file-input') {
       const file = t.files && t.files[0];
-      if (file) handleStudentImportFile(file);
+      if (file) handleAddStudentsImportFile(file);
       return;
     }
-    if (t.id === 'student-filter-batch') { studentBatchFilter = t.value; renderStudentsTable(); return; }
-    if (t.matches('.row-checkbox')) {
-      const id = t.dataset.id;
-      if (t.checked) selectedStudentIds.add(id); else selectedStudentIds.delete(id);
-      updateStudentSelectionUI(getFilteredStudents());
-      return;
-    }
-    if (t.id === 'student-select-all') {
-      const filtered = getFilteredStudents();
-      if (t.checked) filtered.forEach(s => selectedStudentIds.add(s.id));
-      else filtered.forEach(s => selectedStudentIds.delete(s.id));
-      renderStudentsTable();
-      return;
-    }
+    if (t.id === 'student-filter-program') { studentProgramFilter = t.value; renderStudentsTable(); return; }
     if (t.id === 'publish-modal-confirm-check') {
       publishModalConfirmed = t.checked;
       const submitBtn = document.getElementById('publish-modal-submit');
@@ -3609,11 +3456,6 @@ function boot(seedBatches, seedStudents) {
     }
     if (t.matches('.student-cell-input') && t.tagName === 'SELECT') {
       if (studentDraft) { studentDraft[t.dataset.field] = t.value; renderStudentsTable(); }
-      return;
-    }
-    if (t.matches('.quick-add-input') && t.tagName === 'SELECT') {
-      const row = quickAddRows[Number(t.dataset.index)];
-      if (row) { row[t.dataset.field] = t.value; renderQuickAddTable(); }
       return;
     }
     if (t.id === 'config-filter-batch') { configBatchFilter = t.value; renderConfigsTable(); return; }
