@@ -158,6 +158,26 @@ button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px
 .program-option-row .cell-input{flex:1;}
 .settings-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:480px;}
 .settings-panel-title{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--ink);margin:0 0 4px;}
+.auth-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:500;padding:20px;}
+.auth-screen[hidden]{display:none;}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:340px;max-width:100%;box-shadow:0 12px 32px rgba(0,0,0,.18);}
+.auth-title{font-family:var(--font-display);font-size:20px;margin:0 0 4px;color:var(--ink);}
+.auth-subtitle{color:var(--muted);font-size:13px;margin:0 0 18px;}
+.auth-tabs{display:flex;gap:4px;margin-bottom:16px;background:var(--surface-2);border-radius:8px;padding:3px;}
+.auth-tab{flex:1;border:none;background:none;padding:6px;border-radius:6px;font-size:12.5px;font-weight:600;color:var(--muted);cursor:pointer;font-family:inherit;}
+.auth-tab.active{background:var(--surface);color:var(--ink);}
+.auth-form{display:flex;flex-direction:column;gap:12px;}
+.auth-error{color:var(--danger);font-size:12px;margin:0;}
+.auth-hint{color:var(--muted);font-size:11.5px;margin-top:14px;text-align:center;line-height:1.5;}
+.auth-user-badge{font-size:12px;color:var(--muted);margin-right:4px;}
+.auth-user-badge strong{color:var(--ink);}
+.invite-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.invite-row:last-child{border-bottom:none;}
+.invite-row .invite-email{color:var(--ink);}
+.invite-row .invite-team{color:var(--muted);font-size:11.5px;}
+.invite-status{font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:5px;font-weight:600;}
+.invite-status--pending{background:var(--surface-2);color:var(--muted);}
+.invite-status--active{background:var(--accent-soft);color:var(--accent-ink);}
 .publish-modal-subtitle{font-size:13px;color:var(--muted);margin:0 0 14px;}
 .publish-modal-subtitle strong{color:var(--ink);}
 .publish-detail-list{display:flex;flex-direction:column;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:4px 14px;margin-bottom:16px;}
@@ -425,6 +445,31 @@ function boot(seedBatches, seedStudents) {
   let syncMode = 'local';
   let db = null;
   let fs = null;
+  let appMod = null;
+  let authFs = null;
+  let authInstance = null;
+  let authUser = null;
+  let authTeam = null;
+  let authReady = false;
+  let authMode = 'signin';
+  let authError = '';
+  let authBusy = false;
+  let appUsers = [];
+  let pendingInvites = [];
+  let newInviteEmail = '';
+  let newInviteTeam = 'content';
+  const TEAM_SECTIONS = {
+    admin: ['overview', 'records', 'topin', 'assessments', 'interviews', 'settings'],
+    content: ['overview', 'records', 'topin'],
+    onground: ['overview', 'records', 'assessments'],
+    assessments_ops: ['overview', 'records', 'topin', 'assessments', 'interviews']
+  };
+  const TEAM_LABELS = {
+    admin: 'Admin',
+    content: 'Content Team',
+    onground: 'Onground Team',
+    assessments_ops: 'Assessments Ops Team'
+  };
   let latestRemote = null;
   let activeSection = 'overview';
   let searchQuery = '';
@@ -481,19 +526,23 @@ function boot(seedBatches, seedStudents) {
   const firebaseConfigured = ['apiKey','projectId','appId'].every(isConfigured);
 
   if (window.claude && typeof window.claude.use === 'function') {
-    window.claude.use('artifact').then(a => { artifactAPI = a; });
+    window.claude.use('artifact').then(a => { artifactAPI = a; render(); });
   } else if (firebaseConfigured) {
     initFirebase();
   }
 
   async function initFirebase() {
     try {
-      const appMod = await import('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-app.js');
+      appMod = await import('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-app.js');
       const fsMod = await import('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-firestore.js');
+      const authMod = await import('https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/firebase-auth.js');
       const app = appMod.initializeApp(FIREBASE_CONFIG);
       db = fsMod.getFirestore(app);
       fs = fsMod;
+      authFs = authMod;
+      authInstance = authMod.getAuth(app);
       syncMode = 'firebase';
+      authMod.onAuthStateChanged(authInstance, user => { handleAuthStateChanged(user); });
       const col = fs.collection(db, 'batches');
       fs.onSnapshot(col, snap => {
         const list = snap.docs.map(d => normalizeBatch({ id: d.id, ...d.data() }));
@@ -519,6 +568,255 @@ function boot(seedBatches, seedStudents) {
       syncMode = 'local';
       updateSyncBadge();
     }
+  }
+
+  function authGatingActive() {
+    const isClaudeEnv = !!(window.claude && typeof window.claude.use === 'function');
+    return firebaseConfigured && !isClaudeEnv;
+  }
+
+  function allowedSections() {
+    if (!authGatingActive()) return TEAM_SECTIONS.admin;
+    if (!authTeam) return [];
+    return TEAM_SECTIONS[authTeam] || [];
+  }
+
+  async function handleAuthStateChanged(user) {
+    if (!user) {
+      authUser = null; authTeam = null; appUsers = []; pendingInvites = [];
+      authReady = true;
+      render();
+      return;
+    }
+    authUser = { uid: user.uid, email: user.email };
+    try {
+      const snap = await fs.getDoc(fs.doc(db, 'users', user.uid));
+      authTeam = snap.exists() ? (snap.data().team || null) : null;
+    } catch (err) {
+      console.error('Could not load team assignment', err);
+      authTeam = null;
+    }
+    authReady = true;
+    render();
+    if (authTeam === 'admin') loadAppUsersAndInvites();
+  }
+
+  function authErrorMessage(err) {
+    const code = (err && err.code) || '';
+    if (code.includes('wrong-password') || code.includes('invalid-credential')) return 'Incorrect email or password.';
+    if (code.includes('user-not-found')) return 'No account with that email.';
+    if (code.includes('email-already-in-use')) return 'That email is already registered — try signing in instead.';
+    if (code.includes('weak-password')) return 'Password must be at least 6 characters.';
+    if (code.includes('invalid-email')) return 'Enter a valid email address.';
+    if (code.includes('too-many-requests')) return 'Too many attempts — try again in a bit.';
+    return (err && err.message) ? err.message : 'Something went wrong — try again.';
+  }
+
+  async function signInUser(email, password) {
+    authError = ''; authBusy = true; render();
+    try {
+      await authFs.signInWithEmailAndPassword(authInstance, email, password);
+    } catch (err) {
+      authError = authErrorMessage(err);
+    }
+    authBusy = false; render();
+  }
+
+  async function signUpUser(email, password) {
+    authError = ''; authBusy = true; render();
+    const emailKey = email.trim().toLowerCase();
+    try {
+      let team = null;
+      const inviteSnap = await fs.getDoc(fs.doc(db, 'invites', emailKey));
+      if (inviteSnap.exists()) {
+        team = inviteSnap.data().team || 'content';
+      } else {
+        const bootstrapSnap = await fs.getDoc(fs.doc(db, 'meta', 'bootstrap'));
+        if (!bootstrapSnap.exists() || !bootstrapSnap.data().adminCreated) {
+          team = 'admin';
+        }
+      }
+      if (!team) {
+        authError = 'No invite found for this email — ask an admin to invite you first.';
+        authBusy = false; render();
+        return;
+      }
+      const cred = await authFs.createUserWithEmailAndPassword(authInstance, email, password);
+      await fs.setDoc(fs.doc(db, 'users', cred.user.uid), { email, team, createdAt: new Date().toISOString() });
+      if (inviteSnap.exists()) await fs.deleteDoc(fs.doc(db, 'invites', emailKey));
+      if (team === 'admin') await fs.setDoc(fs.doc(db, 'meta', 'bootstrap'), { adminCreated: true });
+    } catch (err) {
+      authError = authErrorMessage(err);
+    }
+    authBusy = false; render();
+  }
+
+  async function signOutUser() {
+    if (!authFs || !authInstance) return;
+    try { await authFs.signOut(authInstance); } catch (err) {}
+  }
+
+  async function loadAppUsersAndInvites() {
+    if (!fs || !db) return;
+    try {
+      const [usersSnap, invitesSnap] = await Promise.all([
+        fs.getDocs(fs.collection(db, 'users')),
+        fs.getDocs(fs.collection(db, 'invites'))
+      ]);
+      appUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+      pendingInvites = invitesSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+    } catch (err) {
+      console.error('Could not load team access lists', err);
+    }
+    renderAppUsersList();
+  }
+
+  async function createInvite() {
+    if (authTeam !== 'admin') return;
+    const email = newInviteEmail.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { flashToast('Enter a valid email address.', 'error'); return; }
+    const emailKey = email.toLowerCase();
+    try {
+      await fs.setDoc(fs.doc(db, 'invites', emailKey), { email, team: newInviteTeam, invitedBy: authUser.email, createdAt: new Date().toISOString() });
+      newInviteEmail = '';
+      const emailEl = document.getElementById('new-invite-email');
+      if (emailEl) emailEl.value = '';
+      await loadAppUsersAndInvites();
+      flashToast('Invite created — they can now sign up with that email.', 'success');
+    } catch (err) {
+      flashToast('Could not create invite.', 'error');
+    }
+  }
+
+  async function cancelInvite(emailKey) {
+    if (authTeam !== 'admin') return;
+    try {
+      await fs.deleteDoc(fs.doc(db, 'invites', emailKey));
+      await loadAppUsersAndInvites();
+      flashToast('Invite cancelled.', 'success');
+    } catch (err) {
+      flashToast('Could not cancel invite.', 'error');
+    }
+  }
+
+  async function removeAppUser(uid) {
+    if (authTeam !== 'admin') return;
+    if (uid === (authUser && authUser.uid)) { flashToast('You can\'t remove your own access.', 'error'); return; }
+    if (!confirm('Remove this person\'s access? Their login still exists, but they will be blocked from the app until re-invited and given a new team.')) return;
+    try {
+      await fs.deleteDoc(fs.doc(db, 'users', uid));
+      await loadAppUsersAndInvites();
+      flashToast('Access removed.', 'success');
+    } catch (err) {
+      flashToast('Could not remove access.', 'error');
+    }
+  }
+
+  function renderAppUsersList() {
+    const el = document.getElementById('app-users-list');
+    if (!el) return;
+    if (!appUsers.length && !pendingInvites.length) {
+      el.innerHTML = '<p class="section-desc">No teammates invited yet.</p>';
+      return;
+    }
+    const activeRows = appUsers.map(u =>
+      '<div class="invite-row">'
+      + '<div><span class="invite-email">' + esc(u.email) + '</span><div class="invite-team">' + esc(TEAM_LABELS[u.team] || u.team || 'Unknown') + '</div></div>'
+      + '<div style="display:flex;align-items:center;gap:8px;">'
+      + '<span class="invite-status invite-status--active">Active</span>'
+      + (u.id === (authUser && authUser.uid) ? '' : '<button type="button" class="btn--icon-danger" data-action="remove-app-user" data-id="' + u.id + '" aria-label="Remove access" title="Remove access">' + ICON_TRASH + '</button>')
+      + '</div></div>'
+    ).join('');
+    const inviteRows = pendingInvites.map(inv =>
+      '<div class="invite-row">'
+      + '<div><span class="invite-email">' + esc(inv.email) + '</span><div class="invite-team">' + esc(TEAM_LABELS[inv.team] || inv.team || 'Unknown') + '</div></div>'
+      + '<div style="display:flex;align-items:center;gap:8px;">'
+      + '<span class="invite-status invite-status--pending">Pending</span>'
+      + '<button type="button" class="btn--icon-danger" data-action="cancel-invite" data-id="' + inv.id + '" aria-label="Cancel invite" title="Cancel invite">' + ICON_TRASH + '</button>'
+      + '</div></div>'
+    ).join('');
+    el.innerHTML = inviteRows + activeRows;
+  }
+
+  function renderAuthScreen() {
+    const tabsEl = document.getElementById('auth-tabs');
+    if (tabsEl) {
+      tabsEl.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === authMode));
+    }
+    const subtitleEl = document.getElementById('auth-subtitle');
+    const submitBtn = document.getElementById('auth-submit-btn');
+    const hintEl = document.getElementById('auth-hint');
+    if (authUser && !authTeam) {
+      if (subtitleEl) subtitleEl.textContent = 'No team assigned yet';
+      if (hintEl) hintEl.textContent = 'Your account (' + authUser.email + ') isn\'t linked to a team yet. Ask an admin to invite this email, then sign out and sign back in.';
+      const formEl = document.getElementById('auth-form');
+      if (formEl) formEl.hidden = true;
+      if (tabsEl) tabsEl.hidden = true;
+      let signOutBtn = document.getElementById('auth-blocked-signout');
+      if (!signOutBtn) {
+        signOutBtn = document.createElement('button');
+        signOutBtn.type = 'button';
+        signOutBtn.id = 'auth-blocked-signout';
+        signOutBtn.className = 'btn btn--ghost btn--sm';
+        signOutBtn.style.marginTop = '14px';
+        signOutBtn.textContent = 'Sign Out';
+        signOutBtn.dataset.action = 'auth-signout';
+        const card = document.querySelector('.auth-card');
+        if (card) card.appendChild(signOutBtn);
+      }
+      return;
+    }
+    const formEl = document.getElementById('auth-form');
+    if (formEl) formEl.hidden = false;
+    if (tabsEl) tabsEl.hidden = false;
+    const oldSignOut = document.getElementById('auth-blocked-signout');
+    if (oldSignOut) oldSignOut.remove();
+    if (subtitleEl) subtitleEl.textContent = authMode === 'signup' ? 'Create your account' : 'Sign in to continue';
+    if (submitBtn) submitBtn.textContent = authMode === 'signup' ? 'Sign Up' : 'Sign In';
+    if (hintEl) hintEl.textContent = authMode === 'signup' ? 'You need an invite from an admin first — sign up with the email they invited.' : '';
+    const errEl = document.getElementById('auth-error');
+    if (errEl) { errEl.textContent = authError; errEl.hidden = !authError; }
+    const btn = document.getElementById('auth-submit-btn');
+    if (btn) btn.disabled = authBusy;
+  }
+
+  function applyAuthGate() {
+    const authScreen = document.getElementById('auth-screen');
+    const page = document.getElementById('app-page');
+    if (!authGatingActive()) {
+      if (authScreen) authScreen.hidden = true;
+      if (page) page.hidden = false;
+      return true;
+    }
+    if (!authReady) {
+      if (authScreen) authScreen.hidden = true;
+      if (page) page.hidden = true;
+      return false;
+    }
+    if (!authUser || !authTeam) {
+      if (authScreen) authScreen.hidden = false;
+      if (page) page.hidden = true;
+      renderAuthScreen();
+      return false;
+    }
+    if (authScreen) authScreen.hidden = true;
+    if (page) page.hidden = false;
+    return true;
+  }
+
+  function updateAuthHeaderUI() {
+    const badge = document.getElementById('auth-user-badge');
+    const signOutBtn = document.getElementById('auth-signout-btn');
+    if (!authGatingActive() || !authUser || !authTeam) {
+      if (badge) badge.hidden = true;
+      if (signOutBtn) signOutBtn.hidden = true;
+      return;
+    }
+    if (badge) {
+      badge.hidden = false;
+      badge.innerHTML = '<strong>' + esc(authUser.email) + '</strong> &middot; ' + esc(TEAM_LABELS[authTeam] || authTeam);
+    }
+    if (signOutBtn) signOutBtn.hidden = false;
   }
 
   function normalizeList(raw, legacy) {
@@ -669,13 +967,32 @@ function boot(seedBatches, seedStudents) {
 
   const root = document.body;
   root.innerHTML = `
-    <div class="page">
+    <div class="auth-screen" id="auth-screen" hidden>
+      <div class="auth-card">
+        <h1 class="auth-title">Assessments Ops</h1>
+        <p class="auth-subtitle" id="auth-subtitle">Sign in to continue</p>
+        <div class="auth-tabs" id="auth-tabs">
+          <button type="button" class="auth-tab active" data-action="auth-tab" data-mode="signin">Sign In</button>
+          <button type="button" class="auth-tab" data-action="auth-tab" data-mode="signup">Sign Up</button>
+        </div>
+        <form id="auth-form" class="auth-form" data-action-form="auth-submit">
+          <div class="filter-field"><label for="auth-email">Email</label><input type="email" id="auth-email" autocomplete="username" required></div>
+          <div class="filter-field"><label for="auth-password">Password</label><input type="password" id="auth-password" autocomplete="current-password" required></div>
+          <p class="auth-error" id="auth-error" hidden></p>
+          <button type="submit" class="btn btn--primary" id="auth-submit-btn">Sign In</button>
+        </form>
+        <p class="auth-hint" id="auth-hint"></p>
+      </div>
+    </div>
+    <div class="page" id="app-page">
       <div id="access-banner" class="access-banner" hidden>You have read-only access to this ledger &mdash; changes here won't be saved.</div>
       <div class="app-header">
         <div>
           <h1 class="app-title">Assessments Ops</h1>
         </div>
         <div class="header-right">
+          <span class="auth-user-badge" id="auth-user-badge" hidden></span>
+          <button type="button" class="btn btn--ghost btn--sm" id="auth-signout-btn" data-action="auth-signout" hidden>Sign Out</button>
           <button type="button" class="btn btn--primary" id="add-batch-btn" data-action="add-batch">Raise Request</button>
         </div>
       </div>
@@ -868,6 +1185,25 @@ function boot(seedBatches, seedStudents) {
                   <button type="button" class="btn btn--primary btn--sm" data-action="add-program-option">Add</button>
                 </div>
               </div>
+            </div>
+            <div class="settings-panel" id="team-management-panel" style="margin-top:20px;" hidden>
+              <h3 class="settings-panel-title">Team Access</h3>
+              <p class="section-desc">Invite teammates by email and set their team. They sign up themselves with that email to set their own password.</p>
+              <div id="app-users-list"></div>
+              <div class="filter-field" style="margin-top:14px;max-width:360px;">
+                <label for="new-invite-email">Invite by email</label>
+                <input type="email" id="new-invite-email" placeholder="name@nxtwave.co.in">
+              </div>
+              <div class="filter-field" style="margin-top:10px;max-width:360px;">
+                <label for="new-invite-team">Team</label>
+                <select id="new-invite-team">
+                  <option value="admin">Admin</option>
+                  <option value="content" selected>Content Team</option>
+                  <option value="assessments_ops">Assessments Ops Team</option>
+                  <option value="onground">Onground Team</option>
+                </select>
+              </div>
+              <button type="button" class="btn btn--primary btn--sm" style="margin-top:10px;" data-action="create-invite">Send Invite</button>
             </div>
           </section>
         </div>
@@ -2366,14 +2702,25 @@ function boot(seedBatches, seedStudents) {
   }
 
   function render() {
+    const allowed = applyAuthGate();
+    updateAuthHeaderUI();
+    if (!allowed) return;
+
+    const sections = allowedSections();
+    if (!sections.includes(activeSection)) activeSection = sections[0] || 'overview';
     document.querySelectorAll('.sidebar-link').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.section === activeSection);
+      const sec = btn.dataset.section;
+      btn.hidden = !sections.includes(sec);
+      btn.classList.toggle('active', sec === activeSection);
     });
     document.querySelectorAll('.content-section').forEach(sec => {
       sec.classList.toggle('active', sec.id === 'section-' + activeSection);
     });
     const addBtn0 = document.getElementById('add-batch-btn');
     if (addBtn0) addBtn0.hidden = activeSection !== 'records';
+
+    const teamPanel = document.getElementById('team-management-panel');
+    if (teamPanel) teamPanel.hidden = authTeam !== 'admin';
 
     renderKPICards();
     renderTimeline();
@@ -2386,6 +2733,7 @@ function boot(seedBatches, seedStudents) {
     updateSyncBadge();
     renderProgressModal();
     if (viewStudentsTargetBatch) renderViewStudentsTable();
+    if (authTeam === 'admin') renderAppUsersList();
   }
 
   function updateErrorDisplays() {
@@ -3203,7 +3551,17 @@ function boot(seedBatches, seedStudents) {
     if (!btn) return;
     const action = btn.dataset.action;
     const id = btn.dataset.id;
-    if (action === 'edit') startEdit(id);
+    if (action === 'auth-tab') {
+      authMode = btn.dataset.mode;
+      authError = '';
+      renderAuthScreen();
+      return;
+    }
+    else if (action === 'auth-signout') { signOutUser(); return; }
+    else if (action === 'create-invite') { createInvite(); return; }
+    else if (action === 'cancel-invite') { cancelInvite(id); return; }
+    else if (action === 'remove-app-user') { removeAppUser(id); return; }
+    else if (action === 'edit') startEdit(id);
     else if (action === 'delete') removeBatch(id);
     else if (action === 'save') save();
     else if (action === 'cancel') cancel();
@@ -3388,8 +3746,27 @@ function boot(seedBatches, seedStudents) {
     }
   });
 
+  root.addEventListener('submit', e => {
+    if (e.target && e.target.id === 'auth-form') {
+      e.preventDefault();
+      if (authBusy) return;
+      const emailEl = document.getElementById('auth-email');
+      const passwordEl = document.getElementById('auth-password');
+      const email = emailEl ? emailEl.value.trim() : '';
+      const password = passwordEl ? passwordEl.value : '';
+      if (!email || !password) { authError = 'Enter an email and password.'; renderAuthScreen(); return; }
+      if (authMode === 'signup') signUpUser(email, password);
+      else signInUser(email, password);
+    }
+  });
+
   root.addEventListener('input', e => {
     const t = e.target;
+    if (t.id === 'new-invite-email') { newInviteEmail = t.value; return; }
+    if (t.id === 'auth-email' || t.id === 'auth-password') {
+      if (authError) { authError = ''; const errEl = document.getElementById('auth-error'); if (errEl) errEl.hidden = true; }
+      return;
+    }
     if (t.id === 'syllabus-search') { searchQuery = t.value; renderRecordsTable(); return; }
     if (t.matches('.student-cell-input')) {
       if (!studentDraft) return;
@@ -3434,6 +3811,7 @@ function boot(seedBatches, seedStudents) {
 
   root.addEventListener('change', e => {
     const t = e.target;
+    if (t.id === 'new-invite-team') { newInviteTeam = t.value; return; }
     if (t.id === 'syllabus-filter-program') { syllabusProgramFilter = t.value; renderRecordsTable(); return; }
     if (t.id === 'ov-from') { overviewDateRange.from = t.value; renderKPICards(); return; }
     if (t.id === 'ov-to') { overviewDateRange.to = t.value; renderKPICards(); return; }
