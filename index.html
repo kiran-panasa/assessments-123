@@ -426,7 +426,6 @@ function boot(seedBatches, seedStudents) {
   let latestRemote = null;
   let activeSection = 'overview';
   let searchQuery = '';
-  let dateFilter = { from: '', to: '' };
   let expandedTopics = new Set();
   let importPreview = null;
   let latestRemoteStudents = null;
@@ -713,8 +712,6 @@ function boot(seedBatches, seedStudents) {
             <div class="filter-bar">
               <div class="filter-field"><label for="syllabus-search">Search</label><input type="text" id="syllabus-search" placeholder="Search title, subject, topic&hellip;"></div>
               <div class="filter-field"><label for="syllabus-filter-program">Program</label><select id="syllabus-filter-program"><option value="">All Programs</option></select></div>
-              <div class="filter-field"><label for="syllabus-filter-from">From</label><input type="date" id="syllabus-filter-from"></div>
-              <div class="filter-field"><label for="syllabus-filter-to">To</label><input type="date" id="syllabus-filter-to"></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-syllabus-filter">Clear</button>
               <button type="button" class="btn btn--ghost btn--sm" id="notify-smes-btn" data-action="open-notify" disabled>Notify SMEs</button>
               <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="import-batches-btn" data-action="open-import">Bulk Import</button>
@@ -1443,18 +1440,6 @@ function boot(seedBatches, seedStudents) {
     ).join('');
   }
 
-  function batchMatchesDateRange(b, from, to) {
-    if (!from && !to) return true;
-    const dates = [
-      b.mainStartAt ? b.mainStartAt.split('T')[0] : '',
-      b.mockRequired && b.mockStartAt ? b.mockStartAt.split('T')[0] : '',
-      b.mockInterviewRequired && b.mockInterviewStartAt ? b.mockInterviewStartAt.split('T')[0] : '',
-      b.mainInterviewStartAt ? b.mainInterviewStartAt.split('T')[0] : ''
-    ].filter(Boolean);
-    if (!dates.length) return false;
-    return dates.some(d => (!from || d >= from) && (!to || d <= to));
-  }
-
   function getFilteredBatches() {
     const q = searchQuery.trim().toLowerCase();
     return batches.filter(b => {
@@ -1464,7 +1449,7 @@ function boot(seedBatches, seedStudents) {
         if (!hay.includes(q)) return false;
       }
       if (syllabusProgramFilter && b.program !== syllabusProgramFilter) return false;
-      return batchMatchesDateRange(b, dateFilter.from, dateFilter.to);
+      return true;
     });
   }
 
@@ -2843,7 +2828,6 @@ function boot(seedBatches, seedStudents) {
     if (!b) return;
     activeSection = 'records';
     searchQuery = b.batch;
-    dateFilter = { from: '', to: '' };
     render();
     const searchEl = document.getElementById('syllabus-search'); if (searchEl) searchEl.value = b.batch;
   }
@@ -2996,7 +2980,8 @@ function boot(seedBatches, seedStudents) {
   }
 
   function defaultNotifyMessage(batchNames) {
-    return 'The syllabus has been updated for the following batch(es): ' + batchNames.join(', ') + '. Kindly start the Topin config preparation accordingly.';
+    const list = batchNames.map((n, i) => n + (i === batchNames.length - 1 ? '.' : ',')).join('\n');
+    return 'The syllabus has been updated for the following batch(es):\n' + list + '\nKindly start the Topin config preparation accordingly.';
   }
 
   function openNotifyModal() {
@@ -3005,7 +2990,7 @@ function boot(seedBatches, seedStudents) {
     const overlay = document.getElementById('notify-modal-overlay');
     if (overlay) overlay.hidden = false;
     const listEl = document.getElementById('notify-batch-list');
-    if (listEl) listEl.textContent = names.length + ' batch' + (names.length === 1 ? '' : 'es') + ' selected: ' + names.join(', ');
+    if (listEl) listEl.innerHTML = names.length + ' batch' + (names.length === 1 ? '' : 'es') + ' selected:<br>' + names.map(n => '&bull; ' + esc(n)).join('<br>');
     const recipientsEl = document.getElementById('notify-recipients');
     if (recipientsEl) recipientsEl.value = notifyLastRecipients;
     const messageEl = document.getElementById('notify-message');
@@ -3420,19 +3405,13 @@ function boot(seedBatches, seedStudents) {
       renderTimeline();
     }
     else if (action === 'kpi-nav') {
-      dateFilter = { from: overviewDateRange.from, to: overviewDateRange.to };
       activeSection = 'records';
       render();
-      const fromEl = document.getElementById('syllabus-filter-from'); if (fromEl) fromEl.value = dateFilter.from;
-      const toEl = document.getElementById('syllabus-filter-to'); if (toEl) toEl.value = dateFilter.to;
     }
     else if (action === 'clear-syllabus-filter') {
-      dateFilter = { from: '', to: '' };
       searchQuery = '';
       syllabusProgramFilter = '';
       const searchEl = document.getElementById('syllabus-search'); if (searchEl) searchEl.value = '';
-      const fromEl = document.getElementById('syllabus-filter-from'); if (fromEl) fromEl.value = '';
-      const toEl = document.getElementById('syllabus-filter-to'); if (toEl) toEl.value = '';
       renderRecordsTable();
     }
     else if (action === 'toggle-topics') {
@@ -3581,8 +3560,6 @@ function boot(seedBatches, seedStudents) {
 
   root.addEventListener('change', e => {
     const t = e.target;
-    if (t.id === 'syllabus-filter-from') { dateFilter.from = t.value; renderRecordsTable(); return; }
-    if (t.id === 'syllabus-filter-to') { dateFilter.to = t.value; renderRecordsTable(); return; }
     if (t.id === 'syllabus-filter-program') { syllabusProgramFilter = t.value; renderRecordsTable(); return; }
     if (t.id === 'ov-from') { overviewDateRange.from = t.value; renderKPICards(); return; }
     if (t.id === 'ov-to') { overviewDateRange.to = t.value; renderKPICards(); return; }
