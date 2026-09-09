@@ -134,6 +134,8 @@ td.col-actions{padding-left:8px;padding-right:8px;}
 .sidebar-footer{margin-top:auto;padding-top:10px;border-top:1px solid var(--border);}
 .sidebar-link--signout{color:var(--danger);}
 .sidebar-link--signout:hover{background:var(--danger-soft);}
+.sidebar-group-label{font-family:var(--font-display);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:12px 12px 4px;}
+.nav-icon{flex-shrink:0;opacity:.85;}
 .content{min-width:0;padding:22px 26px;background:var(--surface);border-radius:0 14px 14px 0;border:1px solid var(--border);}
 .content-section{display:none;}
 .content-section.active{display:block;}
@@ -142,11 +144,12 @@ td.col-actions{padding-left:8px;padding-right:8px;}
 @media (max-width: 1100px){ .cards-grid--5{grid-template-columns:repeat(3,1fr);} }
 @media (max-width: 640px){ .cards-grid--5{grid-template-columns:repeat(2,1fr);} }
 @media (max-width: 420px){ .cards-grid--5{grid-template-columns:1fr;} }
-.kpi-card{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;}
-button.kpi-card{all:unset;box-sizing:border-box;display:block;width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;cursor:pointer;transition:border-color .15s ease;}
-button.kpi-card:hover{border-color:var(--accent);}
-button.kpi-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-.kpi-value{font-family:var(--font-mono);font-size:28px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.1;}
+.kpi-card{background:var(--surface-2);border:1px solid var(--border);border-left:4px solid var(--kpi-accent,var(--accent));border-radius:12px;padding:16px 18px;}
+button.kpi-card{all:unset;box-sizing:border-box;display:block;width:100%;background:var(--surface-2);border:1px solid var(--border);border-left:4px solid var(--kpi-accent,var(--accent));border-radius:12px;padding:16px 18px;cursor:pointer;transition:border-color .15s ease,transform .15s ease;}
+button.kpi-card:hover{border-color:var(--kpi-accent,var(--accent));transform:translateY(-1px);}
+button.kpi-card:hover{border-left-color:var(--kpi-accent,var(--accent));}
+button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));outline-offset:2px;}
+.kpi-value{font-family:var(--font-mono);font-size:28px;font-weight:500;color:var(--kpi-accent,var(--ink));font-variant-numeric:tabular-nums;line-height:1.1;}
 .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:6px;}
 .kpi-sub{font-size:11.5px;color:var(--ink-2);margin-top:5px;}
 .filter-bar-assigned{margin-left:auto;font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--ink);align-self:center;}
@@ -424,6 +427,14 @@ boot(${JSON.stringify(batches)}, ${JSON.stringify(students)});
 
 function boot(seedBatches, seedStudents) {
   const ICON_TRASH = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 4H13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6 4V2.6C6 2.27 6.27 2 6.6 2H9.4C9.73 2 10 2.27 10 2.6V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M4.2 4L4.8 12.6C4.85 13.37 5.48 14 6.26 14H9.74C10.52 14 11.15 13.37 11.2 12.6L11.8 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const ICON_DASHBOARD = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>';
+  const ICON_BOOK = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><path d="M2.5 3.2C2.5 2.8 2.83 2.5 3.23 2.5H7.5V13.5H3.23C2.83 13.5 2.5 13.17 2.5 12.77V3.2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M13.5 3.2C13.5 2.8 13.17 2.5 12.77 2.5H8.5V13.5H12.77C13.17 13.5 13.5 13.17 13.5 12.77V3.2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+  const ICON_LINK = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><path d="M6.5 9.5L9.5 6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M7.2 4.6L8.4 3.4C9.5 2.3 11.3 2.3 12.4 3.4C13.5 4.5 13.5 6.3 12.4 7.4L11.2 8.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8.8 11.4L7.6 12.6C6.5 13.7 4.7 13.7 3.6 12.6C2.5 11.5 2.5 9.7 3.6 8.6L4.8 7.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  const ICON_CHECKLIST = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><rect x="3" y="2.5" width="10" height="11" rx="1.3" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 6.2L6.6 7.3L8.7 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 10.3H10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  const ICON_CHAT = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><path d="M2.5 4.8C2.5 3.8 3.3 3 4.3 3H11.7C12.7 3 13.5 3.8 13.5 4.8V9.2C13.5 10.2 12.7 11 11.7 11H6.2L3.5 13V11H4.3C3.3 11 2.5 10.2 2.5 9.2V4.8Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+  const ICON_GEAR = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3"/><path d="M8 2.5V3.8M8 12.2V13.5M13.5 8H12.2M3.8 8H2.5M11.7 4.3L10.8 5.2M5.2 10.8L4.3 11.7M11.7 11.7L10.8 10.8M5.2 5.2L4.3 4.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  const ICON_TEAM = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><circle cx="6" cy="5.5" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M2.3 13C2.3 10.7 3.9 9.2 6 9.2C8.1 9.2 9.7 10.7 9.7 13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10.5 4.3C11.4 4.5 12 5.3 12 6.2C12 7.1 11.4 7.9 10.5 8.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M11.5 9.4C13 9.7 14 11 14 12.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  const ICON_LOGOUT = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><path d="M6.5 13.5H3.8C3.4 13.5 3 13.1 3 12.7V3.3C3 2.9 3.4 2.5 3.8 2.5H6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 11L13.5 8L10.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.3 8H6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
   // One-time automation setup via a shared link (?serverUrl=...&automationKey=...),
   // so teammates don't have to open Automation Server settings and type anything.
@@ -477,7 +488,7 @@ function boot(seedBatches, seedStudents) {
   let teamStatusTab = 'all';
   let teamSearchQuery = '';
   const TEAM_SECTIONS = {
-    admin: ['overview', 'records', 'topin', 'assessments', 'interviews', 'settings'],
+    admin: ['overview', 'records', 'topin', 'assessments', 'interviews', 'teams', 'settings'],
     content: ['overview', 'records', 'topin'],
     onground: ['overview', 'records', 'assessments'],
     assessments_ops: ['overview', 'records', 'topin', 'assessments', 'interviews']
@@ -1090,20 +1101,23 @@ function boot(seedBatches, seedStudents) {
 
       <div class="shell">
         <nav class="sidebar">
-          <button type="button" class="sidebar-link" data-action="nav" data-section="overview">Overview</button>
-          <button type="button" class="sidebar-link" data-action="nav" data-section="records">Curriculum</button>
-          <button type="button" class="sidebar-link" data-action="nav" data-section="topin">Topin Configs</button>
-          <button type="button" class="sidebar-link" data-action="nav" data-section="assessments">Assessments</button>
-          <button type="button" class="sidebar-link" data-action="nav" data-section="interviews">NxtMock Interviews</button>
-          <button type="button" class="sidebar-link" data-action="nav" data-section="settings">Settings</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="overview">${ICON_DASHBOARD} Dashboard</button>
+          <p class="sidebar-group-label">Workspace</p>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="records">${ICON_BOOK} Curriculum</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="topin">${ICON_LINK} Topin Configs</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="assessments">${ICON_CHECKLIST} Assessments</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="interviews">${ICON_CHAT} NxtMock Interviews</button>
+          <p class="sidebar-group-label" id="sidebar-admin-label">Admin</p>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="teams">${ICON_TEAM} Teams</button>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="settings">${ICON_GEAR} Settings</button>
           <div class="sidebar-footer">
-            <button type="button" class="sidebar-link sidebar-link--signout" id="auth-signout-btn" data-action="auth-signout" hidden>&#8592; Sign Out</button>
+            <button type="button" class="sidebar-link sidebar-link--signout" id="auth-signout-btn" data-action="auth-signout" hidden>${ICON_LOGOUT} Sign Out</button>
           </div>
         </nav>
 
         <div class="content">
           <section class="content-section" id="section-overview">
-            <h2 class="section-heading">Overview</h2>
+            <h2 class="section-heading">Dashboard</h2>
             <div class="filter-bar">
               <div class="filter-field"><label for="ov-from">From</label><input type="date" id="ov-from"></div>
               <div class="filter-field"><label for="ov-to">To</label><input type="date" id="ov-to"></div>
@@ -1280,19 +1294,20 @@ function boot(seedBatches, seedStudents) {
                 </div>
               </div>
             </div>
-            <div class="settings-panel" id="team-management-panel" style="margin-top:20px;max-width:640px;" hidden>
-              <h3 class="settings-panel-title">Team Access</h3>
-              <p class="section-desc">Anyone can register on the Sign In page. New requests land here for you to approve and assign a team.</p>
-              <div class="tab-row">
-                <button type="button" class="tab-btn active" data-action="team-tab" data-tab="all">All</button>
-                <button type="button" class="tab-btn" data-action="team-tab" data-tab="pending">Pending</button>
-                <button type="button" class="tab-btn" data-action="team-tab" data-tab="active">Active</button>
-              </div>
-              <div class="filter-bar" style="padding:0;border:none;background:none;margin-bottom:12px;">
-                <div class="filter-field" style="flex:1;min-width:200px;"><label for="team-search">Search</label><input type="text" id="team-search" placeholder="Search by name, email or team&hellip;"></div>
-              </div>
-              <div id="app-users-list"></div>
+          </section>
+
+          <section class="content-section" id="section-teams">
+            <h2 class="section-heading">Teams</h2>
+            <p class="section-desc" style="margin-top:-8px;">Anyone can register on the Sign In page. New requests land here for you to approve and assign a team.</p>
+            <div class="tab-row">
+              <button type="button" class="tab-btn active" data-action="team-tab" data-tab="all">All</button>
+              <button type="button" class="tab-btn" data-action="team-tab" data-tab="pending">Pending</button>
+              <button type="button" class="tab-btn" data-action="team-tab" data-tab="active">Active</button>
             </div>
+            <div class="filter-bar">
+              <div class="filter-field" style="flex:1;min-width:200px;"><label for="team-search">Search</label><input type="text" id="team-search" placeholder="Search by name, email or team&hellip;"></div>
+            </div>
+            <div id="app-users-list"></div>
           </section>
         </div>
       </div>
@@ -1811,8 +1826,11 @@ function boot(seedBatches, seedStudents) {
     return { batch: batchIds.size, mock: mock, mockInterview: mockInterview, main: main, mainInterview: mainInterview, assigned: mock + mockInterview + main + mainInterview };
   }
 
+  const KPI_ACCENTS = { mock: 'var(--amber)', mockInterview: 'var(--accent)', main: 'var(--blue)', mainInterview: 'var(--rose)' };
+
   function kpiCard(label, value, sub, type) {
-    return '<button type="button" class="kpi-card" data-action="kpi-nav" data-type="'+type+'"><div class="kpi-value">'+value+'</div><div class="kpi-label">'+esc(label)+'</div>'+(sub?'<div class="kpi-sub">'+esc(sub)+'</div>':'')+'</button>';
+    const accent = KPI_ACCENTS[type] || 'var(--accent)';
+    return '<button type="button" class="kpi-card" style="--kpi-accent:'+accent+';" data-action="kpi-nav" data-type="'+type+'"><div class="kpi-value">'+value+'</div><div class="kpi-label">'+esc(label)+'</div>'+(sub?'<div class="kpi-sub">'+esc(sub)+'</div>':'')+'</button>';
   }
 
   function syncOverviewFilterInputs() {
@@ -2796,19 +2814,18 @@ function boot(seedBatches, seedStudents) {
 
     const sections = allowedSections();
     if (!sections.includes(activeSection)) activeSection = sections[0] || 'overview';
-    document.querySelectorAll('.sidebar-link').forEach(btn => {
+    document.querySelectorAll('.sidebar-link[data-section]').forEach(btn => {
       const sec = btn.dataset.section;
       btn.hidden = !sections.includes(sec);
       btn.classList.toggle('active', sec === activeSection);
     });
+    const adminLabel = document.getElementById('sidebar-admin-label');
+    if (adminLabel) adminLabel.hidden = !(sections.includes('teams') || sections.includes('settings'));
     document.querySelectorAll('.content-section').forEach(sec => {
       sec.classList.toggle('active', sec.id === 'section-' + activeSection);
     });
     const addBtn0 = document.getElementById('add-batch-btn');
     if (addBtn0) addBtn0.hidden = activeSection !== 'records';
-
-    const teamPanel = document.getElementById('team-management-panel');
-    if (teamPanel) teamPanel.hidden = authTeam !== 'admin';
 
     renderKPICards();
     renderTimeline();
