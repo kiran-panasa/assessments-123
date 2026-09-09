@@ -493,10 +493,10 @@ function boot(seedBatches, seedStudents) {
   let teamSearchQuery = '';
   let teamEditingId = null;
   const TEAM_SECTIONS = {
-    admin: ['overview', 'records', 'topin', 'assessments', 'interviews', 'teams', 'settings'],
+    admin: ['overview', 'records', 'topin', 'assessments', 'nxtmock-config', 'interviews', 'teams', 'settings'],
     content: ['overview', 'records', 'topin'],
     onground: ['overview', 'records', 'assessments'],
-    assessments_ops: ['overview', 'records', 'topin', 'assessments', 'interviews']
+    assessments_ops: ['overview', 'records', 'topin', 'assessments', 'nxtmock-config', 'interviews']
   };
   const TEAM_LABELS = {
     admin: 'Admin',
@@ -535,6 +535,8 @@ function boot(seedBatches, seedStudents) {
   let configSearchQuery = '';
   let configProgramFilter = '';
   let configStatusTab = 'all';
+  let nxtmockConfigSearchQuery = '';
+  let nxtmockConfigProgramFilter = '';
   let assessStatusTab = 'all';
   let assessSearchQuery = '';
   let assessProgramFilter = '';
@@ -1191,6 +1193,7 @@ function boot(seedBatches, seedStudents) {
           <button type="button" class="sidebar-link" data-action="nav" data-section="topin">${ICON_LINK} Topin Configs</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="assessments">${ICON_CHECKLIST} Assessments</button>
           <p class="sidebar-group-label" id="sidebar-interviews-label">NxtMock Interviews</p>
+          <button type="button" class="sidebar-link" data-action="nav" data-section="nxtmock-config">${ICON_LINK} NxtMock Config</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="interviews">${ICON_CHAT} NxtMock Interviews</button>
           <p class="sidebar-group-label" id="sidebar-admin-label">Admin</p>
           <button type="button" class="sidebar-link" data-action="nav" data-section="teams">${ICON_TEAM} Teams</button>
@@ -1332,6 +1335,32 @@ function boot(seedBatches, seedStudents) {
                   </tr>
                 </thead>
                 <tbody id="assess-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="content-section" id="section-nxtmock-config">
+            <h2 class="section-heading">NxtMock Config</h2>
+            <div class="filter-bar">
+              <div class="filter-field"><label for="nxtmock-config-search">Search</label><input type="text" id="nxtmock-config-search" placeholder="Search title&hellip;"></div>
+              <div class="filter-field"><label for="nxtmock-config-filter-program">Program</label><select id="nxtmock-config-filter-program"><option value="">All Programs</option></select></div>
+              <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="clear-nxtmock-config-filter">Clear</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr class="thead-single">
+                    <th>#</th>
+                    <th class="col-syllabus">Program</th>
+                    <th>Title</th>
+                    <th>Mock Assessment Config</th>
+                    <th>Mock Interview Config</th>
+                    <th>Status</th>
+                    <th>Updated</th>
+                    <th class="col-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="nxtmock-config-tbody"></tbody>
               </table>
             </div>
           </section>
@@ -1843,6 +1872,86 @@ function boot(seedBatches, seedStudents) {
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
       + '<td class="col-actions">' + configActionsCell(b.id, editing) + '</td>'
       + '</tr>';
+  }
+
+  function nxtmockConfigStatus(b) {
+    const required = [];
+    if (b.mockRequired) required.push('mockConfigUrl');
+    if (b.mockInterviewRequired) required.push('mockInterviewConfigUrl');
+    if (!required.length) return 'submitted';
+    const filled = required.filter(f => b[f]);
+    return filled.length === required.length ? 'submitted' : 'pending';
+  }
+
+  async function clearMockConfig(id) {
+    if (!canWrite) return;
+    if (!confirm('Clear the Mock Assessment and Mock Interview config links for this entry? This cannot be undone.')) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const updated = { ...batches[idx], mockConfigUrl: '', mockInterviewConfigUrl: '', updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    if (configEditingId === id) { configEditingId = null; configDraft = null; }
+    render();
+    persistSave(updated);
+    flashToast('Mock config cleared.', 'success');
+  }
+
+  function nxtmockConfigActionsCell(id, editing) {
+    if (!canWrite) return '<span class="muted-cell">Locked</span>';
+    if (editing) {
+      return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save-config">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel-config">Cancel</button></div>';
+    }
+    return '<div class="actions">'
+      + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit-config" data-id="'+id+'">Edit</button>'
+      + '<button type="button" class="btn btn--ghost btn--xs" data-action="view-syllabus" data-id="'+id+'">View Syllabus</button>'
+      + '<button type="button" class="btn--icon-danger" data-action="clear-nxtmock-config" data-id="'+id+'" aria-label="Clear mock config" title="Clear mock config">'+ICON_TRASH+'</button>'
+      + '</div>';
+  }
+
+  function nxtmockConfigRowHTML(b, index) {
+    const editing = configEditingId === b.id;
+    const d = editing ? configDraft : b;
+    const status = nxtmockConfigStatus(b);
+    return '<tr class="'+(editing?'row-editing':'')+'" id="mcrow-'+b.id+'" data-id="'+b.id+'">'
+      + '<td class="mono">' + index + '</td>'
+      + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
+      + '<td class="cell-strong">' + esc(b.batch) + '</td>'
+      + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (b.mockInterviewRequired ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
+      + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
+      + '<td class="col-actions">' + nxtmockConfigActionsCell(b.id, editing) + '</td>'
+      + '</tr>';
+  }
+
+  function populateNxtmockConfigFilterOptions() {
+    const sel = document.getElementById('nxtmock-config-filter-program');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">All Programs</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===nxtmockConfigProgramFilter?' selected':'')+'>'+esc(p)+'</option>').join('');
+  }
+
+  function renderNxtmockConfigsTable() {
+    const tbody = document.getElementById('nxtmock-config-tbody');
+    if (!tbody) return;
+    populateNxtmockConfigFilterOptions();
+    const q = nxtmockConfigSearchQuery.trim().toLowerCase();
+    let filtered = batches.filter(b => {
+      if (q) {
+        const hay = b.batch.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (nxtmockConfigProgramFilter && b.program !== nxtmockConfigProgramFilter) return false;
+      return true;
+    });
+    if (configEditingId && !filtered.some(b => b.id === configEditingId)) {
+      const eb = batches.find(b => b.id === configEditingId);
+      if (eb) filtered = [eb].concat(filtered);
+    }
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map((b, i) => nxtmockConfigRowHTML(b, i + 1)).join('');
   }
 
   function rowHTML(b) {
@@ -2936,7 +3045,7 @@ function boot(seedBatches, seedStudents) {
     const adminLabel = document.getElementById('sidebar-admin-label');
     if (adminLabel) adminLabel.hidden = !(sections.includes('teams') || sections.includes('settings'));
     const interviewsLabel = document.getElementById('sidebar-interviews-label');
-    if (interviewsLabel) interviewsLabel.hidden = !sections.includes('interviews');
+    if (interviewsLabel) interviewsLabel.hidden = !(sections.includes('interviews') || sections.includes('nxtmock-config'));
     document.querySelectorAll('.content-section').forEach(sec => {
       sec.classList.toggle('active', sec.id === 'section-' + activeSection);
     });
@@ -2947,6 +3056,7 @@ function boot(seedBatches, seedStudents) {
     renderTimeline();
     renderRecordsTable();
     renderConfigsTable();
+    renderNxtmockConfigsTable();
     renderAssessmentsTable();
     renderInterviewsTable();
     renderProgramOptionsList();
@@ -3812,6 +3922,7 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'cancel-config') cancelConfigEdit();
     else if (action === 'save-config') saveConfig();
     else if (action === 'clear-config') clearConfig(id);
+    else if (action === 'clear-nxtmock-config') clearMockConfig(id);
     else if (action === 'view-syllabus') viewSyllabus(id);
     else if (action === 'config-tab') {
       configStatusTab = btn.dataset.tab;
@@ -3827,6 +3938,11 @@ function boot(seedBatches, seedStudents) {
       configSearchQuery = ''; configProgramFilter = '';
       const searchEl = document.getElementById('config-search'); if (searchEl) searchEl.value = '';
       renderConfigsTable();
+    }
+    else if (action === 'clear-nxtmock-config-filter') {
+      nxtmockConfigSearchQuery = ''; nxtmockConfigProgramFilter = '';
+      const searchEl = document.getElementById('nxtmock-config-search'); if (searchEl) searchEl.value = '';
+      renderNxtmockConfigsTable();
     }
     else if (action === 'assess-tab') {
       assessStatusTab = btn.dataset.tab;
@@ -4020,6 +4136,7 @@ function boot(seedBatches, seedStudents) {
     }
     if (t.id === 'team-search') { teamSearchQuery = t.value; renderAppUsersList(); return; }
     if (t.id === 'config-search') { configSearchQuery = t.value; renderConfigsTable(); return; }
+    if (t.id === 'nxtmock-config-search') { nxtmockConfigSearchQuery = t.value; renderNxtmockConfigsTable(); return; }
     if (t.id === 'assess-search') { assessSearchQuery = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'interview-search') { interviewSearchQuery = t.value; renderInterviewsTable(); return; }
     if (t.matches('.program-option-input')) {
@@ -4090,6 +4207,7 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     if (t.id === 'config-filter-program') { configProgramFilter = t.value; renderConfigsTable(); return; }
+    if (t.id === 'nxtmock-config-filter-program') { nxtmockConfigProgramFilter = t.value; renderNxtmockConfigsTable(); return; }
     if (t.id === 'assess-filter-program') { assessProgramFilter = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'assess-filter-status') { assessStatusTab = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'interview-filter-program') { interviewProgramFilter = t.value; renderInterviewsTable(); return; }
