@@ -538,6 +538,7 @@ function boot(seedBatches, seedStudents) {
   let configStatusTab = 'all';
   let nxtmockConfigSearchQuery = '';
   let nxtmockConfigProgramFilter = '';
+  let nxtmockConfigInterviewFilter = '';
   let assessStatusTab = 'all';
   let assessSearchQuery = '';
   let assessProgramFilter = '';
@@ -1354,6 +1355,14 @@ function boot(seedBatches, seedStudents) {
             <div class="filter-bar">
               <div class="filter-field"><label for="nxtmock-config-search">Search</label><input type="text" id="nxtmock-config-search" placeholder="Search title&hellip;"></div>
               <div class="filter-field"><label for="nxtmock-config-filter-program">Program</label><select id="nxtmock-config-filter-program"><option value="">All Programs</option></select></div>
+              <div class="filter-field"><label for="nxtmock-config-filter-interview">Interview Needed</label><select id="nxtmock-config-filter-interview">
+                <option value="">All</option>
+                <option value="unset">Not set</option>
+                <option value="none">No interview</option>
+                <option value="main">Main only</option>
+                <option value="mock">Mock only</option>
+                <option value="both">Main &amp; Mock</option>
+              </select></div>
               <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="clear-nxtmock-config-filter">Clear</button>
             </div>
             <div class="table-wrap">
@@ -2003,6 +2012,7 @@ function boot(seedBatches, seedStudents) {
         if (!hay.includes(q)) return false;
       }
       if (nxtmockConfigProgramFilter && b.program !== nxtmockConfigProgramFilter) return false;
+      if (nxtmockConfigInterviewFilter && interviewNeededValue(b) !== nxtmockConfigInterviewFilter) return false;
       return true;
     });
     if (configEditingId && !filtered.some(b => b.id === configEditingId)) {
@@ -4050,8 +4060,9 @@ function boot(seedBatches, seedStudents) {
       renderConfigsTable();
     }
     else if (action === 'clear-nxtmock-config-filter') {
-      nxtmockConfigSearchQuery = ''; nxtmockConfigProgramFilter = '';
+      nxtmockConfigSearchQuery = ''; nxtmockConfigProgramFilter = ''; nxtmockConfigInterviewFilter = '';
       const searchEl = document.getElementById('nxtmock-config-search'); if (searchEl) searchEl.value = '';
+      const interviewEl = document.getElementById('nxtmock-config-filter-interview'); if (interviewEl) interviewEl.value = '';
       renderNxtmockConfigsTable();
     }
     else if (action === 'assess-tab') {
@@ -4326,6 +4337,7 @@ function boot(seedBatches, seedStudents) {
     }
     if (t.id === 'config-filter-program') { configProgramFilter = t.value; renderConfigsTable(); return; }
     if (t.id === 'nxtmock-config-filter-program') { nxtmockConfigProgramFilter = t.value; renderNxtmockConfigsTable(); return; }
+    if (t.id === 'nxtmock-config-filter-interview') { nxtmockConfigInterviewFilter = t.value; renderNxtmockConfigsTable(); return; }
     if (t.id === 'assess-filter-program') { assessProgramFilter = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'assess-filter-status') { assessStatusTab = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'interview-filter-program') { interviewProgramFilter = t.value; renderInterviewsTable(); return; }
