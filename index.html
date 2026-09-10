@@ -543,8 +543,6 @@ function boot(seedBatches, seedStudents) {
   let assessStatusTab = 'all';
   let assessSearchQuery = '';
   let assessProgramFilter = '';
-  let interviewEditingId = null;
-  let interviewDraft = null;
   let interviewSearchQuery = '';
   let interviewProgramFilter = '';
   let interviewStatusTab = 'all';
@@ -1413,8 +1411,8 @@ function boot(seedBatches, seedStudents) {
                     <th class="col-syllabus">Program</th>
                     <th>Title</th>
                     <th>Interview Type</th>
-                    <th>Main Interview Link</th>
-                    <th>Mock Interview Link</th>
+                    <th>Main Interview Config</th>
+                    <th>Mock Interview Config</th>
                     <th>Main Invited</th>
                     <th>Mock Invited</th>
                     <th>Status</th>
@@ -3015,13 +3013,10 @@ function boot(seedBatches, seedStudents) {
     } catch (e) { logProgress('error', e.message); finishProgress(false, 'Network error'); }
   }
 
-  function interviewLinkField(field, value, editing) {
-    if (!editing) {
-      if (!value) return dash();
-      const short = value.length > 30 ? value.slice(0, 27) + '…' : value;
-      return '<a href="'+esc(value)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(value)+'">'+esc(short)+'</a>';
-    }
-    return '<input type="text" class="cell-input interview-cell-input" data-field="'+field+'" value="'+esc(value||'')+'" placeholder="https://…">';
+  function interviewConfigDisplay(value) {
+    if (!value) return dash();
+    const short = value.length > 30 ? value.slice(0, 27) + '…' : value;
+    return '<a href="'+esc(value)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(value)+'">'+esc(short)+'</a>';
   }
 
   function interviewInvitedSelect(b, field) {
@@ -3032,12 +3027,9 @@ function boot(seedBatches, seedStudents) {
       + '</select>';
   }
 
-  function interviewActionsCell(id, editing) {
+  function interviewActionsCell(id) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
-    if (editing) {
-      return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save-interview">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel-interview">Cancel</button></div>';
-    }
-    return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit-interview" data-id="'+id+'">Edit</button>' + viewStudentsButton(id) + '</div>';
+    return '<div class="actions">' + viewStudentsButton(id) + '</div>';
   }
 
   function interviewStatus(b) {
@@ -3077,25 +3069,23 @@ function boot(seedBatches, seedStudents) {
 
   function interviewStatusBadge(b) {
     const s = interviewStatus(b);
-    if (s === 'not-set') return '<span class="badge badge--attention" data-action="edit-interview" data-id="'+b.id+'" style="cursor:pointer;" title="Set this on NxtMock Config">Not set</span>';
+    if (s === 'not-set') return '<button type="button" class="badge badge--attention" data-action="nav" data-section="nxtmock-config" style="cursor:pointer;border:none;font:inherit;" title="Set this on NxtMock Config">Not set</button>';
     if (s === 'not-required') return '<span class="muted-cell">No interview for this batch</span>';
     return '<span class="badge '+(s==='loaded'?'badge--yes':'badge--no')+'">'+(s==='loaded'?'Loaded in Prod':'Ready to Load in Prod')+'</span>';
   }
 
   function interviewRowHTML(b, index) {
-    const editing = interviewEditingId === b.id;
-    const d = editing ? interviewDraft : b;
-    return '<tr class="'+(editing?'row-editing':'')+'" id="irow-'+b.id+'" data-id="'+b.id+'">'
+    return '<tr id="irow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td><span class="badge '+(b.mainInterviewRequired?'badge--yes':'badge--no')+'">Main '+(b.mainInterviewRequired?'✓':'✗')+'</span> <span class="badge '+(b.mockInterviewRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockInterviewRequired?'✓':'✗')+'</span></td>'
-      + '<td>' + (b.mainInterviewRequired ? interviewLinkField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + (b.mockInterviewRequired ? interviewLinkField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (b.mainInterviewRequired ? interviewConfigDisplay(b.mainInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (b.mockInterviewRequired ? interviewConfigDisplay(b.mockInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mainInterviewRequired ? interviewInvitedSelect(b, 'mainInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewInvitedSelect(b, 'mockInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + interviewStatusBadge(b) + '</td>'
-      + '<td class="col-actions">' + interviewActionsCell(b.id, editing) + '</td>'
+      + '<td class="col-actions">' + interviewActionsCell(b.id) + '</td>'
       + '</tr>';
   }
 
@@ -3126,36 +3116,6 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => interviewRowHTML(b, i + 1)).join('');
-  }
-
-  function startInterviewEdit(id) {
-    if (!canWrite) return;
-    const b = batches.find(x => x.id === id);
-    if (!b) return;
-    interviewEditingId = id;
-    interviewDraft = {
-      mainInterviewConfigUrl: b.mainInterviewConfigUrl,
-      mockInterviewConfigUrl: b.mockInterviewConfigUrl
-    };
-    render();
-  }
-
-  function cancelInterviewEdit() {
-    interviewEditingId = null;
-    interviewDraft = null;
-    render();
-  }
-
-  function saveInterview() {
-    const idx = batches.findIndex(b => b.id === interviewEditingId);
-    if (idx === -1) return;
-    const updated = { ...batches[idx], ...interviewDraft, updatedAt: new Date().toISOString() };
-    batches[idx] = updated;
-    interviewEditingId = null;
-    interviewDraft = null;
-    render();
-    persistSave(updated);
-    flashToast('Interview details saved.', 'success');
   }
 
   function toggleInterviewInvited(id, field, value) {
@@ -4140,9 +4100,6 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'invite-assessment') {
       inviteAssessment(id, btn.dataset.type);
     }
-    else if (action === 'edit-interview') startInterviewEdit(id);
-    else if (action === 'cancel-interview') cancelInterviewEdit();
-    else if (action === 'save-interview') saveInterview();
     else if (action === 'interview-tab') {
       interviewStatusTab = btn.dataset.tab;
       renderInterviewsTable();
@@ -4333,11 +4290,6 @@ function boot(seedBatches, seedStudents) {
     if (t.matches('.config-cell-input')) {
       if (!configDraft) return;
       configDraft[t.dataset.field] = t.value;
-      return;
-    }
-    if (t.matches('.interview-cell-input') && t.tagName !== 'SELECT') {
-      if (!interviewDraft) return;
-      interviewDraft[t.dataset.field] = t.value;
       return;
     }
     if (!draft) return;
