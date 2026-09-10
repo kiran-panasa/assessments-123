@@ -544,6 +544,8 @@ function boot(seedBatches, seedStudents) {
   let assessSearchQuery = '';
   let assessProgramFilter = '';
   let interviewSearchQuery = '';
+  let shortlistTargetBatchId = '';
+  let shortlistRows = [];
   let interviewProgramFilter = '';
   let interviewStatusTab = 'all';
   let publishModalTarget = null;
@@ -1092,6 +1094,14 @@ function boot(seedBatches, seedStudents) {
       mockInviteSentAt: b.mockInviteSentAt || '',
       mainInterviewInvited: !!b.mainInterviewInvited,
       mockInterviewInvited: !!b.mockInterviewInvited,
+      interviewInviteMode: b.interviewInviteMode === 'shortlist' ? 'shortlist' : 'all',
+      interviewShortlist: Array.isArray(b.interviewShortlist) ? b.interviewShortlist.map(s => ({
+        id: (s && s.id) || uid(),
+        name: (s && s.name) || '',
+        studentId: (s && s.studentId) || '',
+        mobile: (s && s.mobile) || '',
+        email: (s && s.email) || ''
+      })) : [],
       updatedAt: b.updatedAt || ''
     };
   }
@@ -1415,6 +1425,7 @@ function boot(seedBatches, seedStudents) {
                     <th>Mock Interview Config</th>
                     <th>Main Invited</th>
                     <th>Mock Invited</th>
+                    <th>Invite List</th>
                     <th>Status</th>
                     <th class="col-actions">Actions</th>
                   </tr>
@@ -1573,6 +1584,58 @@ function boot(seedBatches, seedStudents) {
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-view-students">Close</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="shortlist-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="shortlist-modal-title">
+        <div class="modal-header">
+          <h3 id="shortlist-modal-title">Manage Shortlist</h3>
+          <button type="button" class="modal-close" data-action="close-shortlist" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc" id="shortlist-modal-context"></p>
+
+          <p class="modal-subheading">Currently shortlisted</p>
+          <div class="table-wrap" style="max-height:220px;">
+            <table>
+              <thead>
+                <tr class="thead-single">
+                  <th>Name</th>
+                  <th>Student ID</th>
+                  <th>Mobile Number</th>
+                  <th>Email ID</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="shortlist-current-tbody"></tbody>
+            </table>
+          </div>
+
+          <hr class="modal-divider">
+
+          <p class="modal-subheading">Add more</p>
+          <div class="table-wrap" style="max-height:280px;">
+            <table>
+              <thead>
+                <tr class="thead-single">
+                  <th>Name</th>
+                  <th>Student ID</th>
+                  <th>Mobile Number</th>
+                  <th>Email ID</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="shortlist-add-tbody"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+            <button type="button" class="btn btn--ghost btn--sm" data-action="shortlist-add-row">+ Add Row</button>
+            <button type="button" class="btn btn--primary btn--sm" data-action="save-shortlist-rows">Save New Rows</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-shortlist">Close</button>
         </div>
       </div>
     </div>
@@ -3027,9 +3090,19 @@ function boot(seedBatches, seedStudents) {
       + '</select>';
   }
 
-  function interviewActionsCell(id) {
+  function inviteModeSelect(b) {
+    if (!canWrite) return '<span class="badge '+(b.interviewInviteMode==='shortlist'?'badge--yes':'badge--no')+'">'+(b.interviewInviteMode==='shortlist'?'Shortlisted Only':'All Students')+'</span>';
+    return '<select class="cell-input invite-mode-select" data-id="'+b.id+'">'
+      + '<option value="all"'+(b.interviewInviteMode!=='shortlist'?' selected':'')+'>All Students</option>'
+      + '<option value="shortlist"'+(b.interviewInviteMode==='shortlist'?' selected':'')+'>Shortlisted Only</option>'
+      + '</select>';
+  }
+
+  function interviewActionsCell(id, inviteMode) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
-    return '<div class="actions">' + viewStudentsButton(id) + '</div>';
+    const parts = [viewStudentsButton(id)];
+    if (inviteMode === 'shortlist') parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-shortlist" data-id="'+id+'">Manage Shortlist</button>');
+    return '<div class="actions">' + parts.join('') + '</div>';
   }
 
   function interviewStatus(b) {
@@ -3084,8 +3157,9 @@ function boot(seedBatches, seedStudents) {
       + '<td>' + (b.mockInterviewRequired ? interviewConfigDisplay(b.mockInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mainInterviewRequired ? interviewInvitedSelect(b, 'mainInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewInvitedSelect(b, 'mockInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + inviteModeSelect(b) + '</td>'
       + '<td>' + interviewStatusBadge(b) + '</td>'
-      + '<td class="col-actions">' + interviewActionsCell(b.id) + '</td>'
+      + '<td class="col-actions">' + interviewActionsCell(b.id, b.interviewInviteMode) + '</td>'
       + '</tr>';
   }
 
@@ -3112,7 +3186,7 @@ function boot(seedBatches, seedStudents) {
       return true;
     });
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => interviewRowHTML(b, i + 1)).join('');
@@ -3126,6 +3200,115 @@ function boot(seedBatches, seedStudents) {
     batches[idx] = updated;
     renderInterviewsTable();
     persistSave(updated);
+  }
+
+  function toggleInterviewInviteMode(id, value) {
+    if (!canWrite) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const updated = { ...batches[idx], interviewInviteMode: value === 'shortlist' ? 'shortlist' : 'all', updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    renderInterviewsTable();
+    persistSave(updated);
+  }
+
+  function blankShortlistRow() {
+    return { name: '', studentId: '', mobile: '', email: '' };
+  }
+
+  function openShortlistModal(batchId) {
+    if (!canWrite) return;
+    const b = batches.find(x => x.id === batchId);
+    if (!b) return;
+    shortlistTargetBatchId = batchId;
+    shortlistRows = Array.from({ length: 3 }, blankShortlistRow);
+    const titleEl = document.getElementById('shortlist-modal-title');
+    if (titleEl) titleEl.textContent = 'Manage Shortlist — ' + b.batch;
+    const contextEl = document.getElementById('shortlist-modal-context');
+    if (contextEl) contextEl.textContent = 'Only these students will be invited to the NxtMock interview for this Title — separate from the full roster in Curriculum.';
+    const overlay = document.getElementById('shortlist-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    renderShortlistCurrentList();
+    renderShortlistAddRows();
+  }
+
+  function closeShortlistModal() {
+    const overlay = document.getElementById('shortlist-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    shortlistTargetBatchId = '';
+    shortlistRows = [];
+  }
+
+  function renderShortlistCurrentList() {
+    const tbody = document.getElementById('shortlist-current-tbody');
+    if (!tbody) return;
+    const b = batches.find(x => x.id === shortlistTargetBatchId);
+    const list = b ? b.interviewShortlist : [];
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">No one shortlisted yet.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map(s =>
+      '<tr>'
+      + '<td>' + (esc(s.name) || dash()) + '</td>'
+      + '<td>' + (esc(s.studentId) || dash()) + '</td>'
+      + '<td>' + (esc(s.mobile) || dash()) + '</td>'
+      + '<td>' + (esc(s.email) || dash()) + '</td>'
+      + '<td><button type="button" class="btn--icon-danger" data-action="remove-shortlist-entry" data-id="'+s.id+'" aria-label="Remove" title="Remove">'+ICON_TRASH+'</button></td>'
+      + '</tr>'
+    ).join('');
+  }
+
+  function renderShortlistAddRows() {
+    const tbody = document.getElementById('shortlist-add-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = shortlistRows.map((row, i) =>
+      '<tr data-index="'+i+'">'
+      + '<td><input type="text" class="cell-input shortlist-add-input" data-index="'+i+'" data-field="name" value="'+esc(row.name)+'"></td>'
+      + '<td><input type="text" class="cell-input shortlist-add-input" data-index="'+i+'" data-field="studentId" value="'+esc(row.studentId)+'"></td>'
+      + '<td><input type="text" class="cell-input shortlist-add-input" data-index="'+i+'" data-field="mobile" value="'+esc(row.mobile)+'"></td>'
+      + '<td><input type="text" class="cell-input shortlist-add-input" data-index="'+i+'" data-field="email" value="'+esc(row.email)+'"></td>'
+      + '<td><button type="button" class="btn--icon-danger" data-action="shortlist-remove-row" data-index="'+i+'" aria-label="Remove row" title="Remove row">'+ICON_TRASH+'</button></td>'
+      + '</tr>'
+    ).join('');
+  }
+
+  function addShortlistRow() {
+    shortlistRows.push(blankShortlistRow());
+    renderShortlistAddRows();
+  }
+
+  function removeShortlistRow(index) {
+    shortlistRows.splice(index, 1);
+    renderShortlistAddRows();
+  }
+
+  function saveShortlistRows() {
+    if (!canWrite || !shortlistTargetBatchId) return;
+    const usable = shortlistRows.filter(row => row.name.trim() || row.studentId.trim());
+    if (!usable.length) { flashToast('Fill in at least a name or student ID first.', 'error'); return; }
+    const idx = batches.findIndex(b => b.id === shortlistTargetBatchId);
+    if (idx === -1) return;
+    const newEntries = usable.map(row => ({ id: uid(), name: row.name.trim(), studentId: row.studentId.trim(), mobile: row.mobile.trim(), email: row.email.trim() }));
+    const updated = { ...batches[idx], interviewShortlist: batches[idx].interviewShortlist.concat(newEntries), updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    shortlistRows = Array.from({ length: 3 }, blankShortlistRow);
+    render();
+    persistSave(updated);
+    renderShortlistCurrentList();
+    renderShortlistAddRows();
+    flashToast(newEntries.length + (newEntries.length === 1 ? ' student shortlisted.' : ' students shortlisted.'), 'success');
+  }
+
+  function removeShortlistEntry(entryId) {
+    if (!canWrite || !shortlistTargetBatchId) return;
+    const idx = batches.findIndex(b => b.id === shortlistTargetBatchId);
+    if (idx === -1) return;
+    const updated = { ...batches[idx], interviewShortlist: batches[idx].interviewShortlist.filter(s => s.id !== entryId), updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    render();
+    persistSave(updated);
+    renderShortlistCurrentList();
   }
 
   function render() {
@@ -3162,6 +3345,7 @@ function boot(seedBatches, seedStudents) {
     updateSyncBadge();
     renderProgressModal();
     if (viewStudentsTargetBatch) renderViewStudentsTable();
+    if (shortlistTargetBatchId) renderShortlistCurrentList();
     if (authTeam === 'admin') renderAppUsersList();
   }
 
@@ -4053,6 +4237,12 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'open-view-students' || action === 'view-students-for-batch') openViewStudentsModal(id);
     else if (action === 'close-view-students') closeViewStudentsModal();
     else if (action === 'view-students-add-row') addRowInViewStudents();
+    else if (action === 'open-shortlist') openShortlistModal(id);
+    else if (action === 'close-shortlist') closeShortlistModal();
+    else if (action === 'shortlist-add-row') addShortlistRow();
+    else if (action === 'shortlist-remove-row') removeShortlistRow(Number(btn.dataset.index));
+    else if (action === 'save-shortlist-rows') saveShortlistRows();
+    else if (action === 'remove-shortlist-entry') removeShortlistEntry(id);
     else if (action === 'edit-config') startConfigEdit(id);
     else if (action === 'cancel-config') cancelConfigEdit();
     else if (action === 'save-config') saveConfig();
@@ -4278,6 +4468,11 @@ function boot(seedBatches, seedStudents) {
       if (row) row[t.dataset.field] = t.value;
       return;
     }
+    if (t.matches('.shortlist-add-input')) {
+      const row = shortlistRows[Number(t.dataset.index)];
+      if (row) row[t.dataset.field] = t.value;
+      return;
+    }
     if (t.id === 'team-search') { teamSearchQuery = t.value; renderAppUsersList(); return; }
     if (t.id === 'config-search') { configSearchQuery = t.value; renderConfigsTable(); return; }
     if (t.id === 'nxtmock-config-search') { nxtmockConfigSearchQuery = t.value; renderNxtmockConfigsTable(); return; }
@@ -4367,6 +4562,10 @@ function boot(seedBatches, seedStudents) {
     if (t.id === 'interview-filter-status') { interviewStatusTab = t.value; renderInterviewsTable(); return; }
     if (t.matches('.interview-invited-select')) {
       toggleInterviewInvited(t.dataset.id, t.dataset.field, t.value === 'yes');
+      return;
+    }
+    if (t.matches('.invite-mode-select')) {
+      toggleInterviewInviteMode(t.dataset.id, t.value);
       return;
     }
     if (t.matches('.interview-needed-select')) {
