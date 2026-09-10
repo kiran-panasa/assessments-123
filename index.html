@@ -15,7 +15,7 @@
 
 const CSS = `
 :root{
-  --bg:#F5F7F3; --surface:#FFFFFF; --surface-2:#EDF1EA; --border:#D9DFD5; --border-soft:#E8ECE4;
+  --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#EDF1EA; --border:#D9DFD5; --border-soft:#E8ECE4;
   --ink:#171F19; --ink-2:#48544C; --muted:#7C8A7E;
   --accent:#1F6F5C; --accent-ink:#0E3F33; --accent-soft:#DFF0E9;
   --blue:#2B6CB0; --blue-soft:#E3EDF7;
@@ -225,7 +225,14 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .auth-form label{text-transform:uppercase;letter-spacing:.05em;font-size:10.5px;}
 .auth-form input,.auth-form select{border-radius:10px;}
 .auth-error{color:var(--danger);font-size:12px;margin:0;}
+.auth-error.success{color:var(--accent);}
 .auth-hint{color:var(--muted);font-size:11.5px;margin-top:14px;text-align:center;line-height:1.5;}
+.password-field-wrap{position:relative;display:flex;}
+.password-field-wrap input{flex:1;padding-right:38px;}
+.password-toggle-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:none;padding:5px;display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;border-radius:6px;}
+.password-toggle-btn:hover{color:var(--ink);background:var(--surface-2);}
+.auth-forgot-link{align-self:flex-end;border:none;background:none;color:var(--btn-primary-bg);font-size:12px;font-weight:600;cursor:pointer;padding:0;margin-top:-6px;font-family:inherit;}
+.auth-forgot-link:hover{text-decoration:underline;}
 .auth-user-badge{font-size:12px;color:var(--muted);margin-right:4px;}
 .auth-user-badge strong{color:var(--ink);}
 .invite-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
@@ -478,6 +485,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   const ICON_TEAM = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><circle cx="6" cy="5.5" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M2.3 13C2.3 10.7 3.9 9.2 6 9.2C8.1 9.2 9.7 10.7 9.7 13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10.5 4.3C11.4 4.5 12 5.3 12 6.2C12 7.1 11.4 7.9 10.5 8.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M11.5 9.4C13 9.7 14 11 14 12.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
   const ICON_LOGOUT = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><path d="M6.5 13.5H3.8C3.4 13.5 3 13.1 3 12.7V3.3C3 2.9 3.4 2.5 3.8 2.5H6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 11L13.5 8L10.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.3 8H6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
   const ICON_HELP = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M6.1 6.3C6.1 5.1 6.9 4.4 8 4.4C9.1 4.4 9.9 5.1 9.9 6.1C9.9 7.6 8 7.4 8 9.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="11.4" r="0.9" fill="currentColor"/></svg>';
+  const ICON_EYE = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 8C1.5 8 4 3.5 8 3.5C12 3.5 14.5 8 14.5 8C14.5 8 12 12.5 8 12.5C4 12.5 1.5 8 1.5 8Z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.3"/></svg>';
+  const ICON_EYE_OFF = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.2 2.2L13.8 13.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6.6 4C7.05 3.87 7.52 3.8 8 3.8C11.5 3.8 13.8 8 13.8 8C13.5 8.6 13 9.4 12.3 10.1M4.3 5.1C2.6 6.2 1.7 8 1.7 8C1.7 8 4 12.2 8 12.2C8.9 12.2 9.7 12 10.4 11.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.6 8C6.6 8.77 7.23 9.4 8 9.4C8.4 9.4 8.76 9.23 9.02 8.97" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
   // One-time automation setup via a shared link (?serverUrl=...&automationKey=...),
   // so teammates don't have to open Automation Server settings and type anything.
@@ -531,6 +540,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let authMode = 'signin';
   let authError = '';
   let authBusy = false;
+  let forgotPasswordBusy = false;
+  let forgotPasswordMsg = '';
+  let forgotPasswordMsgKind = '';
   let authStatus = null;
   let appUsers = [];
   let teamStatusTab = 'all';
@@ -766,6 +778,53 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   async function signOutUser() {
     if (!authFs || !authInstance) return;
     try { await authFs.signOut(authInstance); } catch (err) {}
+  }
+
+  function openForgotPasswordModal() {
+    forgotPasswordMsg = ''; forgotPasswordMsgKind = ''; forgotPasswordBusy = false;
+    const overlay = document.getElementById('forgot-password-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    const emailEl = document.getElementById('forgot-password-email');
+    if (emailEl) {
+      const prefill = document.getElementById('auth-email');
+      emailEl.value = (prefill && prefill.value) || '';
+    }
+    renderForgotPasswordModal();
+  }
+
+  function closeForgotPasswordModal() {
+    const overlay = document.getElementById('forgot-password-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    forgotPasswordMsg = ''; forgotPasswordMsgKind = ''; forgotPasswordBusy = false;
+  }
+
+  function renderForgotPasswordModal() {
+    const msgEl = document.getElementById('forgot-password-msg');
+    if (msgEl) {
+      msgEl.textContent = forgotPasswordMsg;
+      msgEl.hidden = !forgotPasswordMsg;
+      msgEl.className = 'auth-error' + (forgotPasswordMsgKind === 'success' ? ' success' : '');
+    }
+    const submitBtn = document.getElementById('forgot-password-submit');
+    if (submitBtn) submitBtn.disabled = forgotPasswordBusy;
+  }
+
+  async function submitForgotPassword() {
+    if (!authFs || !authInstance) { forgotPasswordMsg = 'Password reset isn\'t available right now.'; forgotPasswordMsgKind = 'error'; renderForgotPasswordModal(); return; }
+    const emailEl = document.getElementById('forgot-password-email');
+    const email = emailEl ? emailEl.value.trim() : '';
+    if (!email) { forgotPasswordMsg = 'Enter your email first.'; forgotPasswordMsgKind = 'error'; renderForgotPasswordModal(); return; }
+    forgotPasswordBusy = true; forgotPasswordMsg = ''; renderForgotPasswordModal();
+    try {
+      await authFs.sendPasswordResetEmail(authInstance, email);
+      forgotPasswordMsg = 'Reset link sent — check ' + email + ' for a link to set a new password.';
+      forgotPasswordMsgKind = 'success';
+    } catch (err) {
+      forgotPasswordMsg = authErrorMessage(err);
+      forgotPasswordMsgKind = 'error';
+    }
+    forgotPasswordBusy = false;
+    renderForgotPasswordModal();
   }
 
   async function loadAppUsers() {
@@ -1009,6 +1068,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (nameField) nameField.hidden = !isSignup;
     if (teamField) teamField.hidden = !isSignup;
     if (confirmField) confirmField.hidden = !isSignup;
+    const forgotLink = document.getElementById('auth-forgot-link');
+    if (forgotLink) forgotLink.hidden = isSignup;
     if (headingEl) headingEl.textContent = isSignup ? 'Request Access' : 'Sign In';
     if (subtitleEl) subtitleEl.textContent = isSignup ? 'Register to request access. Admin will approve your account.' : 'Access your portal dashboard';
     if (submitBtn) submitBtn.textContent = isSignup ? 'Request Access' : 'Sign In';
@@ -1269,12 +1330,45 @@ function boot(seedBatches, seedStudents, seedTestUids) {
               <option value="onground">Onground Team</option>
             </select>
           </div>
-          <div class="filter-field"><label for="auth-password">Password</label><input type="password" id="auth-password" autocomplete="current-password" placeholder="Min. 6 characters" required></div>
-          <div class="filter-field" id="auth-confirm-field" hidden><label for="auth-confirm-password">Confirm Password</label><input type="password" id="auth-confirm-password" autocomplete="new-password" placeholder="Re-enter password"></div>
+          <div class="filter-field">
+            <label for="auth-password">Password</label>
+            <div class="password-field-wrap">
+              <input type="password" id="auth-password" autocomplete="current-password" placeholder="Min. 6 characters" required>
+              <button type="button" class="password-toggle-btn" data-action="toggle-password-visibility" data-target="auth-password" aria-label="Show password" title="Show password">${ICON_EYE}</button>
+            </div>
+          </div>
+          <div class="filter-field" id="auth-confirm-field" hidden>
+            <label for="auth-confirm-password">Confirm Password</label>
+            <div class="password-field-wrap">
+              <input type="password" id="auth-confirm-password" autocomplete="new-password" placeholder="Re-enter password">
+              <button type="button" class="password-toggle-btn" data-action="toggle-password-visibility" data-target="auth-confirm-password" aria-label="Show password" title="Show password">${ICON_EYE}</button>
+            </div>
+          </div>
+          <button type="button" class="auth-forgot-link" id="auth-forgot-link" data-action="open-forgot-password">Forgot password?</button>
           <button type="submit" class="btn btn--primary" id="auth-submit-btn">Sign In</button>
           <p class="auth-error" id="auth-error" hidden></p>
         </form>
         <p class="auth-hint" id="auth-hint"></p>
+      </div>
+    </div>
+    <div class="modal-overlay" id="forgot-password-modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="forgot-password-modal-title">
+        <div class="modal-header">
+          <h3 id="forgot-password-modal-title">Reset Your Password</h3>
+          <button type="button" class="modal-close" data-action="close-forgot-password" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc">Enter your account email &mdash; we&rsquo;ll send a link there to set a new password.</p>
+          <div class="filter-field">
+            <label for="forgot-password-email">Email Address</label>
+            <input type="email" id="forgot-password-email" placeholder="yourname@nxtwave.co.in" autocomplete="username">
+          </div>
+          <p class="auth-error" id="forgot-password-msg" hidden></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-forgot-password">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" id="forgot-password-submit" data-action="submit-forgot-password">Send Reset Link</button>
+        </div>
       </div>
     </div>
     <div class="page" id="app-page">
@@ -4937,6 +5031,20 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       return;
     }
     else if (action === 'auth-signout') { signOutUser(); return; }
+    else if (action === 'toggle-password-visibility') {
+      const targetEl = document.getElementById(btn.dataset.target);
+      if (targetEl) {
+        const show = targetEl.type === 'password';
+        targetEl.type = show ? 'text' : 'password';
+        btn.innerHTML = show ? ICON_EYE_OFF : ICON_EYE;
+        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        btn.setAttribute('title', show ? 'Hide password' : 'Show password');
+      }
+      return;
+    }
+    else if (action === 'open-forgot-password') { openForgotPasswordModal(); return; }
+    else if (action === 'close-forgot-password') { closeForgotPasswordModal(); return; }
+    else if (action === 'submit-forgot-password') { submitForgotPassword(); return; }
     else if (action === 'approve-user') { approveUser(id); return; }
     else if (action === 'reject-user') { rejectUser(id); return; }
     else if (action === 'remove-app-user') { removeAppUser(id); return; }
