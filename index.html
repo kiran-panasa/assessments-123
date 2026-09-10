@@ -680,6 +680,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return true;
   }
 
+  function canEditAssessments() {
+    if (!canWrite) return false;
+    if (authGatingActive() && authTeam === 'onground') return false;
+    return true;
+  }
+
   async function handleAuthStateChanged(user) {
     if (!user) {
       authUser = null; authTeam = null; authStatus = null; appUsers = [];
@@ -2763,7 +2769,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function assessActionsCell(b) {
-    if (!canWrite) return '<span class="muted-cell">Locked</span>';
+    if (!canEditAssessments()) return '<span class="muted-cell">Locked</span>';
     const status = assessStatus(b);
     const parts = [];
 
@@ -2938,7 +2944,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function openPublishModal(id, type) {
-    if (!canWrite) return;
+    if (!canEditAssessments()) return;
     publishModalTarget = { id, type };
     publishModalConfirmed = false;
     renderPublishModal();
@@ -3395,7 +3401,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   async function publishAssessment(id, type) {
-    if (!canWrite) return;
+    if (!canEditAssessments()) return;
     const idx = batches.findIndex(b => b.id === id);
     if (idx === -1) return;
     const b = batches[idx];
@@ -3448,7 +3454,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   async function inviteAssessment(id, type) {
-    if (!canWrite) return;
+    if (!canEditAssessments()) return;
     const idx = batches.findIndex(b => b.id === id);
     if (idx === -1) return;
     const b = batches[idx];
