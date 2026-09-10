@@ -1587,6 +1587,7 @@ function boot(seedBatches, seedStudents) {
           <button type="button" class="btn btn--ghost btn--sm" style="margin-top:10px;" data-action="view-students-add-row">+ Add Row</button>
         </div>
         <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="download-view-students-uids">Download CSV (UIDs)</button>
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-view-students">Close</button>
         </div>
       </div>
@@ -2334,6 +2335,59 @@ function boot(seedBatches, seedStudents) {
       return;
     }
     tbody.innerHTML = filtered.map(studentRowHTML).join('');
+  }
+
+  function buildViewStudentsUidsCSV() {
+    const list = students.filter(s => s.batch === viewStudentsTargetBatch);
+    const escCsv = v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lines = ['user_id'].concat(list.map(s => escCsv(s.uid)));
+    return lines.join('\r\n');
+  }
+
+  async function downloadViewStudentsUidsCSV() {
+    if (!viewStudentsTargetBatch) return;
+    const list = students.filter(s => s.batch === viewStudentsTargetBatch);
+    if (!list.length) { flashToast('No students to download.', 'error'); return; }
+    const csv = buildViewStudentsUidsCSV();
+    const safeName = viewStudentsTargetBatch.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'students';
+    const filename = safeName + '-user-ids.csv';
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        try {
+          await downloads.save({ filename: filename, data: csv });
+          flashToast('UID list downloaded.', 'success');
+        } catch (err) {
+          const code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rejected_extension' || code === 'extension_not_enabled') {
+            try {
+              await downloads.save({ filename: filename.replace(/\.csv$/, '.txt'), data: csv });
+              flashToast('Downloaded as .txt — rename to .csv.', 'success');
+            } catch (e2) { flashToast('Could not download the file.', 'error'); }
+          } else {
+            flashToast('Could not download the file.', 'error');
+          }
+        }
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      flashToast('Could not download the file.', 'error');
+    }
   }
 
   function populateConfigFilterOptions() {
@@ -4258,6 +4312,7 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'open-view-students' || action === 'view-students-for-batch') openViewStudentsModal(id);
     else if (action === 'close-view-students') closeViewStudentsModal();
     else if (action === 'view-students-add-row') addRowInViewStudents();
+    else if (action === 'download-view-students-uids') downloadViewStudentsUidsCSV();
     else if (action === 'open-shortlist') openShortlistModal(id);
     else if (action === 'close-shortlist') closeShortlistModal();
     else if (action === 'shortlist-add-row') addShortlistRow();
