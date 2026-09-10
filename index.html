@@ -173,6 +173,40 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 @media (max-width:520px){ .admin-register-grid{grid-template-columns:1fr;} }
 .team-edit-select{min-width:150px;}
 .settings-panel-title{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--ink);margin:0 0 4px;}
+
+.help-hero{display:flex;align-items:center;gap:18px;background:linear-gradient(135deg,var(--accent-soft),var(--blue-soft));border:1px solid var(--border);border-radius:18px;padding:26px 28px;margin-bottom:26px;}
+.help-hero-icon{flex-shrink:0;width:54px;height:54px;border-radius:14px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,.08);}
+.help-hero-icon svg{width:28px;height:28px;}
+.help-hero-title{font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--ink);margin:0 0 4px;letter-spacing:-.01em;}
+.help-hero-sub{font-size:13px;color:var(--ink-2);margin:0;max-width:640px;}
+.help-block{margin-bottom:30px;}
+.help-block-heading{display:flex;align-items:center;gap:9px;font-family:var(--font-display);font-weight:600;font-size:16.5px;color:var(--ink);margin:0 0 12px;}
+.help-block-heading .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.help-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:12px;padding:18px 20px;}
+.help-card p{font-size:13px;line-height:1.65;color:var(--ink-2);margin:0 0 10px;}
+.help-card p:last-child{margin-bottom:0;}
+.help-card--blue{border-left-color:var(--blue);}
+.help-card--amber{border-left-color:var(--amber);}
+.help-card--rose{border-left-color:var(--rose);}
+.help-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;}
+.help-step{display:flex;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 18px;align-items:flex-start;}
+.help-step-num{flex-shrink:0;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12.5px;color:#fff;}
+.help-step-body strong{display:block;font-family:var(--font-display);font-size:13.5px;color:var(--ink);margin-bottom:2px;}
+.help-step-body span{font-size:12.5px;color:var(--muted);line-height:1.5;}
+.help-page-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;}
+.help-page-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px;border-top:3px solid var(--accent);}
+.help-page-card--blue{border-top-color:var(--blue);}
+.help-page-card--amber{border-top-color:var(--amber);}
+.help-page-card--rose{border-top-color:var(--rose);}
+.help-page-card--danger{border-top-color:var(--danger);}
+.help-page-card-head{display:flex;align-items:center;gap:9px;margin-bottom:8px;}
+.help-page-card-head .nav-icon{width:16px;height:16px;color:var(--accent-ink);}
+.help-page-card-head strong{font-family:var(--font-display);font-size:13.5px;color:var(--ink);}
+.help-page-card p{font-size:12px;color:var(--ink-2);line-height:1.6;margin:0;}
+.help-tip-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px;}
+.help-tip-list li{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--ink-2);line-height:1.55;}
+.help-tip-list li .tip-emoji{flex-shrink:0;font-size:14px;line-height:1.5;}
+@media (max-width:640px){ .help-hero{flex-direction:column;align-items:flex-start;} }
 .auth-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:500;padding:20px;}
 .auth-screen[hidden]{display:none;}
 .auth-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px;width:380px;max-width:100%;box-shadow:0 12px 32px rgba(0,0,0,.18);}
@@ -443,6 +477,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   const ICON_GEAR = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3"/><path d="M8 2.5V3.8M8 12.2V13.5M13.5 8H12.2M3.8 8H2.5M11.7 4.3L10.8 5.2M5.2 10.8L4.3 11.7M11.7 11.7L10.8 10.8M5.2 5.2L4.3 4.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
   const ICON_TEAM = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><circle cx="6" cy="5.5" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M2.3 13C2.3 10.7 3.9 9.2 6 9.2C8.1 9.2 9.7 10.7 9.7 13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10.5 4.3C11.4 4.5 12 5.3 12 6.2C12 7.1 11.4 7.9 10.5 8.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M11.5 9.4C13 9.7 14 11 14 12.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
   const ICON_LOGOUT = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><path d="M6.5 13.5H3.8C3.4 13.5 3 13.1 3 12.7V3.3C3 2.9 3.4 2.5 3.8 2.5H6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 11L13.5 8L10.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.3 8H6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  const ICON_HELP = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M6.1 6.3C6.1 5.1 6.9 4.4 8 4.4C9.1 4.4 9.9 5.1 9.9 6.1C9.9 7.6 8 7.4 8 9.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="11.4" r="0.9" fill="currentColor"/></svg>';
 
   // One-time automation setup via a shared link (?serverUrl=...&automationKey=...),
   // so teammates don't have to open Automation Server settings and type anything.
@@ -503,10 +538,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let teamSearchQuery = '';
   let teamEditingId = null;
   const TEAM_SECTIONS = {
-    admin: ['overview', 'records', 'topin', 'assessments', 'nxtmock-config', 'interviews', 'teams', 'settings'],
-    content: ['overview', 'records', 'topin', 'nxtmock-config'],
-    onground: ['overview', 'records', 'assessments', 'nxtmock-config', 'interviews'],
-    assessments_ops: ['overview', 'records', 'topin', 'assessments', 'nxtmock-config', 'interviews']
+    admin: ['overview', 'records', 'topin', 'assessments', 'nxtmock-config', 'interviews', 'teams', 'settings', 'help'],
+    content: ['overview', 'records', 'topin', 'nxtmock-config', 'help'],
+    onground: ['overview', 'records', 'assessments', 'nxtmock-config', 'interviews', 'help'],
+    assessments_ops: ['overview', 'records', 'topin', 'assessments', 'nxtmock-config', 'interviews', 'help']
   };
   const TEAM_LABELS = {
     admin: 'Admin',
@@ -1263,6 +1298,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
           <button type="button" class="sidebar-link" data-action="nav" data-section="teams">${ICON_TEAM} Teams</button>
           <button type="button" class="sidebar-link" data-action="nav" data-section="settings">${ICON_GEAR} Settings</button>
           <div class="sidebar-footer">
+            <button type="button" class="sidebar-link" data-action="nav" data-section="help">${ICON_HELP} Help &amp; Guide</button>
             <button type="button" class="sidebar-link sidebar-link--signout" id="auth-signout-btn" data-action="auth-signout" hidden>${ICON_LOGOUT} Sign Out</button>
           </div>
         </nav>
@@ -1585,6 +1621,131 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                 </thead>
                 <tbody id="app-users-tbody"></tbody>
               </table>
+            </div>
+          </section>
+
+          <section class="content-section" id="section-help">
+            <h2 class="section-heading">Help &amp; Guide</h2>
+
+            <div class="help-hero">
+              <div class="help-hero-icon">${ICON_HELP}</div>
+              <div>
+                <h3 class="help-hero-title">Assessments &amp; NxtMock Portal &mdash; User Guide</h3>
+                <p class="help-hero-sub">Everything you need to know to run Topin assessments and NxtMock interviews from this dashboard &mdash; what it does, how the two workflows fit together, and what each page is for.</p>
+              </div>
+            </div>
+
+            <div class="help-block">
+              <h3 class="help-block-heading"><span class="dot" style="background:var(--accent);"></span>What is this app?</h3>
+              <div class="help-card">
+                <p><strong>Assessments &amp; NxtMock Ops</strong> is the internal home for every academic Title (batch/cohort) &mdash; its syllabus, its students, its third-party (Topin) assessment configuration, and its NxtMock interview scheduling.</p>
+                <p>Instead of chasing spreadsheets, config links and WhatsApp threads, everything for a Title lives in one place: what&rsquo;s been set up, what&rsquo;s published, who&rsquo;s been invited, and what still needs attention.</p>
+              </div>
+            </div>
+
+            <div class="help-block">
+              <h3 class="help-block-heading"><span class="dot" style="background:var(--blue);"></span>How it works</h3>
+              <div class="help-card help-card--blue">
+                <p>Everything is organized around a <strong>Title</strong>. Add it once in Curriculum with its Program and syllabus, and it flows through to every other page automatically.</p>
+                <p>Data syncs live across the whole team &mdash; when someone updates a config link or publishes an assessment, everyone sees it instantly, no refresh needed. Colored badges (green/amber/red) tell you the status of anything at a glance, and clicking an amber &ldquo;Not set&rdquo; badge jumps you straight to where you fix it.</p>
+              </div>
+            </div>
+
+            <div class="help-block">
+              <h3 class="help-block-heading"><span class="dot" style="background:var(--accent);"></span>Workflow A &mdash; Topin Assessment</h3>
+              <ol class="help-steps">
+                <li class="help-step">
+                  <span class="help-step-num" style="background:var(--accent);">1</span>
+                  <span class="help-step-body"><strong>Curriculum</strong><span>Add or import the Title with its Program and syllabus (subjects &amp; topics).</span></span>
+                </li>
+                <li class="help-step">
+                  <span class="help-step-num" style="background:var(--accent);">2</span>
+                  <span class="help-step-body"><strong>Topin Configs</strong><span>Paste the Main (and Mock, if required) assessment config URL provided by Topin for that Title.</span></span>
+                </li>
+                <li class="help-step">
+                  <span class="help-step-num" style="background:var(--accent);">3</span>
+                  <span class="help-step-body"><strong>Publishing</strong><span>Once configs are submitted, move the assessment from Ready to Publish &rarr; Published on the Assessments page.</span></span>
+                </li>
+                <li class="help-step">
+                  <span class="help-step-num" style="background:var(--accent);">4</span>
+                  <span class="help-step-body"><strong>Invites</strong><span>Send student invites (Invites Pending &rarr; Invites Sent) once the assessment is live.</span></span>
+                </li>
+                <li class="help-step">
+                  <span class="help-step-num" style="background:var(--accent);">5</span>
+                  <span class="help-step-body"><strong>Students</strong><span>Use View Students to manage the roster for the Title, and download the UID list to hand to the vendor.</span></span>
+                </li>
+              </ol>
+            </div>
+
+            <div class="help-block">
+              <h3 class="help-block-heading"><span class="dot" style="background:var(--rose);"></span>Workflow B &mdash; NxtMock Assessment</h3>
+              <ol class="help-steps">
+                <li class="help-step">
+                  <span class="help-step-num" style="background:var(--rose);">1</span>
+                  <span class="help-step-body"><strong>NxtMock Config</strong><span>Mark whether the Title needs an interview at all &mdash; Main, Mock, Both, or None &mdash; and add the interview config URL(s).</span></span>
+                </li>
+                <li class="help-step">
+                  <span class="help-step-num" style="background:var(--rose);">2</span>
+                  <span class="help-step-body"><strong>Publishing &mdash; Interview Links</strong><span>On NxtMock Interviews, paste the candidate-facing Main/Mock Interview Link. Status flips to &ldquo;Loaded in Prod&rdquo; automatically once the required link(s) are filled in.</span></span>
+                </li>
+                <li class="help-step">
+                  <span class="help-step-num" style="background:var(--rose);">3</span>
+                  <span class="help-step-body"><strong>Invite List</strong><span>Choose All Students, or Shortlisted Only &mdash; then use Manage Shortlist to bulk-add or CSV-upload exactly who should be invited.</span></span>
+                </li>
+                <li class="help-step">
+                  <span class="help-step-num" style="background:var(--rose);">4</span>
+                  <span class="help-step-body"><strong>Students &amp; downloads</strong><span>View Students shows the right list automatically (full roster or shortlist), and UID downloads include any Test UIDs set up in Settings for that Program.</span></span>
+                </li>
+              </ol>
+            </div>
+
+            <div class="help-block">
+              <h3 class="help-block-heading"><span class="dot" style="background:var(--amber);"></span>Page-by-page guide</h3>
+              <div class="help-page-grid">
+                <div class="help-page-card">
+                  <div class="help-page-card-head">${ICON_DASHBOARD}<strong>Dashboard</strong></div>
+                  <p>KPI snapshot of everything in flight, plus a &ldquo;What&rsquo;s next&rdquo; timeline of upcoming exams and interviews by date.</p>
+                </div>
+                <div class="help-page-card help-page-card--blue">
+                  <div class="help-page-card-head">${ICON_BOOK}<strong>Curriculum</strong></div>
+                  <p>Master list of Titles &mdash; Program, syllabus, subjects &amp; topics. Add/edit/import/delete Titles and Notify SMEs when something&rsquo;s due.</p>
+                </div>
+                <div class="help-page-card">
+                  <div class="help-page-card-head">${ICON_LINK}<strong>Topin Configs</strong></div>
+                  <p>Paste the Main/Mock assessment config URLs from Topin for each Title, and track submission status.</p>
+                </div>
+                <div class="help-page-card help-page-card--blue">
+                  <div class="help-page-card-head">${ICON_CHECKLIST}<strong>Assessments</strong></div>
+                  <p>Publish assessments and send student invites, tracked across Ready to Publish, Published, Invites Pending and Invites Sent.</p>
+                </div>
+                <div class="help-page-card help-page-card--rose">
+                  <div class="help-page-card-head">${ICON_LINK}<strong>NxtMock Config</strong></div>
+                  <p>Set whether a Title needs Main/Mock/Both/No interview, add config URLs, and Notify SMEs when setup is pending.</p>
+                </div>
+                <div class="help-page-card help-page-card--rose">
+                  <div class="help-page-card-head">${ICON_CHAT}<strong>NxtMock Interviews</strong></div>
+                  <p>Paste candidate interview links, choose the invite list (All / Shortlisted Only), manage the shortlist, and view or download students.</p>
+                </div>
+                <div class="help-page-card help-page-card--amber">
+                  <div class="help-page-card-head">${ICON_TEAM}<strong>Teams</strong> <span class="muted-cell" style="margin-left:2px;">Admin</span></div>
+                  <p>Register new users, approve pending access requests, and assign teams.</p>
+                </div>
+                <div class="help-page-card help-page-card--amber">
+                  <div class="help-page-card-head">${ICON_GEAR}<strong>Settings</strong> <span class="muted-cell" style="margin-left:2px;">Admin</span></div>
+                  <p>Manage the Program list used across every dropdown, and set per-Program Test UIDs that show up automatically wherever students are viewed or downloaded.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="help-block">
+              <h3 class="help-block-heading"><span class="dot" style="background:var(--accent);"></span>Good to know</h3>
+              <ul class="help-tip-list">
+                <li><span class="tip-emoji">✅</span><span>Green badges mean done/submitted, amber means pending or &ldquo;Not set&rdquo;, red/locked means you don&rsquo;t have edit access on that page.</span></li>
+                <li><span class="tip-emoji">🖱️</span><span>Most fields autosave the moment you click away (blur) &mdash; there&rsquo;s no separate Save button on links, links and toggles.</span></li>
+                <li><span class="tip-emoji">🔄</span><span>Data is live &mdash; if a teammate updates something, you&rsquo;ll see it update in front of you without refreshing.</span></li>
+                <li><span class="tip-emoji">🔒</span><span>Your sidebar only shows the pages your team has access to. Curriculum may show as view-only depending on your team.</span></li>
+                <li><span class="tip-emoji">📩</span><span>Use &ldquo;Notify SMEs&rdquo; on Curriculum or NxtMock Config to message the right people about what&rsquo;s still pending for a Title.</span></li>
+              </ul>
             </div>
           </section>
         </div>
