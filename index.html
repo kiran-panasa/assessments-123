@@ -96,6 +96,7 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 .cell-strong{font-family:var(--font-display);font-weight:600;color:var(--ink);}
 .empty-dash{color:var(--muted);}
 .muted-cell{color:var(--muted);font-size:12px;font-style:italic;}
+.row-test-uid{background:var(--surface-2);}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap;}
 .chips{display:flex;flex-wrap:wrap;gap:4px;max-width:180px;}
 .chip{display:inline-flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--border-soft);color:var(--ink-2);font-size:11.5px;padding:2px 4px 2px 8px;border-radius:999px;white-space:nowrap;}
@@ -390,6 +391,7 @@ document.getElementById('app-style').textContent = CSS;
 const NXTWAVE_LOGO_DATA_URI = 'data:image/webp;base64,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';
 const LS_KEY = 'cohort-ledger:batches:v1';
 const LS_KEY_STUDENTS = 'cohort-ledger:students:v1';
+const LS_KEY_TESTUIDS = 'cohort-ledger:testuids:v1';
 const FIREBASE_SDK_VERSION = '12.18.0';
 const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyA-2dM3Tq7z5qv1tdlyhP0GTGVK2dKn4JU',
@@ -400,7 +402,7 @@ const FIREBASE_CONFIG = {
   appId: '1:23558688515:web:7d019cf5427675331ae336'
 };
 
-function fullDocumentHTML(batches, students) {
+function fullDocumentHTML(batches, students, testUids) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -419,18 +421,19 @@ const CSS = ${JSON.stringify(CSS)};
 document.getElementById('app-style').textContent = CSS;
 const LS_KEY = ${JSON.stringify(LS_KEY)};
 const LS_KEY_STUDENTS = ${JSON.stringify(LS_KEY_STUDENTS)};
+const LS_KEY_TESTUIDS = ${JSON.stringify(LS_KEY_TESTUIDS)};
 const NXTWAVE_LOGO_DATA_URI = ${JSON.stringify(NXTWAVE_LOGO_DATA_URI)};
 const FIREBASE_SDK_VERSION = ${JSON.stringify(FIREBASE_SDK_VERSION)};
 const FIREBASE_CONFIG = ${JSON.stringify(FIREBASE_CONFIG)};
 ${fullDocumentHTML.toString()}
 ${boot.toString()}
-boot(${JSON.stringify(batches)}, ${JSON.stringify(students)});
+boot(${JSON.stringify(batches)}, ${JSON.stringify(students)}, ${JSON.stringify(testUids)});
 <\/script>
 </body>
 </html>`;
 }
 
-function boot(seedBatches, seedStudents) {
+function boot(seedBatches, seedStudents, seedTestUids) {
   const ICON_TRASH = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 4H13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6 4V2.6C6 2.27 6.27 2 6.6 2H9.4C9.73 2 10 2.27 10 2.6V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M4.2 4L4.8 12.6C4.85 13.37 5.48 14 6.26 14H9.74C10.52 14 11.15 13.37 11.2 12.6L11.8 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const ICON_DASHBOARD = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>';
   const ICON_BOOK = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><path d="M2.5 3.2C2.5 2.8 2.83 2.5 3.23 2.5H7.5V13.5H3.23C2.83 13.5 2.5 13.17 2.5 12.77V3.2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M13.5 3.2C13.5 2.8 13.17 2.5 12.77 2.5H8.5V13.5H12.77C13.17 13.5 13.5 13.17 13.5 12.77V3.2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
@@ -469,6 +472,11 @@ function boot(seedBatches, seedStudents) {
   try { const raw2 = localStorage.getItem(LS_KEY_STUDENTS); if (raw2) studentsStored = JSON.parse(raw2); } catch (e) {}
   const studentsBase = Array.isArray(studentsStored) ? studentsStored : seedStudents;
   let students = studentsBase.map(normalizeStudent);
+
+  let testUidsStored = null;
+  try { const raw3 = localStorage.getItem(LS_KEY_TESTUIDS); if (raw3) testUidsStored = JSON.parse(raw3); } catch (e) {}
+  const testUidsBase = Array.isArray(testUidsStored) ? testUidsStored : (seedTestUids || []);
+  let testUids = testUidsBase.map(normalizeTestUid);
 
   let editingId = null;
   let draft = null;
@@ -515,6 +523,7 @@ function boot(seedBatches, seedStudents) {
   let studentDraft = null;
   let studentIsNewRow = false;
   let viewStudentsTargetBatch = null;
+  let viewStudentsTargetProgram = '';
   let selectedBatchIds = new Set();
   let syllabusProgramFilter = '';
   const PROGRAM_OPTIONS_LS_KEY = 'cohort-ledger:program-options:v1';
@@ -601,6 +610,14 @@ function boot(seedBatches, seedStudents) {
         applyRemoteStudents(list);
       }, err => {
         console.error('Firestore students sync error', err);
+      });
+      const testUidsCol = fs.collection(db, 'testUids');
+      fs.onSnapshot(testUidsCol, snap => {
+        const list = snap.docs.map(d => normalizeTestUid({ id: d.id, ...d.data() }));
+        list.sort((a, b) => (a.program || '').localeCompare(b.program) || (a.name || '').localeCompare(b.name));
+        applyRemoteTestUids(list);
+      }, err => {
+        console.error('Firestore test UIDs sync error', err);
       });
       updateSyncBadge();
     } catch (err) {
@@ -1041,6 +1058,15 @@ function boot(seedBatches, seedStudents) {
     };
   }
 
+  function normalizeTestUid(t) {
+    return {
+      id: (t && t.id) || uid(),
+      program: (t && t.program) || '',
+      uid: (t && t.uid) || '',
+      name: (t && t.name) || ''
+    };
+  }
+
   function normalizeBatch(b) {
     const mockRequired = !!b.mockRequired;
     // Interview requirement is a tri-state: true/false once someone has explicitly
@@ -1118,6 +1144,11 @@ function boot(seedBatches, seedStudents) {
   function applyRemoteStudents(list) {
     latestRemoteStudents = list;
     if (studentEditingId === null) { students = list; render(); }
+  }
+
+  function applyRemoteTestUids(list) {
+    testUids = list;
+    render();
   }
 
   function updateSyncBadge() {
@@ -1453,6 +1484,39 @@ function boot(seedBatches, seedStudents) {
                   <input type="text" id="new-program-name" placeholder="e.g. NIAT" style="flex:1;">
                   <button type="button" class="btn btn--primary btn--sm" data-action="add-program-option">Add</button>
                 </div>
+              </div>
+            </div>
+
+            <div class="settings-panel">
+              <h3 class="settings-panel-title">Test UIDs</h3>
+              <p class="section-desc">Set one or more test UIDs per program. They&rsquo;re shown automatically in View Students (and included in every UID download) for any Title under that program &mdash; you don&rsquo;t need to add them per-batch.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr class="thead-single">
+                      <th>Program</th>
+                      <th>Test UID</th>
+                      <th>Name</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="test-uids-list"></tbody>
+                </table>
+              </div>
+              <div class="filter-bar" style="margin-top:14px;">
+                <div class="filter-field">
+                  <label for="new-testuid-program">Program</label>
+                  <select id="new-testuid-program"></select>
+                </div>
+                <div class="filter-field">
+                  <label for="new-testuid-value">Test UID</label>
+                  <input type="text" id="new-testuid-value" placeholder="e.g. TESTUID001">
+                </div>
+                <div class="filter-field">
+                  <label for="new-testuid-name">Name</label>
+                  <input type="text" id="new-testuid-name" placeholder="e.g. Test Account">
+                </div>
+                <button type="button" class="btn btn--primary btn--sm" data-action="add-test-uid">Add</button>
               </div>
             </div>
           </section>
@@ -2339,6 +2403,19 @@ function boot(seedBatches, seedStudents) {
     tbody.innerHTML = filtered.map(rowHTML).join('');
   }
 
+  function testUidRowHTML(t) {
+    return '<tr class="row-test-uid" data-id="'+t.id+'">'
+      + '<td>' + (esc(t.program) || dash()) + '</td>'
+      + '<td>' + esc(viewStudentsTargetBatch || '') + '</td>'
+      + '<td>' + (esc(t.uid) || dash()) + '</td>'
+      + '<td>' + dash() + '</td>'
+      + '<td>' + (esc(t.name) || dash()) + ' <span class="badge badge--attention">Test UID</span></td>'
+      + '<td>' + dash() + '</td>'
+      + '<td>' + dash() + '</td>'
+      + '<td class="muted-cell">From Settings</td>'
+      + '</tr>';
+  }
+
   function renderViewStudentsTable() {
     const tbody = document.getElementById('view-students-tbody');
     if (!tbody || !viewStudentsTargetBatch) return;
@@ -2347,29 +2424,33 @@ function boot(seedBatches, seedStudents) {
       const editingStudent = students.find(s => s.id === studentEditingId);
       if (editingStudent) filtered = [editingStudent].concat(filtered);
     }
+    const testRows = testUidsForProgram(viewStudentsTargetProgram);
     const countEl = document.getElementById('view-students-modal-count');
-    if (countEl) countEl.textContent = filtered.length + (filtered.length === 1 ? ' student' : ' students');
-    if (!filtered.length) {
+    const total = filtered.length + testRows.length;
+    if (countEl) countEl.textContent = total + (total === 1 ? ' student' : ' students') + (testRows.length ? ' (incl. ' + testRows.length + ' test ' + (testRows.length === 1 ? 'UID' : 'UIDs') + ')' : '');
+    if (!filtered.length && !testRows.length) {
       tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No students yet for this Title.</div></td></tr>';
       return;
     }
-    tbody.innerHTML = filtered.map(studentRowHTML).join('');
+    tbody.innerHTML = filtered.map(studentRowHTML).join('') + testRows.map(testUidRowHTML).join('');
   }
 
   function buildViewStudentsUidsCSV() {
     const list = students.filter(s => s.batch === viewStudentsTargetBatch);
+    const testRows = testUidsForProgram(viewStudentsTargetProgram);
     const escCsv = v => {
       const s = String(v == null ? '' : v);
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
-    const lines = ['user_id'].concat(list.map(s => escCsv(s.uid)));
+    const lines = ['user_id'].concat(list.map(s => escCsv(s.uid))).concat(testRows.map(t => escCsv(t.uid)));
     return lines.join('\r\n');
   }
 
   async function downloadViewStudentsUidsCSV() {
     if (!viewStudentsTargetBatch) return;
     const list = students.filter(s => s.batch === viewStudentsTargetBatch);
-    if (!list.length) { flashToast('No students to download.', 'error'); return; }
+    const testRows = testUidsForProgram(viewStudentsTargetProgram);
+    if (!list.length && !testRows.length) { flashToast('No students to download.', 'error'); return; }
     const csv = buildViewStudentsUidsCSV();
     const safeName = viewStudentsTargetBatch.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'students';
     const filename = safeName + '-user-ids.csv';
@@ -2731,6 +2812,75 @@ function boot(seedBatches, seedStudents) {
     saveProgramOptions();
     renderProgramOptionsList();
     flashToast('Program deleted.', 'success');
+  }
+
+  function testUidsForProgram(program) {
+    if (!program) return [];
+    return testUids.filter(t => t.program && t.program.toLowerCase() === program.toLowerCase());
+  }
+
+  function renderTestUidsList() {
+    const tbody = document.getElementById('test-uids-list');
+    if (!tbody) return;
+    if (!testUids.length) {
+      tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state">No test UIDs yet.</div></td></tr>';
+    } else {
+      tbody.innerHTML = testUids.map(t =>
+        '<tr>'
+        + '<td><select class="cell-input testuid-field" data-id="'+t.id+'" data-field="program">'
+          + '<option value="">Select program</option>'
+          + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===t.program?' selected':'')+'>'+esc(p)+'</option>').join('')
+          + (t.program && !programOptions.includes(t.program) ? '<option value="'+esc(t.program)+'" selected>'+esc(t.program)+'</option>' : '')
+        + '</select></td>'
+        + '<td><input type="text" class="cell-input testuid-field" data-id="'+t.id+'" data-field="uid" value="'+esc(t.uid)+'"></td>'
+        + '<td><input type="text" class="cell-input testuid-field" data-id="'+t.id+'" data-field="name" value="'+esc(t.name)+'"></td>'
+        + '<td><button type="button" class="btn--icon-danger" data-action="delete-test-uid" data-id="'+t.id+'" aria-label="Delete" title="Delete">'+ICON_TRASH+'</button></td>'
+        + '</tr>'
+      ).join('');
+    }
+    const sel = document.getElementById('new-testuid-program');
+    if (sel) {
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Select program</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===current?' selected':'')+'>'+esc(p)+'</option>').join('');
+    }
+  }
+
+  function addTestUid() {
+    if (!canWrite) return;
+    const programEl = document.getElementById('new-testuid-program');
+    const uidEl = document.getElementById('new-testuid-value');
+    const nameEl = document.getElementById('new-testuid-name');
+    const program = programEl ? programEl.value : '';
+    const uidVal = uidEl ? uidEl.value.trim() : '';
+    const name = nameEl ? nameEl.value.trim() : '';
+    if (!program) { flashToast('Select a program first.', 'error'); return; }
+    if (!uidVal) { flashToast('Enter a test UID first.', 'error'); return; }
+    const entry = normalizeTestUid({ id: uid(), program: program, uid: uidVal, name: name });
+    testUids = testUids.concat(entry);
+    if (uidEl) uidEl.value = '';
+    if (nameEl) nameEl.value = '';
+    render();
+    persistTestUidSave(entry);
+    flashToast('Test UID added.', 'success');
+  }
+
+  function updateTestUidField(id, field, value) {
+    if (!canWrite) return;
+    const idx = testUids.findIndex(t => t.id === id);
+    if (idx === -1) return;
+    const updated = { ...testUids[idx], [field]: field === 'uid' || field === 'name' ? value.trim() : value };
+    testUids[idx] = updated;
+    renderTestUidsList();
+    persistTestUidSave(updated);
+  }
+
+  function deleteTestUid(id) {
+    if (!canWrite) return;
+    if (!confirm('Delete this test UID?')) return;
+    testUids = testUids.filter(t => t.id !== id);
+    render();
+    persistTestUidDelete(id);
+    flashToast('Test UID deleted.', 'success');
   }
 
   function submitPublishModal() {
@@ -3339,12 +3489,24 @@ function boot(seedBatches, seedStudents) {
     shortlistImportPreview = null;
   }
 
+  function shortlistTestUidRowHTML(t) {
+    return '<tr class="row-test-uid" data-id="'+t.id+'">'
+      + '<td>' + (esc(t.uid) || dash()) + '</td>'
+      + '<td>' + (esc(t.name) || dash()) + ' <span class="badge badge--attention">Test UID</span></td>'
+      + '<td>' + dash() + '</td>'
+      + '<td>' + dash() + '</td>'
+      + '<td>' + dash() + '</td>'
+      + '<td class="muted-cell">From Settings</td>'
+      + '</tr>';
+  }
+
   function renderShortlistCurrentList() {
     const tbody = document.getElementById('shortlist-current-tbody');
     if (!tbody) return;
     const b = batches.find(x => x.id === shortlistTargetBatchId);
     const list = b ? b.interviewShortlist : [];
-    if (!list.length) {
+    const testRows = testUidsForProgram(b ? b.program : '');
+    if (!list.length && !testRows.length) {
       tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No one shortlisted yet.</div></td></tr>';
       return;
     }
@@ -3357,7 +3519,7 @@ function boot(seedBatches, seedStudents) {
       + '<td>' + (esc(s.email) || dash()) + '</td>'
       + '<td><button type="button" class="btn--icon-danger" data-action="remove-shortlist-entry" data-id="'+s.id+'" aria-label="Remove" title="Remove">'+ICON_TRASH+'</button></td>'
       + '</tr>'
-    ).join('');
+    ).join('') + testRows.map(shortlistTestUidRowHTML).join('');
   }
 
   function renderShortlistAddRows() {
@@ -3585,11 +3747,12 @@ function boot(seedBatches, seedStudents) {
   function buildShortlistUidsCSV() {
     const b = batches.find(x => x.id === shortlistTargetBatchId);
     const list = b ? b.interviewShortlist : [];
+    const testRows = testUidsForProgram(b ? b.program : '');
     const escCsv = v => {
       const s = String(v == null ? '' : v);
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
-    const lines = ['user_id'].concat(list.map(s => escCsv(s.uid)));
+    const lines = ['user_id'].concat(list.map(s => escCsv(s.uid))).concat(testRows.map(t => escCsv(t.uid)));
     return lines.join('\r\n');
   }
 
@@ -3597,7 +3760,8 @@ function boot(seedBatches, seedStudents) {
     if (!shortlistTargetBatchId) return;
     const b = batches.find(x => x.id === shortlistTargetBatchId);
     const list = b ? b.interviewShortlist : [];
-    if (!list.length) { flashToast('No shortlisted students to download.', 'error'); return; }
+    const testRows = testUidsForProgram(b ? b.program : '');
+    if (!list.length && !testRows.length) { flashToast('No shortlisted students to download.', 'error'); return; }
     const csv = buildShortlistUidsCSV();
     const safeName = (b.batch || 'shortlist').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'shortlist';
     const filename = safeName + '-shortlist-user-ids.csv';
@@ -3667,6 +3831,7 @@ function boot(seedBatches, seedStudents) {
     renderAssessmentsTable();
     renderInterviewsTable();
     renderProgramOptionsList();
+    renderTestUidsList();
     updateAccessBanner();
     updateSyncBadge();
     renderProgressModal();
@@ -3703,7 +3868,7 @@ function boot(seedBatches, seedStudents) {
         try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
       });
     } else if (artifactAPI) {
-      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(err => {
+      artifactAPI.publish(fullDocumentHTML(batches, students, testUids)).catch(err => {
         const code = err && err.code;
         if (code === 'not_writer' || code === 'not_granted') {
           canWrite = false; render();
@@ -3728,7 +3893,7 @@ function boot(seedBatches, seedStudents) {
         flashToast('Live sync failed to delete.', 'error');
       });
     } else if (artifactAPI) {
-      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(() => {
+      artifactAPI.publish(fullDocumentHTML(batches, students, testUids)).catch(() => {
         try { localStorage.setItem(LS_KEY, JSON.stringify(batches)); } catch (e) {}
       });
     } else {
@@ -3745,7 +3910,7 @@ function boot(seedBatches, seedStudents) {
         try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
       });
     } else if (artifactAPI) {
-      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(err => {
+      artifactAPI.publish(fullDocumentHTML(batches, students, testUids)).catch(err => {
         const code = err && err.code;
         if (code === 'not_writer' || code === 'not_granted') {
           canWrite = false; render();
@@ -3770,11 +3935,53 @@ function boot(seedBatches, seedStudents) {
         flashToast('Live sync failed to delete.', 'error');
       });
     } else if (artifactAPI) {
-      artifactAPI.publish(fullDocumentHTML(batches, students)).catch(() => {
+      artifactAPI.publish(fullDocumentHTML(batches, students, testUids)).catch(() => {
         try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
       });
     } else {
       try { localStorage.setItem(LS_KEY_STUDENTS, JSON.stringify(students)); } catch (e) {}
+    }
+  }
+
+  function persistTestUidSave(testUidObj) {
+    if (syncMode === 'firebase' && db && fs) {
+      const { id, ...data } = testUidObj;
+      fs.setDoc(fs.doc(db, 'testUids', id), data).catch(err => {
+        console.error('Firestore test UID save failed', err);
+        flashToast('Live sync failed — saved to this browser only.', 'error');
+        try { localStorage.setItem(LS_KEY_TESTUIDS, JSON.stringify(testUids)); } catch (e) {}
+      });
+    } else if (artifactAPI) {
+      artifactAPI.publish(fullDocumentHTML(batches, students, testUids)).catch(err => {
+        const code = err && err.code;
+        if (code === 'not_writer' || code === 'not_granted') {
+          canWrite = false; render();
+          flashToast('This view is read-only — changes are not saved.', 'error');
+        } else if (code === 'conflict') {
+          /* the view is being reloaded to the newer version */
+        } else if (code === 'rate_limited') {
+          flashToast('Saving too fast — please wait a moment and try again.', 'error');
+        } else {
+          try { localStorage.setItem(LS_KEY_TESTUIDS, JSON.stringify(testUids)); } catch (e) {}
+        }
+      });
+    } else {
+      try { localStorage.setItem(LS_KEY_TESTUIDS, JSON.stringify(testUids)); } catch (e) {}
+    }
+  }
+
+  function persistTestUidDelete(id) {
+    if (syncMode === 'firebase' && db && fs) {
+      fs.deleteDoc(fs.doc(db, 'testUids', id)).catch(err => {
+        console.error('Firestore test UID delete failed', err);
+        flashToast('Live sync failed to delete.', 'error');
+      });
+    } else if (artifactAPI) {
+      artifactAPI.publish(fullDocumentHTML(batches, students, testUids)).catch(() => {
+        try { localStorage.setItem(LS_KEY_TESTUIDS, JSON.stringify(testUids)); } catch (e) {}
+      });
+    } else {
+      try { localStorage.setItem(LS_KEY_TESTUIDS, JSON.stringify(testUids)); } catch (e) {}
     }
   }
 
@@ -4081,6 +4288,7 @@ function boot(seedBatches, seedStudents) {
     const b = batches.find(x => x.id === batchId);
     if (!b) return;
     viewStudentsTargetBatch = b.batch;
+    viewStudentsTargetProgram = b.program || '';
     const titleEl = document.getElementById('view-students-modal-title');
     if (titleEl) titleEl.textContent = 'Students — ' + b.batch;
     const overlay = document.getElementById('view-students-modal-overlay');
@@ -4090,6 +4298,7 @@ function boot(seedBatches, seedStudents) {
 
   function closeViewStudentsModal() {
     if (studentIsNewRow) cancelStudent();
+    viewStudentsTargetProgram = '';
     const overlay = document.getElementById('view-students-modal-overlay');
     if (overlay) overlay.hidden = true;
     viewStudentsTargetBatch = null;
@@ -4718,6 +4927,12 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'delete-program-option') {
       deleteProgramOption(Number(btn.dataset.index));
     }
+    else if (action === 'add-test-uid') {
+      addTestUid();
+    }
+    else if (action === 'delete-test-uid') {
+      deleteTestUid(id);
+    }
     else if (action === 'copy-link') {
       const value = btn.dataset.value;
       if (!value) return;
@@ -4903,6 +5118,10 @@ function boot(seedBatches, seedStudents) {
       updateInterviewLink(t.dataset.id, t.dataset.field, t.value);
       return;
     }
+    if (t.matches('.testuid-field')) {
+      updateTestUidField(t.dataset.id, t.dataset.field, t.value);
+      return;
+    }
     if (t.matches('.invite-mode-select')) {
       toggleInterviewInviteMode(t.dataset.id, t.value);
       return;
@@ -4967,7 +5186,9 @@ const SEED_STUDENTS = [
   { id:'s4', batch:'CS24-B05', uid:'UID20260004', studentId:'STU1004', name:'Karthik Iyer', mobile:'9876543213', email:'karthik.iyer@example.com' }
 ];
 
-boot(SEED_BATCHES, SEED_STUDENTS);
+const SEED_TEST_UIDS = [];
+
+boot(SEED_BATCHES, SEED_STUDENTS, SEED_TEST_UIDS);
 </script>
 </body>
 </html>
