@@ -1094,6 +1094,8 @@ function boot(seedBatches, seedStudents) {
       mockInviteSentAt: b.mockInviteSentAt || '',
       mainInterviewInvited: !!b.mainInterviewInvited,
       mockInterviewInvited: !!b.mockInterviewInvited,
+      mainInterviewLink: b.mainInterviewLink || '',
+      mockInterviewLink: b.mockInterviewLink || '',
       interviewInviteMode: b.interviewInviteMode === 'shortlist' ? 'shortlist' : 'all',
       interviewShortlist: Array.isArray(b.interviewShortlist) ? b.interviewShortlist.map(s => ({
         id: (s && s.id) || uid(),
@@ -1422,7 +1424,9 @@ function boot(seedBatches, seedStudents) {
                     <th>Title</th>
                     <th>Interview Type</th>
                     <th>Main Interview Config</th>
+                    <th>Main Interview Link</th>
                     <th>Mock Interview Config</th>
+                    <th>Mock Interview Link</th>
                     <th>Main Invited</th>
                     <th>Mock Invited</th>
                     <th>Invite List</th>
@@ -3082,6 +3086,11 @@ function boot(seedBatches, seedStudents) {
     return '<a href="'+esc(value)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(value)+'">'+esc(short)+'</a>';
   }
 
+  function interviewLinkInput(b, field) {
+    if (!canWrite) return interviewConfigDisplay(b[field]);
+    return '<input type="text" class="cell-input interview-link-input" data-id="'+b.id+'" data-field="'+field+'" value="'+esc(b[field]||'')+'" placeholder="https://…">';
+  }
+
   function interviewInvitedSelect(b, field) {
     if (!canWrite) return '<span class="badge '+(b[field]?'badge--yes':'badge--no')+'">'+(b[field]?'Yes':'No')+'</span>';
     return '<select class="cell-input interview-invited-select" data-id="'+b.id+'" data-field="'+field+'">'
@@ -3108,8 +3117,8 @@ function boot(seedBatches, seedStudents) {
   function interviewStatus(b) {
     if (b.mainInterviewRequired === null || b.mockInterviewRequired === null) return 'not-set';
     if (!b.mainInterviewRequired && !b.mockInterviewRequired) return 'not-required';
-    const mainDone = !b.mainInterviewRequired || !!b.mainInterviewInvited;
-    const mockDone = !b.mockInterviewRequired || !!b.mockInterviewInvited;
+    const mainDone = !b.mainInterviewRequired || !!b.mainInterviewLink;
+    const mockDone = !b.mockInterviewRequired || !!b.mockInterviewLink;
     return (mainDone && mockDone) ? 'loaded' : 'ready';
   }
 
@@ -3154,7 +3163,9 @@ function boot(seedBatches, seedStudents) {
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td><span class="badge '+(b.mainInterviewRequired?'badge--yes':'badge--no')+'">Main '+(b.mainInterviewRequired?'✓':'✗')+'</span> <span class="badge '+(b.mockInterviewRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockInterviewRequired?'✓':'✗')+'</span></td>'
       + '<td>' + (b.mainInterviewRequired ? interviewConfigDisplay(b.mainInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (b.mainInterviewRequired ? interviewLinkInput(b, 'mainInterviewLink') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewConfigDisplay(b.mockInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (b.mockInterviewRequired ? interviewLinkInput(b, 'mockInterviewLink') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mainInterviewRequired ? interviewInvitedSelect(b, 'mainInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewInvitedSelect(b, 'mockInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + inviteModeSelect(b) + '</td>'
@@ -3186,7 +3197,7 @@ function boot(seedBatches, seedStudents) {
       return true;
     });
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => interviewRowHTML(b, i + 1)).join('');
@@ -3197,6 +3208,16 @@ function boot(seedBatches, seedStudents) {
     const idx = batches.findIndex(b => b.id === id);
     if (idx === -1) return;
     const updated = { ...batches[idx], [field]: value, updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    renderInterviewsTable();
+    persistSave(updated);
+  }
+
+  function updateInterviewLink(id, field, value) {
+    if (!canWrite) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const updated = { ...batches[idx], [field]: value.trim(), updatedAt: new Date().toISOString() };
     batches[idx] = updated;
     renderInterviewsTable();
     persistSave(updated);
@@ -4562,6 +4583,10 @@ function boot(seedBatches, seedStudents) {
     if (t.id === 'interview-filter-status') { interviewStatusTab = t.value; renderInterviewsTable(); return; }
     if (t.matches('.interview-invited-select')) {
       toggleInterviewInvited(t.dataset.id, t.dataset.field, t.value === 'yes');
+      return;
+    }
+    if (t.matches('.interview-link-input')) {
+      updateInterviewLink(t.dataset.id, t.dataset.field, t.value);
       return;
     }
     if (t.matches('.invite-mode-select')) {
