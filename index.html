@@ -22,7 +22,7 @@ const CSS = `
   --amber:#966018; --amber-soft:#F7ECD9;
   --rose:#A23B5D; --rose-soft:#F8E4EA;
   --danger:#B3392B; --danger-soft:#FBE4E1;
-  --btn-primary-bg:#1F6F5C; --btn-primary-bg-hover:#175647; --btn-primary-text:#FFFFFF;
+  --btn-primary-bg:#1F6F5C; --btn-primary-bgProgram	Title	Interview Type	Main Interview Link	Mock Interview Link	Main Invited	Mock Invited	Status	Actions-hover:#175647; --btn-primary-text:#FFFFFF;
   --btn-danger-bg:#B3392B; --btn-danger-bg-hover:#8E2D22; --btn-danger-text:#FFFFFF;
   --font-display:'Lexend','Segoe UI',system-ui,sans-serif;
   --font-body:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
@@ -539,6 +539,7 @@ function boot(seedBatches, seedStudents) {
   let nxtmockConfigSearchQuery = '';
   let nxtmockConfigProgramFilter = '';
   let nxtmockConfigInterviewFilter = '';
+  let selectedNxtmockIds = new Set();
   let assessStatusTab = 'all';
   let assessSearchQuery = '';
   let assessProgramFilter = '';
@@ -1364,13 +1365,14 @@ function boot(seedBatches, seedStudents) {
                 <option value="both">Main &amp; Mock</option>
               </select></div>
               <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="clear-nxtmock-config-filter">Clear</button>
+              <button type="button" class="btn btn--ghost btn--sm" id="nxtmock-notify-smes-btn" data-action="open-nxtmock-notify" disabled>Notify SMEs</button>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr class="thead-single">
                     <th>#</th>
-                    <th class="col-syllabus">Program</th>
+                    <th class="col-syllabus"><input type="checkbox" id="nxtmock-config-select-all" aria-label="Select all"> Program</th>
                     <th>Title</th>
                     <th>Interview Needed</th>
                     <th>Main Interview Config</th>
@@ -1984,7 +1986,7 @@ function boot(seedBatches, seedStudents) {
     const mockInterviewOn = editing ? d.mockInterviewRequired : b.mockInterviewRequired;
     return '<tr class="'+(editing?'row-editing':'')+'" id="mcrow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
-      + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
+      + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-nxtmock" data-id="'+b.id+'"'+(selectedNxtmockIds.has(b.id)?' checked':'')+'> ' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td>' + interviewNeededCell(b, d, editing) + '</td>'
       + '<td>' + (mainInterviewOn === null ? '<span class="muted-cell">Not set</span>' : mainInterviewOn ? configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -2001,12 +2003,22 @@ function boot(seedBatches, seedStudents) {
     sel.innerHTML = '<option value="">All Programs</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===nxtmockConfigProgramFilter?' selected':'')+'>'+esc(p)+'</option>').join('');
   }
 
-  function renderNxtmockConfigsTable() {
-    const tbody = document.getElementById('nxtmock-config-tbody');
-    if (!tbody) return;
-    populateNxtmockConfigFilterOptions();
+  function updateNxtmockConfigSelectionUI(filtered) {
+    const btn = document.getElementById('nxtmock-notify-smes-btn');
+    if (btn) {
+      btn.disabled = selectedNxtmockIds.size === 0;
+      btn.textContent = 'Notify SMEs' + (selectedNxtmockIds.size ? ' (' + selectedNxtmockIds.size + ')' : '');
+    }
+    const selectAll = document.getElementById('nxtmock-config-select-all');
+    if (selectAll) {
+      const visibleIds = filtered.map(b => b.id);
+      selectAll.checked = visibleIds.length > 0 && visibleIds.every(id => selectedNxtmockIds.has(id));
+    }
+  }
+
+  function getFilteredNxtmockConfigBatches() {
     const q = nxtmockConfigSearchQuery.trim().toLowerCase();
-    let filtered = batches.filter(b => {
+    return batches.filter(b => {
       if (q) {
         const hay = b.batch.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -2015,6 +2027,14 @@ function boot(seedBatches, seedStudents) {
       if (nxtmockConfigInterviewFilter && interviewNeededValue(b) !== nxtmockConfigInterviewFilter) return false;
       return true;
     });
+  }
+
+  function renderNxtmockConfigsTable() {
+    const tbody = document.getElementById('nxtmock-config-tbody');
+    if (!tbody) return;
+    populateNxtmockConfigFilterOptions();
+    let filtered = getFilteredNxtmockConfigBatches();
+    updateNxtmockConfigSelectionUI(filtered);
     if (configEditingId && !filtered.some(b => b.id === configEditingId)) {
       const eb = batches.find(b => b.id === configEditingId);
       if (eb) filtered = [eb].concat(filtered);
@@ -3758,14 +3778,19 @@ function boot(seedBatches, seedStudents) {
     importPreview = null;
   }
 
-  function defaultNotifyMessage(batchNames) {
-    const list = batchNames.map((n, i) => '**' + n + '**' + (i === batchNames.length - 1 ? '.' : ',')).join('\n');
+  function assessmentNeededLabel(b) {
+    return b.mockRequired ? 'Main & Mock Assessment' : 'Main Assessment only';
+  }
+
+  function defaultNotifyMessage(selected) {
+    const list = selected.map((b, i) => '**' + b.batch + '**' + ' — ' + assessmentNeededLabel(b) + (i === selected.length - 1 ? '.' : ',')).join('\n');
     return 'The syllabus has been updated for the following batch(es):\n' + list + '\nKindly start the Topin config preparation accordingly.';
   }
 
   function openNotifyModal() {
     if (!selectedBatchIds.size) return;
-    const names = batches.filter(b => selectedBatchIds.has(b.id)).map(b => b.batch);
+    const selected = batches.filter(b => selectedBatchIds.has(b.id));
+    const names = selected.map(b => b.batch);
     const overlay = document.getElementById('notify-modal-overlay');
     if (overlay) overlay.hidden = false;
     const listEl = document.getElementById('notify-batch-list');
@@ -3773,7 +3798,37 @@ function boot(seedBatches, seedStudents) {
     const recipientsEl = document.getElementById('notify-recipients');
     if (recipientsEl) recipientsEl.value = notifyLastRecipients;
     const messageEl = document.getElementById('notify-message');
-    if (messageEl) messageEl.value = defaultNotifyMessage(names);
+    if (messageEl) messageEl.value = defaultNotifyMessage(selected);
+    const statusEl = document.getElementById('notify-status');
+    if (statusEl) statusEl.textContent = '';
+  }
+
+  function interviewNeededMessageLabel(b) {
+    const v = interviewNeededValue(b);
+    if (v === 'unset') return 'Interview requirement not set yet — please confirm Main/Mock/Both';
+    if (v === 'both') return 'Main & Mock Interview Config needed';
+    if (v === 'main') return 'Main Interview Config needed';
+    if (v === 'mock') return 'Mock Interview Config needed';
+    return 'No interview required for this batch';
+  }
+
+  function defaultNxtmockNotifyMessage(selected) {
+    const list = selected.map((b, i) => '**' + b.batch + '**' + ' — ' + interviewNeededMessageLabel(b) + (i === selected.length - 1 ? '.' : ',')).join('\n');
+    return 'The following batch(es) need NxtMock interview config prepared:\n' + list + '\nKindly prepare the Topin NxtMock config accordingly.';
+  }
+
+  function openNxtmockNotifyModal() {
+    if (!selectedNxtmockIds.size) return;
+    const selected = batches.filter(b => selectedNxtmockIds.has(b.id));
+    const names = selected.map(b => b.batch);
+    const overlay = document.getElementById('notify-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    const listEl = document.getElementById('notify-batch-list');
+    if (listEl) listEl.innerHTML = names.length + ' batch' + (names.length === 1 ? '' : 'es') + ' selected:<br>' + names.map(n => '&bull; <strong>' + esc(n) + '</strong>').join('<br>');
+    const recipientsEl = document.getElementById('notify-recipients');
+    if (recipientsEl) recipientsEl.value = notifyLastRecipients;
+    const messageEl = document.getElementById('notify-message');
+    if (messageEl) messageEl.value = defaultNxtmockNotifyMessage(selected);
     const statusEl = document.getElementById('notify-status');
     if (statusEl) statusEl.textContent = '';
   }
@@ -4159,6 +4214,9 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'open-notify') {
       openNotifyModal();
     }
+    else if (action === 'open-nxtmock-notify') {
+      openNxtmockNotifyModal();
+    }
     else if (action === 'close-notify') {
       closeNotifyModal();
     }
@@ -4329,6 +4387,19 @@ function boot(seedBatches, seedStudents) {
       if (t.checked) filtered.forEach(b => selectedBatchIds.add(b.id));
       else filtered.forEach(b => selectedBatchIds.delete(b.id));
       renderRecordsTable();
+      return;
+    }
+    if (t.matches('.row-checkbox-nxtmock')) {
+      const id = t.dataset.id;
+      if (t.checked) selectedNxtmockIds.add(id); else selectedNxtmockIds.delete(id);
+      updateNxtmockConfigSelectionUI(getFilteredNxtmockConfigBatches());
+      return;
+    }
+    if (t.id === 'nxtmock-config-select-all') {
+      const filtered = getFilteredNxtmockConfigBatches();
+      if (t.checked) filtered.forEach(b => selectedNxtmockIds.add(b.id));
+      else filtered.forEach(b => selectedNxtmockIds.delete(b.id));
+      renderNxtmockConfigsTable();
       return;
     }
     if (t.matches('.student-cell-input') && t.tagName === 'SELECT') {
