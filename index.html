@@ -546,6 +546,7 @@ function boot(seedBatches, seedStudents) {
   let interviewSearchQuery = '';
   let shortlistTargetBatchId = '';
   let shortlistRows = [];
+  let shortlistImportPreview = null;
   let interviewProgramFilter = '';
   let interviewStatusTab = 'all';
   let publishModalTarget = null;
@@ -1099,6 +1100,7 @@ function boot(seedBatches, seedStudents) {
       interviewInviteMode: b.interviewInviteMode === 'shortlist' ? 'shortlist' : 'all',
       interviewShortlist: Array.isArray(b.interviewShortlist) ? b.interviewShortlist.map(s => ({
         id: (s && s.id) || uid(),
+        uid: (s && s.uid) || '',
         name: (s && s.name) || '',
         studentId: (s && s.studentId) || '',
         mobile: (s && s.mobile) || '',
@@ -1606,6 +1608,7 @@ function boot(seedBatches, seedStudents) {
             <table>
               <thead>
                 <tr class="thead-single">
+                  <th>UID</th>
                   <th>Name</th>
                   <th>Student ID</th>
                   <th>Mobile Number</th>
@@ -1624,6 +1627,7 @@ function boot(seedBatches, seedStudents) {
             <table>
               <thead>
                 <tr class="thead-single">
+                  <th>UID</th>
                   <th>Name</th>
                   <th>Student ID</th>
                   <th>Mobile Number</th>
@@ -1638,9 +1642,24 @@ function boot(seedBatches, seedStudents) {
             <button type="button" class="btn btn--ghost btn--sm" data-action="shortlist-add-row">+ Add Row</button>
             <button type="button" class="btn btn--primary btn--sm" data-action="save-shortlist-rows">Save New Rows</button>
           </div>
+
+          <hr class="modal-divider">
+
+          <p class="modal-subheading">Or upload a CSV</p>
+          <div class="import-file-row">
+            <input type="file" id="shortlist-import-file-input" accept=".csv">
+            <button type="button" class="btn btn--ghost btn--sm" data-action="download-shortlist-sample">Download sample sheet</button>
+          </div>
+          <details class="import-help">
+            <summary>Which columns can I use?</summary>
+            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): UID, Student ID, Name, Mobile Number, Email ID. A row needs at least a Name, Student ID, or UID to be imported.</p>
+          </details>
+          <div id="shortlist-import-preview"><p class="section-desc">Choose a CSV file to preview who it will add to the shortlist.</p></div>
         </div>
         <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="download-shortlist-uids">Download CSV (UIDs)</button>
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-shortlist">Close</button>
+          <button type="button" class="btn btn--primary btn--sm" id="confirm-shortlist-import-btn" data-action="confirm-shortlist-import" disabled>Confirm Import</button>
         </div>
       </div>
     </div>
@@ -3163,8 +3182,9 @@ function boot(seedBatches, seedStudents) {
 
   function interviewActionsCell(id, inviteMode) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
-    const parts = [viewStudentsButton(id)];
-    if (inviteMode === 'shortlist') parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-shortlist" data-id="'+id+'">Manage Shortlist</button>');
+    const parts = inviteMode === 'shortlist'
+      ? ['<button type="button" class="btn btn--ghost btn--xs" data-action="open-shortlist" data-id="'+id+'">View Students</button>']
+      : [viewStudentsButton(id)];
     return '<div class="actions">' + parts.join('') + '</div>';
   }
 
@@ -3288,7 +3308,7 @@ function boot(seedBatches, seedStudents) {
   }
 
   function blankShortlistRow() {
-    return { name: '', studentId: '', mobile: '', email: '' };
+    return { uid: '', name: '', studentId: '', mobile: '', email: '' };
   }
 
   function openShortlistModal(batchId) {
@@ -3297,14 +3317,18 @@ function boot(seedBatches, seedStudents) {
     if (!b) return;
     shortlistTargetBatchId = batchId;
     shortlistRows = Array.from({ length: 3 }, blankShortlistRow);
+    shortlistImportPreview = null;
     const titleEl = document.getElementById('shortlist-modal-title');
     if (titleEl) titleEl.textContent = 'Manage Shortlist — ' + b.batch;
     const contextEl = document.getElementById('shortlist-modal-context');
     if (contextEl) contextEl.textContent = 'Only these students will be invited to the NxtMock interview for this Title — separate from the full roster in Curriculum.';
+    const fileInput = document.getElementById('shortlist-import-file-input');
+    if (fileInput) fileInput.value = '';
     const overlay = document.getElementById('shortlist-modal-overlay');
     if (overlay) overlay.hidden = false;
     renderShortlistCurrentList();
     renderShortlistAddRows();
+    renderShortlistImportPreview();
   }
 
   function closeShortlistModal() {
@@ -3312,6 +3336,7 @@ function boot(seedBatches, seedStudents) {
     if (overlay) overlay.hidden = true;
     shortlistTargetBatchId = '';
     shortlistRows = [];
+    shortlistImportPreview = null;
   }
 
   function renderShortlistCurrentList() {
@@ -3320,11 +3345,12 @@ function boot(seedBatches, seedStudents) {
     const b = batches.find(x => x.id === shortlistTargetBatchId);
     const list = b ? b.interviewShortlist : [];
     if (!list.length) {
-      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">No one shortlisted yet.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No one shortlisted yet.</div></td></tr>';
       return;
     }
     tbody.innerHTML = list.map(s =>
       '<tr>'
+      + '<td>' + (esc(s.uid) || dash()) + '</td>'
       + '<td>' + (esc(s.name) || dash()) + '</td>'
       + '<td>' + (esc(s.studentId) || dash()) + '</td>'
       + '<td>' + (esc(s.mobile) || dash()) + '</td>'
@@ -3339,6 +3365,7 @@ function boot(seedBatches, seedStudents) {
     if (!tbody) return;
     tbody.innerHTML = shortlistRows.map((row, i) =>
       '<tr data-index="'+i+'">'
+      + '<td><input type="text" class="cell-input shortlist-add-input" data-index="'+i+'" data-field="uid" value="'+esc(row.uid)+'"></td>'
       + '<td><input type="text" class="cell-input shortlist-add-input" data-index="'+i+'" data-field="name" value="'+esc(row.name)+'"></td>'
       + '<td><input type="text" class="cell-input shortlist-add-input" data-index="'+i+'" data-field="studentId" value="'+esc(row.studentId)+'"></td>'
       + '<td><input type="text" class="cell-input shortlist-add-input" data-index="'+i+'" data-field="mobile" value="'+esc(row.mobile)+'"></td>'
@@ -3360,11 +3387,11 @@ function boot(seedBatches, seedStudents) {
 
   function saveShortlistRows() {
     if (!canWrite || !shortlistTargetBatchId) return;
-    const usable = shortlistRows.filter(row => row.name.trim() || row.studentId.trim());
-    if (!usable.length) { flashToast('Fill in at least a name or student ID first.', 'error'); return; }
+    const usable = shortlistRows.filter(row => row.name.trim() || row.studentId.trim() || row.uid.trim());
+    if (!usable.length) { flashToast('Fill in at least a name, student ID, or UID first.', 'error'); return; }
     const idx = batches.findIndex(b => b.id === shortlistTargetBatchId);
     if (idx === -1) return;
-    const newEntries = usable.map(row => ({ id: uid(), name: row.name.trim(), studentId: row.studentId.trim(), mobile: row.mobile.trim(), email: row.email.trim() }));
+    const newEntries = usable.map(row => ({ id: uid(), uid: row.uid.trim(), name: row.name.trim(), studentId: row.studentId.trim(), mobile: row.mobile.trim(), email: row.email.trim() }));
     const updated = { ...batches[idx], interviewShortlist: batches[idx].interviewShortlist.concat(newEntries), updatedAt: new Date().toISOString() };
     batches[idx] = updated;
     shortlistRows = Array.from({ length: 3 }, blankShortlistRow);
@@ -3384,6 +3411,230 @@ function boot(seedBatches, seedStudents) {
     render();
     persistSave(updated);
     renderShortlistCurrentList();
+  }
+
+  function handleShortlistImportFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = parseCSV(String(reader.result));
+        if (!parsed.rows.length) { flashToast('No rows found in that file.', 'error'); shortlistImportPreview = null; }
+        else shortlistImportPreview = buildShortlistFromImport(parsed.headers, parsed.rows);
+      } catch (err) {
+        shortlistImportPreview = null;
+        flashToast('Could not read that file — make sure it’s a CSV.', 'error');
+      }
+      renderShortlistImportPreview();
+    };
+    reader.onerror = () => {
+      shortlistImportPreview = null;
+      renderShortlistImportPreview();
+      flashToast('Could not read that file.', 'error');
+    };
+    reader.readAsText(file);
+  }
+
+  const SHORTLIST_IMPORT_FIELD_MAP = {
+    uid: 'uid', userid: 'uid',
+    studentid: 'studentId', studentidno: 'studentId', studentidnumber: 'studentId', id: 'studentId', rollnumber: 'studentId', rollno: 'studentId',
+    name: 'name', studentname: 'name', fullname: 'name',
+    mobilenumber: 'mobile', mobile: 'mobile', mobileno: 'mobile', phone: 'mobile', phonenumber: 'mobile', contactnumber: 'mobile',
+    emailid: 'email', email: 'email', emailaddress: 'email'
+  };
+
+  function mapShortlistImportRow(row, headers) {
+    const out = {};
+    headers.forEach(h => {
+      const key = SHORTLIST_IMPORT_FIELD_MAP[normHeader(h)];
+      if (key && row[h]) out[key] = row[h];
+    });
+    return out;
+  }
+
+  function buildShortlistFromImport(headers, rows) {
+    let skipped = 0;
+    const built = [];
+    const b = batches.find(x => x.id === shortlistTargetBatchId);
+    const existingList = b ? b.interviewShortlist : [];
+    rows.forEach(r => {
+      const mapped = mapShortlistImportRow(r, headers);
+      if (!mapped.name && !mapped.studentId && !mapped.uid) { skipped++; return; }
+      const existing = existingList.find(s =>
+        (mapped.uid && s.uid && s.uid === mapped.uid) ||
+        (mapped.studentId && s.studentId && s.studentId === mapped.studentId)
+      );
+      built.push({
+        id: existing ? existing.id : uid(),
+        uid: mapped.uid || (existing ? existing.uid : '') || '',
+        name: mapped.name || (existing ? existing.name : '') || '',
+        studentId: mapped.studentId || (existing ? existing.studentId : '') || '',
+        mobile: mapped.mobile || (existing ? existing.mobile : '') || '',
+        email: mapped.email || (existing ? existing.email : '') || ''
+      });
+    });
+    return { entries: built, skipped: skipped };
+  }
+
+  function renderShortlistImportPreview() {
+    const el = document.getElementById('shortlist-import-preview');
+    const confirmBtn = document.getElementById('confirm-shortlist-import-btn');
+    if (!el) return;
+    if (!shortlistImportPreview || !shortlistImportPreview.entries.length) {
+      el.innerHTML = '<p class="section-desc">Choose a CSV file to preview who it will add to the shortlist.</p>';
+      if (confirmBtn) confirmBtn.disabled = true;
+      return;
+    }
+    const b = batches.find(x => x.id === shortlistTargetBatchId);
+    const existingIds = new Set((b ? b.interviewShortlist : []).map(s => s.id));
+    const preview = shortlistImportPreview.entries.slice(0, 20);
+    const newCount = shortlistImportPreview.entries.filter(s => !existingIds.has(s.id)).length;
+    const updCount = shortlistImportPreview.entries.length - newCount;
+    el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new entry' : ' new entries') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'entry' : 'entries') + ' updated' : '') + ' (matched by UID or Student ID).</p>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>UID</th><th>Student ID</th><th>Name</th><th>Mobile Number</th><th>Email ID</th></tr></thead><tbody>'
+      + preview.map(s => '<tr>'
+          + '<td><span class="badge '+(existingIds.has(s.id)?'badge--no':'badge--yes')+'">'+(existingIds.has(s.id)?'Update':'New')+'</span></td>'
+          + '<td>' + (esc(s.uid) || dash()) + '</td>'
+          + '<td>' + (esc(s.studentId) || dash()) + '</td>'
+          + '<td>' + (esc(s.name) || dash()) + '</td>'
+          + '<td>' + (esc(s.mobile) || dash()) + '</td>'
+          + '<td>' + (esc(s.email) || dash()) + '</td>'
+        + '</tr>').join('')
+      + '</tbody></table></div>'
+      + '<p class="footnote">Showing ' + preview.length + ' of ' + shortlistImportPreview.entries.length + '.</p>'
+      + (shortlistImportPreview.skipped ? '<p class="import-skip">Skipped ' + shortlistImportPreview.skipped + ' row' + (shortlistImportPreview.skipped === 1 ? '' : 's') + ' with no Name, Student ID, or UID.</p>' : '');
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+
+  function confirmShortlistImport() {
+    if (!canWrite || !shortlistTargetBatchId || !shortlistImportPreview || !shortlistImportPreview.entries.length) return;
+    const idx = batches.findIndex(b => b.id === shortlistTargetBatchId);
+    if (idx === -1) return;
+    const imported = shortlistImportPreview.entries;
+    const existingIds = new Set(batches[idx].interviewShortlist.map(s => s.id));
+    const newOnes = imported.filter(s => !existingIds.has(s.id));
+    const updatedOnes = imported.filter(s => existingIds.has(s.id));
+    const mergedList = newOnes.concat(batches[idx].interviewShortlist.map(ex => updatedOnes.find(u => u.id === ex.id) || ex));
+    const updated = { ...batches[idx], interviewShortlist: mergedList, updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    shortlistImportPreview = null;
+    const fileInput = document.getElementById('shortlist-import-file-input');
+    if (fileInput) fileInput.value = '';
+    render();
+    persistSave(updated);
+    renderShortlistCurrentList();
+    renderShortlistImportPreview();
+    let msg;
+    if (newOnes.length && updatedOnes.length) msg = newOnes.length + ' added, ' + updatedOnes.length + ' updated.';
+    else if (newOnes.length) msg = newOnes.length + (newOnes.length === 1 ? ' student shortlisted.' : ' students shortlisted.');
+    else msg = updatedOnes.length + (updatedOnes.length === 1 ? ' entry updated.' : ' entries updated.');
+    flashToast(msg, 'success');
+  }
+
+  function buildShortlistSampleCSV() {
+    const headers = ['UID', 'Student ID', 'Name', 'Mobile Number', 'Email ID'];
+    const rows = [
+      ['UID20260001', 'STU1001', 'Aditi Sharma', '9876543210', 'aditi.sharma@example.com'],
+      ['UID20260002', 'STU1002', 'Rohan Mehta', '9876543211', 'rohan.mehta@example.com']
+    ];
+    const escCsv = v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lines = [headers.map(escCsv).join(',')].concat(rows.map(r => r.map(escCsv).join(',')));
+    return lines.join('\r\n');
+  }
+
+  async function downloadShortlistSampleCSV() {
+    const sample = buildShortlistSampleCSV();
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        try {
+          await downloads.save({ filename: 'shortlist-import-sample.csv', data: sample });
+          flashToast('Sample sheet downloaded.', 'success');
+        } catch (err) {
+          const code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rejected_extension' || code === 'extension_not_enabled') {
+            try {
+              await downloads.save({ filename: 'shortlist-import-sample.txt', data: sample });
+              flashToast('Downloaded as .txt — rename to .csv before importing.', 'success');
+            } catch (e2) { flashToast('Could not download the sample sheet.', 'error'); }
+          } else {
+            flashToast('Could not download the sample sheet.', 'error');
+          }
+        }
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([sample], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'shortlist-import-sample.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      flashToast('Could not download the sample sheet.', 'error');
+    }
+  }
+
+  function buildShortlistUidsCSV() {
+    const b = batches.find(x => x.id === shortlistTargetBatchId);
+    const list = b ? b.interviewShortlist : [];
+    const escCsv = v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lines = ['user_id'].concat(list.map(s => escCsv(s.uid)));
+    return lines.join('\r\n');
+  }
+
+  async function downloadShortlistUidsCSV() {
+    if (!shortlistTargetBatchId) return;
+    const b = batches.find(x => x.id === shortlistTargetBatchId);
+    const list = b ? b.interviewShortlist : [];
+    if (!list.length) { flashToast('No shortlisted students to download.', 'error'); return; }
+    const csv = buildShortlistUidsCSV();
+    const safeName = (b.batch || 'shortlist').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'shortlist';
+    const filename = safeName + '-shortlist-user-ids.csv';
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        try {
+          await downloads.save({ filename: filename, data: csv });
+          flashToast('UID list downloaded.', 'success');
+        } catch (err) {
+          const code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rejected_extension' || code === 'extension_not_enabled') {
+            try {
+              await downloads.save({ filename: filename.replace(/\.csv$/, '.txt'), data: csv });
+              flashToast('Downloaded as .txt — rename to .csv.', 'success');
+            } catch (e2) { flashToast('Could not download the file.', 'error'); }
+          } else {
+            flashToast('Could not download the file.', 'error');
+          }
+        }
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      flashToast('Could not download the file.', 'error');
+    }
   }
 
   function render() {
@@ -4319,6 +4570,9 @@ function boot(seedBatches, seedStudents) {
     else if (action === 'shortlist-remove-row') removeShortlistRow(Number(btn.dataset.index));
     else if (action === 'save-shortlist-rows') saveShortlistRows();
     else if (action === 'remove-shortlist-entry') removeShortlistEntry(id);
+    else if (action === 'confirm-shortlist-import') confirmShortlistImport();
+    else if (action === 'download-shortlist-sample') downloadShortlistSampleCSV();
+    else if (action === 'download-shortlist-uids') downloadShortlistUidsCSV();
     else if (action === 'edit-config') startConfigEdit(id);
     else if (action === 'cancel-config') cancelConfigEdit();
     else if (action === 'save-config') saveConfig();
@@ -4591,6 +4845,11 @@ function boot(seedBatches, seedStudents) {
     if (t.id === 'add-students-file-input') {
       const file = t.files && t.files[0];
       if (file) handleAddStudentsImportFile(file);
+      return;
+    }
+    if (t.id === 'shortlist-import-file-input') {
+      const file = t.files && t.files[0];
+      if (file) handleShortlistImportFile(file);
       return;
     }
     if (t.id === 'publish-modal-confirm-check') {
