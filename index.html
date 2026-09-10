@@ -2997,7 +2997,7 @@ function boot(seedBatches, seedStudents) {
 
   function interviewLinkField(field, value, editing) {
     if (!editing) {
-      if (!value) return '';
+      if (!value) return dash();
       const short = value.length > 30 ? value.slice(0, 27) + '…' : value;
       return '<a href="'+esc(value)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(value)+'">'+esc(short)+'</a>';
     }
