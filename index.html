@@ -499,6 +499,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let authStatus = null;
   let appUsers = [];
   let teamStatusTab = 'all';
+  let settingsTab = 'programs';
   let teamSearchQuery = '';
   let teamEditingId = null;
   const TEAM_SECTIONS = {
@@ -1474,6 +1475,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
           <section class="content-section" id="section-settings">
             <h2 class="section-heading">Settings</h2>
+            <div class="tab-row">
+              <button type="button" class="tab-btn active" data-action="settings-tab" data-tab="programs">Programs</button>
+              <button type="button" class="tab-btn" data-action="settings-tab" data-tab="testuids">Test UIDs</button>
+            </div>
+
+            <div class="settings-tab-panel" id="settings-tab-programs">
             <div class="settings-panel">
               <h3 class="settings-panel-title">Programs</h3>
               <p class="section-desc">Manage the list of programs available in the Program dropdown across the app.</p>
@@ -1486,7 +1493,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                 </div>
               </div>
             </div>
+            </div>
 
+            <div class="settings-tab-panel" id="settings-tab-testuids" hidden>
             <div class="settings-panel">
               <h3 class="settings-panel-title">Test UIDs</h3>
               <p class="section-desc">Set one or more test UIDs per program. They&rsquo;re shown automatically in View Students (and included in every UID download) for any Title under that program &mdash; you don&rsquo;t need to add them per-batch.</p>
@@ -1518,6 +1527,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                 </div>
                 <button type="button" class="btn btn--primary btn--sm" data-action="add-test-uid">Add</button>
               </div>
+            </div>
             </div>
           </section>
 
@@ -2814,6 +2824,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     flashToast('Program deleted.', 'success');
   }
 
+  function updateSettingsTabVisibility() {
+    const programsPanel = document.getElementById('settings-tab-programs');
+    const testUidsPanel = document.getElementById('settings-tab-testuids');
+    if (programsPanel) programsPanel.hidden = settingsTab !== 'programs';
+    if (testUidsPanel) testUidsPanel.hidden = settingsTab !== 'testuids';
+    document.querySelectorAll('#section-settings .tab-row .tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === settingsTab));
+  }
+
   function testUidsForProgram(program) {
     if (!program) return [];
     return testUids.filter(t => t.program && t.program.toLowerCase() === program.toLowerCase());
@@ -3832,6 +3850,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     renderInterviewsTable();
     renderProgramOptionsList();
     renderTestUidsList();
+    updateSettingsTabVisibility();
     updateAccessBanner();
     updateSyncBadge();
     renderProgressModal();
@@ -4797,6 +4816,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       teamStatusTab = btn.dataset.tab;
       btn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === teamStatusTab));
       renderAppUsersList();
+    }
+    else if (action === 'settings-tab') {
+      settingsTab = btn.dataset.tab;
+      btn.parentElement.querySelectorAll('.tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === settingsTab));
+      updateSettingsTabVisibility();
     }
     else if (action === 'clear-config-filter') {
       configSearchQuery = ''; configProgramFilter = '';
