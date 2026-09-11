@@ -1149,6 +1149,19 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return '';
   }
 
+  // Strict, fully-anchored check used only for bulk import validation -- coerceDT above is
+  // deliberately lenient (prefix-matches) for general app data, but that leniency means a
+  // typo'd suffix like "6.00Pm" silently gets truncated and misread as 06:00 instead of
+  // being rejected. Import needs to reject anything that doesn't match end-to-end.
+  function isValidImportDateTime(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return true;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return true;
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{1,2}[:.]\d{2}$/.test(s)) return true;
+    if (/^\d{1,2}[-\/]\d{1,2}[-\/]\d{4}[ T]\d{1,2}[:.]\d{2}$/.test(s)) return true;
+    return false;
+  }
+
   function normalizeStudent(s) {
     return {
       id: s.id,
@@ -2025,9 +2038,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
           <details class="import-help">
             <summary>Which columns can I use?</summary>
             <p class="section-desc">One CSV row per subject. Repeat the same <strong>Title</strong> on multiple rows to add several subjects to one title &mdash; everything else is read from the first row for that title.</p>
-            <p class="section-desc">These are exactly the fields you'd fill in by hand when editing a title &mdash; nothing extra.</p>
-            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Program, Title, Subject, Topics, Mock Assessment Required, Mock Assessment Title, Mock Assessment Start Date &amp; Time, Mock Assessment End Date &amp; Time, Mock Assessment Tag, Main Assessment Title, Main Assessment Start Date &amp; Time, Main Assessment End Date &amp; Time, Main Assessment Tag, SEB Status. Required fields accept Yes/No; unrecognized columns are ignored. Program should match a name already in Settings &rarr; Programs; leave it blank to keep a title's existing program when re-importing.</p>
-            <p class="section-desc"><strong>Date &amp; time format:</strong> Mock and Main Start/End Date &amp; Time columns work the same way &mdash; one combined value per cell, time always in <strong>24-hour</strong> format. Use either <code>YYYY-MM-DD HH:MM</code> (e.g. <code>2026-09-12 14:30</code> &mdash; that's 2:30 PM) or <code>DD-MM-YYYY HH:MM</code> (e.g. <code>12-09-2026 09:00</code> &mdash; that's 9:00 AM). Don't type "AM"/"PM" into the cell itself &mdash; convert to 24-hour first (add 12 to any PM hour except 12 PM itself). Anything else is left blank rather than imported wrong &mdash; the preview will flag it.</p>
+            <p class="section-desc">These are exactly the fields you'd fill in by hand when editing a title &mdash; nothing extra. Column <strong>order doesn't matter</strong>, only the header names do &mdash; the sample sheet lists them in the same order as the Curriculum table: Program, Title, Subject, Topics, SEB Status, then Mock Assessment, then Main Assessment.</p>
+            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Program, Title, Subject, Topics, SEB Status, Mock Assessment Required, Mock Assessment Title, Mock Assessment Start Date &amp; Time, Mock Assessment End Date &amp; Time, Mock Assessment Tag, Main Assessment Title, Main Assessment Start Date &amp; Time, Main Assessment End Date &amp; Time, Main Assessment Tag. Unrecognized columns are ignored. Leave a field blank to keep a title's existing value when re-importing.</p>
+            <p class="section-desc"><strong>Restricted values — anything else is rejected, not silently guessed:</strong></p>
+            <ul class="section-desc" style="margin:0 0 16px;padding-left:18px;">
+              <li><strong>Program</strong> must exactly match a name already in Settings &rarr; Programs (case-insensitive). An unrecognized program skips that title with an error.</li>
+              <li><strong>Mock Assessment Required</strong> must be <code>Yes</code> or <code>No</code> (also accepts <code>Y</code>/<code>N</code>). Anything else &mdash; a number, blank-looking text, a typo &mdash; skips that title with an error.</li>
+              <li><strong>SEB Status</strong> must be <code>SEB</code> or <code>Non-SEB</code>. Anything else skips that title with an error.</li>
+            </ul>
+            <p class="section-desc"><strong>Date &amp; time format:</strong> Mock and Main Start/End Date &amp; Time columns work the same way &mdash; one combined value per cell, time always in <strong>24-hour</strong> format. Use either <code>YYYY-MM-DD HH:MM</code> (e.g. <code>2026-09-12 14:30</code> &mdash; that's 2:30 PM) or <code>DD-MM-YYYY HH:MM</code> (e.g. <code>12-09-2026 09:00</code> &mdash; that's 9:00 AM). Don't type "AM"/"PM" into the cell itself &mdash; convert to 24-hour first (add 12 to any PM hour except 12 PM itself). A value in any other shape is left blank and flagged as an error in the preview, rather than imported wrong.</p>
           </details>
           <div id="import-preview"><p class="section-desc">Choose a CSV file to preview the titles it will create before importing.</p></div>
         </div>
@@ -4727,9 +4746,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     mainassessmentsebstatus: 'mainSebStatus', sebstatus: 'mainSebStatus'
   };
   const IMPORT_DATETIME_FIELDS = ['mockStartAt', 'mockEndAt', 'mainStartAt', 'mainEndAt'];
+  const IMPORT_DATETIME_LABELS = {
+    mockStartAt: 'Mock Assessment Start Date & Time', mockEndAt: 'Mock Assessment End Date & Time',
+    mainStartAt: 'Main Assessment Start Date & Time', mainEndAt: 'Main Assessment End Date & Time'
+  };
 
   function normHeader(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); }
-  function truthyImport(v) { return /^(y|yes|true|1)$/i.test(String(v || '').trim()); }
 
   function mapImportRow(row, headers) {
     const out = {};
@@ -4753,19 +4775,59 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       groups.get(key).push(r);
     });
     let dateWarnings = 0;
-    const built = order.map(key => {
+    let invalidSkipped = 0;
+    const rowErrors = [];
+    const built = [];
+    order.forEach(key => {
       const rowsForBatch = groups.get(key);
       const first = rowsForBatch[0];
       const syllabusItems = rowsForBatch
         .filter(r => r.subject || r.topics)
         .map(r => ({ subject: (r.subject || '').trim(), topics: (r.topics || '').trim() }));
       const existingBatch = batches.find(b => b.batch === first.batch);
+
+      const programRaw = (first.program || '').trim();
+      let program = existingBatch ? existingBatch.program : '';
+      if (programRaw) {
+        const match = programOptions.find(p => p.toLowerCase() === programRaw.toLowerCase());
+        if (!match) {
+          rowErrors.push('"' + key + '": Program "' + programRaw + '" isn\'t in Settings → Programs — title skipped.');
+          invalidSkipped++;
+          return;
+        }
+        program = match;
+      }
+
+      const mockRawRaw = (first.mockRequired || '').trim();
+      let mockRequired = existingBatch ? existingBatch.mockRequired : false;
+      if (mockRawRaw) {
+        if (/^(yes|y)$/i.test(mockRawRaw)) mockRequired = true;
+        else if (/^(no|n)$/i.test(mockRawRaw)) mockRequired = false;
+        else {
+          rowErrors.push('"' + key + '": Mock Assessment Required must be Yes or No (got "' + mockRawRaw + '") — title skipped.');
+          invalidSkipped++;
+          return;
+        }
+      }
+
+      const sebRaw = (first.mainSebStatus || '').trim();
+      let mainSebStatus = existingBatch ? existingBatch.mainSebStatus : '';
+      if (sebRaw) {
+        if (/^seb$/i.test(sebRaw)) mainSebStatus = 'SEB';
+        else if (/^non-?seb$/i.test(sebRaw)) mainSebStatus = 'Non-SEB';
+        else {
+          rowErrors.push('"' + key + '": SEB Status must be SEB or Non-SEB (got "' + sebRaw + '") — title skipped.');
+          invalidSkipped++;
+          return;
+        }
+      }
+
       const raw = {
         id: existingBatch ? existingBatch.id : uid(),
         batch: first.batch,
-        program: first.program || (existingBatch ? existingBatch.program : '') || '',
+        program: program,
         syllabusItems: syllabusItems,
-        mockRequired: truthyImport(first.mockRequired),
+        mockRequired: mockRequired,
         mockTitle: first.mockTitle || '',
         mockStartAt: first.mockStartAt || '',
         mockEndAt: first.mockEndAt || '',
@@ -4780,15 +4842,20 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         mainStart: first.mainStart || '',
         mainEnd: first.mainEnd || '',
         mainTag: first.mainTag || '',
-        mainSebStatus: first.mainSebStatus || ''
+        mainSebStatus: mainSebStatus
       };
       IMPORT_DATETIME_FIELDS.forEach(f => {
-        if (raw[f] && !coerceDT(raw[f])) dateWarnings++;
-        if (!raw[f]) delete raw[f];
+        if (raw[f] && !isValidImportDateTime(raw[f])) {
+          dateWarnings++;
+          rowErrors.push('"' + key + '": ' + IMPORT_DATETIME_LABELS[f] + ' value "' + raw[f] + '" isn\'t in a recognized date/time format — left blank.');
+          delete raw[f];
+        } else if (!raw[f]) {
+          delete raw[f];
+        }
       });
-      return normalizeBatch(raw);
+      built.push(normalizeBatch(raw));
     });
-    return { batches: built, skipped: skipped, dateWarnings: dateWarnings };
+    return { batches: built, skipped: skipped, invalidSkipped: invalidSkipped, dateWarnings: dateWarnings, rowErrors: rowErrors };
   }
 
   function openImportModal() {
@@ -4914,8 +4981,19 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const el = document.getElementById('import-preview');
     const confirmBtn = document.getElementById('confirm-import-btn');
     if (!el) return;
-    if (!importPreview || !importPreview.batches.length) {
+    if (!importPreview) {
       el.innerHTML = '<p class="section-desc">Choose a CSV file to preview the titles it will create before importing.</p>';
+      if (confirmBtn) confirmBtn.disabled = true;
+      return;
+    }
+    const errorsHTML = importPreview.rowErrors && importPreview.rowErrors.length
+      ? '<div class="import-skip"><strong>' + importPreview.rowErrors.length + ' issue' + (importPreview.rowErrors.length === 1 ? '' : 's') + ' found — fix and re-upload:</strong>'
+        + '<ul>' + importPreview.rowErrors.slice(0, 12).map(msg => '<li>' + esc(msg) + '</li>').join('') + '</ul>'
+        + (importPreview.rowErrors.length > 12 ? '<p>&hellip;and ' + (importPreview.rowErrors.length - 12) + ' more.</p>' : '')
+        + '</div>'
+      : '';
+    if (!importPreview.batches.length) {
+      el.innerHTML = errorsHTML || '<p class="section-desc">No valid titles found in that file.</p>';
       if (confirmBtn) confirmBtn.disabled = true;
       return;
     }
@@ -4924,28 +5002,28 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const newCount = importPreview.batches.filter(b => !existingIds.has(b.id)).length;
     const updCount = importPreview.batches.length - newCount;
     el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new title' : ' new titles') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'title' : 'titles') + ' updated' : '') + ' (matched by Title).</p>'
-      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Title</th><th>Program</th><th>Subjects</th><th>Mock Required</th><th>SEB Status</th></tr></thead><tbody>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Title</th><th>Program</th><th>Subjects</th><th>SEB Status</th><th>Mock Required</th></tr></thead><tbody>'
       + preview.map(b => '<tr>'
           + '<td><span class="badge '+(existingIds.has(b.id)?'badge--no':'badge--yes')+'">'+(existingIds.has(b.id)?'Update':'New')+'</span></td>'
           + '<td class="cell-strong">' + esc(b.batch) + '</td>'
           + '<td>' + (esc(b.program) || dash()) + '</td>'
           + '<td>' + (b.syllabusItems.map(it => esc(it.subject)).filter(Boolean).join(', ') || dash()) + '</td>'
-          + '<td>' + (b.mockRequired ? 'Yes' : 'No') + '</td>'
           + '<td>' + (esc(b.mainSebStatus) || dash()) + '</td>'
+          + '<td>' + (b.mockRequired ? 'Yes' : 'No') + '</td>'
         + '</tr>').join('')
       + '</tbody></table></div>'
       + '<p class="footnote">Showing ' + preview.length + ' of ' + importPreview.batches.length + '.</p>'
       + (importPreview.skipped ? '<p class="import-skip">Skipped ' + importPreview.skipped + ' row' + (importPreview.skipped === 1 ? '' : 's') + ' with no Title value.</p>' : '')
-      + (importPreview.dateWarnings ? '<p class="import-skip">' + importPreview.dateWarnings + ' date/time value' + (importPreview.dateWarnings === 1 ? '' : 's') + " couldn't be understood and " + (importPreview.dateWarnings === 1 ? 'was' : 'were') + ' left blank. Use YYYY-MM-DD HH:MM or DD-MM-YYYY HH:MM.</p>' : '');
+      + errorsHTML;
     if (confirmBtn) confirmBtn.disabled = false;
   }
 
   function buildSampleCSV() {
-    const headers = ['Program','Title','Subject','Topics','Mock Assessment Required','Mock Assessment Title','Mock Assessment Start Date & Time','Mock Assessment End Date & Time','Mock Assessment Tag','Main Assessment Title','Main Assessment Start Date & Time','Main Assessment End Date & Time','Main Assessment Tag','SEB Status'];
+    const headers = ['Program','Title','Subject','Topics','SEB Status','Mock Assessment Required','Mock Assessment Title','Mock Assessment Start Date & Time','Mock Assessment End Date & Time','Mock Assessment Tag','Main Assessment Title','Main Assessment Start Date & Time','Main Assessment End Date & Time','Main Assessment Tag'];
     const rows = [
-      ['Intensive Offline','CS25-B10','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Yes','Frontend Mock Test','2026-09-10 10:00','2026-09-10 12:00','Mock','Frontend Main Exam','2026-09-15 09:00','2026-09-15 11:00','Main Exam','Non-SEB'],
+      ['Intensive Offline','CS25-B10','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Non-SEB','Yes','Frontend Mock Test','2026-09-10 10:00','2026-09-10 12:00','Mock','Frontend Main Exam','2026-09-15 09:00','2026-09-15 11:00','Main Exam'],
       ['Intensive Offline','CS25-B10','Backend Development','Intro to Node.js | REST APIs | Databases','','','','','','','','','',''],
-      ['NIAT','CS25-B11','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','No','','','','','DSA Main Exam','2026-09-20 09:00','2026-09-20 11:00','Main Exam','SEB']
+      ['NIAT','CS25-B11','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','SEB','No','','','','','DSA Main Exam','2026-09-20 09:00','2026-09-20 11:00','Main Exam']
     ];
     const escCsv = v => {
       const s = String(v == null ? '' : v);
