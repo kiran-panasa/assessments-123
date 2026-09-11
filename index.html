@@ -525,6 +525,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let isNewRow = false;
   let titleFormSnapshot = '';
   let titleFormReadOnly = false;
+  let titleFormConfigOnly = false;
   let artifactAPI = null;
   let canWrite = true;
   let toastTimer = null;
@@ -687,12 +688,17 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return TEAM_SECTIONS[authTeam] || [];
   }
 
+  // Full field-by-field editing of existing Titles. False for Content team --
+  // they only get the narrower canViewConfigColumns() edit (Assessment Config
+  // fields only, via startEditConfigOnly) and read-only viewing otherwise.
   function canEditRecords() {
-    return canWrite;
+    if (!canWrite) return false;
+    if (authGatingActive() && authTeam === 'content') return false;
+    return true;
   }
 
   // Adding new Titles, Bulk Import, and Notify SMEs stay off-limits for Content
-  // team even though they can now edit existing Titles freely.
+  // team even though they can edit Assessment Config on existing Titles.
   function canManageRecordCatalog() {
     if (!canWrite) return false;
     if (authGatingActive() && authTeam === 'content') return false;
@@ -2272,8 +2278,13 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return '<input type="datetime-local" class="cell-input cell-input--datetime" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
   }
   function actionsCell(id) {
-    if (!canEditRecords()) return '<span class="muted-cell">Locked</span>';
-    return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
+    if (canEditRecords()) {
+      return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
+    }
+    if (canViewConfigColumns()) {
+      return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button></div>';
+    }
+    return '<span class="muted-cell">Locked</span>';
   }
 
   function studentsButtonCell(id, batchName) {
@@ -2571,7 +2582,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function updateAccessBanner() {
     const el = document.getElementById('access-banner');
-    if (el) el.hidden = canEditRecords() || activeSection !== 'records';
+    const hasAnyRecordWriteAccess = canEditRecords() || (canWrite && canViewConfigColumns());
+    if (el) el.hidden = hasAnyRecordWriteAccess || activeSection !== 'records';
     const canCatalog = canManageRecordCatalog();
     const addBtn = document.getElementById('add-batch-btn');
     if (addBtn) addBtn.hidden = activeSection !== 'records' || !canCatalog;
@@ -4378,6 +4390,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     editingId = id; isNewRow = false;
     draft = cloneForEdit(b);
     titleFormReadOnly = false;
+    titleFormConfigOnly = false;
     titleFormSnapshot = JSON.stringify(draft);
     render();
     openTitleFormModal();
@@ -4391,6 +4404,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     editingId = id; isNewRow = true;
     draft = cloneForEdit(blank);
     titleFormReadOnly = false;
+    titleFormConfigOnly = false;
     titleFormSnapshot = JSON.stringify(draft);
     render();
     openTitleFormModal();
@@ -4402,6 +4416,23 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     editingId = id; isNewRow = false;
     draft = cloneForEdit(b);
     titleFormReadOnly = true;
+    titleFormConfigOnly = false;
+    titleFormSnapshot = JSON.stringify(draft);
+    render();
+    openTitleFormModal();
+  }
+
+  // Content team: can't touch Program/Title/Syllabus/assessment details, but
+  // can still update the Mock/Main Assessment Config links from here (mirrors
+  // editing the same fields from Topin Configs directly).
+  function startEditConfigOnly(id) {
+    if (!canViewConfigColumns()) return;
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    editingId = id; isNewRow = false;
+    draft = cloneForEdit(b);
+    titleFormReadOnly = false;
+    titleFormConfigOnly = true;
     titleFormSnapshot = JSON.stringify(draft);
     render();
     openTitleFormModal();
@@ -4429,7 +4460,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const body = document.getElementById('title-form-body');
     if (!body || !draft) return;
     const d = draft;
-    const editing = !titleFormReadOnly;
+    const editing = !titleFormReadOnly && !titleFormConfigOnly;
+    const configEditing = !titleFormReadOnly;
     const errors = validateDraft(d);
     const id = editingId;
     const mockFieldsHTML = d.mockRequired
@@ -4464,12 +4496,16 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         ? '<hr class="modal-divider">'
           + '<p class="modal-subheading">Assessment Config</p>'
           + '<div class="form-grid">'
-            + '<div class="filter-field"><label>Mock Assessment Config</label>' + (d.mockRequired ? textCell('mockConfigUrl', d.mockConfigUrl, editing, 'https://…') : '<span class="muted-cell">Not Required</span>') + '</div>'
-            + '<div class="filter-field"><label>Main Assessment Config</label>' + textCell('mainConfigUrl', d.mainConfigUrl, editing, 'https://…') + '</div>'
+            + '<div class="filter-field"><label>Mock Assessment Config</label>' + (d.mockRequired ? textCell('mockConfigUrl', d.mockConfigUrl, configEditing, 'https://…') : '<span class="muted-cell">Not Required</span>') + '</div>'
+            + '<div class="filter-field"><label>Main Assessment Config</label>' + textCell('mainConfigUrl', d.mainConfigUrl, configEditing, 'https://…') + '</div>'
           + '</div>'
         : '');
     const titleEl = document.getElementById('title-form-modal-title');
-    if (titleEl) titleEl.textContent = titleFormReadOnly ? ('View Title — ' + (d.batch || '')) : (isNewRow ? 'Raise Request' : ('Edit Title — ' + (d.batch || '')));
+    if (titleEl) {
+      titleEl.textContent = titleFormReadOnly ? ('View Title — ' + (d.batch || ''))
+        : titleFormConfigOnly ? ('Edit Assessment Config — ' + (d.batch || ''))
+        : (isNewRow ? 'Raise Request' : ('Edit Title — ' + (d.batch || '')));
+    }
     const saveBtn = document.getElementById('title-form-save-btn');
     if (saveBtn) saveBtn.hidden = titleFormReadOnly;
     const cancelBtn = document.getElementById('title-form-cancel-btn');
@@ -4485,7 +4521,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function save() {
-    if (!canEditRecords()) return;
+    const allowed = titleFormConfigOnly ? canViewConfigColumns() : canEditRecords();
+    if (!allowed) return;
     const errors = validateDraft(draft);
     if (Object.keys(errors).length) { updateErrorDisplays(); renderTitleFormModal(); flashToast('Fix the highlighted time ranges before saving.', 'error'); return; }
     if (!draft.program) { flashToast('Program is required.', 'error'); return; }
@@ -4495,7 +4532,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (idx > -1) batches[idx] = { ...draft };
     else batches = [{ ...draft }].concat(batches);
     const saved = { ...draft };
-    editingId = null; draft = null; isNewRow = false; titleFormSnapshot = ''; titleFormReadOnly = false;
+    editingId = null; draft = null; isNewRow = false; titleFormSnapshot = ''; titleFormReadOnly = false; titleFormConfigOnly = false;
     closeTitleFormModal();
     render();
     persistSave(saved);
@@ -4503,7 +4540,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function cancel() {
-    editingId = null; draft = null; isNewRow = false; titleFormSnapshot = ''; titleFormReadOnly = false;
+    editingId = null; draft = null; isNewRow = false; titleFormSnapshot = ''; titleFormReadOnly = false; titleFormConfigOnly = false;
     render();
   }
 
@@ -5381,7 +5418,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'cancel-team-edit') { cancelTeamEdit(); return; }
     else if (action === 'admin-register-user') { adminRegisterUser(); return; }
     else if (action === 'refresh-team-list') { loadAppUsers(); return; }
-    else if (action === 'edit') startEdit(id);
+    else if (action === 'edit') {
+      if (canEditRecords()) startEdit(id);
+      else if (canViewConfigColumns()) startEditConfigOnly(id);
+    }
     else if (action === 'delete') removeBatch(id);
     else if (action === 'save-title-form') save();
     else if (action === 'cancel-title-form') requestCancelTitleForm();
