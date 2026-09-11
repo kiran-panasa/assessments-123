@@ -398,6 +398,7 @@ button.kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px -14px rg
 tbody tr:not(.row-editing){transition:background-color .15s ease,box-shadow .15s ease;}
 #tbody tr[data-id]{cursor:pointer;}
 #configs-tbody tr[data-id]{cursor:pointer;}
+#nxtmock-config-tbody tr[data-id]{cursor:pointer;}
 /* Zebra striping so rows are easy to tell apart at a glance, across every
    table in the app -- they all share this same tbody/td structure. */
 tbody tr:nth-child(even):not(.row-editing) td,
@@ -591,9 +592,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let addStudentsTargetBatchId = '';
   let addStudentsRows = [];
   let addStudentsImportPreview = null;
-  let configEditingId = null;
-  let configDraft = null;
   let topinConfigModalId = null;
+  let nxtmockConfigModalId = null;
+  let nxtmockConfigModalNeeded = 'unset';
   let configSearchQuery = '';
   let configProgramFilter = '';
   let configStatusTab = 'all';
@@ -1926,6 +1927,19 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         </div>
       </div>
     </div>
+    <div class="modal-overlay" id="nxtmock-config-modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="nxtmock-config-modal-title">
+        <div class="modal-header">
+          <h3 id="nxtmock-config-modal-title">Edit NxtMock Config</h3>
+          <button type="button" class="modal-close" data-action="close-nxtmock-config" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body" id="nxtmock-config-modal-body"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-nxtmock-config">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" data-action="save-nxtmock-config">Save</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-overlay" id="add-students-modal-overlay" hidden>
       <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="add-students-modal-title">
         <div class="modal-header">
@@ -2368,13 +2382,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return filled.length === required.length ? 'submitted' : 'pending';
   }
 
-  function configField(field, value, editing) {
-    if (!editing) {
-      if (!value) return dash();
-      const short = value.length > 30 ? value.slice(0, 27) + '…' : value;
-      return '<a href="'+esc(value)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(value)+'">'+esc(short)+'</a>';
-    }
-    return '<input type="text" class="cell-input config-cell-input" data-field="'+field+'" value="'+esc(value||'')+'" placeholder="https://…">';
+  function configField(value) {
+    if (!value) return dash();
+    const short = value.length > 30 ? value.slice(0, 27) + '…' : value;
+    return '<a href="'+esc(value)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(value)+'">'+esc(short)+'</a>';
   }
 
   function fmtUpdatedAt(iso) {
@@ -2401,8 +2412,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td class="mono">' + mainAssessmentDateCell(b) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
-      + '<td>' + (b.mockRequired ? configField('mockConfigUrl', b.mockConfigUrl, false) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + configField('mainConfigUrl', b.mainConfigUrl, false) + '</td>'
+      + '<td>' + (b.mockRequired ? configField(b.mockConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + configField(b.mainConfigUrl) + '</td>'
       + '<td>' + (b.mainSebStatus ? '<span class="badge '+(b.mainSebStatus==='SEB'?'badge--yes':'badge--no')+'">'+esc(b.mainSebStatus)+'</span>' : dash()) + '</td>'
       + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
@@ -2427,10 +2438,98 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (idx === -1) return;
     const updated = { ...batches[idx], mockInterviewConfigUrl: '', mainInterviewConfigUrl: '', updatedAt: new Date().toISOString() };
     batches[idx] = updated;
-    if (configEditingId === id) { configEditingId = null; configDraft = null; }
+    if (nxtmockConfigModalId === id) closeNxtmockConfigModal();
     render();
     persistSave(updated);
     flashToast('Config cleared.', 'success');
+  }
+
+  function openNxtmockConfigModal(id) {
+    if (!canWrite) return;
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    nxtmockConfigModalId = id;
+    nxtmockConfigModalNeeded = interviewNeededValue(b);
+    render();
+    const overlay = document.getElementById('nxtmock-config-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    renderNxtmockConfigModal();
+  }
+
+  function closeNxtmockConfigModal() {
+    const overlay = document.getElementById('nxtmock-config-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    nxtmockConfigModalId = null;
+  }
+
+  function renderNxtmockConfigModal() {
+    const body = document.getElementById('nxtmock-config-modal-body');
+    if (!body || !nxtmockConfigModalId) return;
+    const b = batches.find(x => x.id === nxtmockConfigModalId);
+    if (!b) { closeNxtmockConfigModal(); return; }
+    const needed = nxtmockConfigModalNeeded;
+    const mainOn = needed === 'main' || needed === 'both';
+    const mockOn = needed === 'mock' || needed === 'both';
+    const mainInput = document.getElementById('nxtmock-config-main');
+    const mockInput = document.getElementById('nxtmock-config-mock');
+    const mainVal = mainInput ? mainInput.value : (b.mainInterviewConfigUrl || '');
+    const mockVal = mockInput ? mockInput.value : (b.mockInterviewConfigUrl || '');
+    const opts = [
+      ['unset', 'Not set — choose one'],
+      ['none', 'No interview'],
+      ['main', 'Main only'],
+      ['mock', 'Mock only'],
+      ['both', 'Main & Mock']
+    ];
+    body.innerHTML =
+      '<p class="section-desc">Program: <strong>' + (esc(b.program) || '—') + '</strong> &middot; Title: <strong>' + esc(b.batch) + '</strong></p>'
+      + '<div class="filter-field"><label>Interview Needed</label>'
+        + '<select class="cell-input" id="nxtmock-config-needed">'
+          + opts.map(([v, label]) => '<option value="'+v+'"'+(v===needed?' selected':'')+'>'+esc(label)+'</option>').join('')
+        + '</select></div>'
+      + (mainOn ? '<div class="filter-field" style="margin-top:14px;"><label>Main Interview Config</label><input type="text" class="cell-input" id="nxtmock-config-main" value="'+esc(mainVal)+'" placeholder="https://…"></div>' : '')
+      + (mockOn ? '<div class="filter-field" style="margin-top:14px;"><label>Mock Interview Config</label><input type="text" class="cell-input" id="nxtmock-config-mock" value="'+esc(mockVal)+'" placeholder="https://…"></div>' : '');
+    const titleEl = document.getElementById('nxtmock-config-modal-title');
+    if (titleEl) titleEl.textContent = 'Edit NxtMock Config — ' + (b.batch || '');
+  }
+
+  function requestCloseNxtmockConfigModal() {
+    const b = batches.find(x => x.id === nxtmockConfigModalId);
+    if (!b) { closeNxtmockConfigModal(); return; }
+    const origNeeded = interviewNeededValue(b);
+    const mainInput = document.getElementById('nxtmock-config-main');
+    const mockInput = document.getElementById('nxtmock-config-mock');
+    const neededChanged = nxtmockConfigModalNeeded !== origNeeded;
+    const mainChanged = !!mainInput && mainInput.value.trim() !== (b.mainInterviewConfigUrl || '');
+    const mockChanged = !!mockInput && mockInput.value.trim() !== (b.mockInterviewConfigUrl || '');
+    if ((neededChanged || mainChanged || mockChanged) && !confirm('Discard unsaved changes to this config?')) return;
+    closeNxtmockConfigModal();
+  }
+
+  function saveNxtmockConfig() {
+    if (!canWrite || !nxtmockConfigModalId) return;
+    const idx = batches.findIndex(b => b.id === nxtmockConfigModalId);
+    if (idx === -1) return;
+    const needed = nxtmockConfigModalNeeded;
+    const mainOn = needed === 'main' || needed === 'both';
+    const mockOn = needed === 'mock' || needed === 'both';
+    const mainInput = document.getElementById('nxtmock-config-main');
+    const mockInput = document.getElementById('nxtmock-config-mock');
+    const updated = { ...batches[idx], updatedAt: new Date().toISOString() };
+    if (needed === 'unset') {
+      updated.mainInterviewRequired = null;
+      updated.mockInterviewRequired = null;
+    } else {
+      updated.mainInterviewRequired = mainOn;
+      updated.mockInterviewRequired = mockOn;
+    }
+    if (mainOn && mainInput) updated.mainInterviewConfigUrl = mainInput.value.trim();
+    if (mockOn && mockInput) updated.mockInterviewConfigUrl = mockInput.value.trim();
+    batches[idx] = updated;
+    closeNxtmockConfigModal();
+    render();
+    persistSave(updated);
+    flashToast('Config saved.', 'success');
   }
 
   function interviewNeededValue(d) {
@@ -2449,56 +2548,38 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return 'No interview for this batch';
   }
 
-  function interviewNeededCell(b, d, editing) {
-    if (!editing) {
-      const value = interviewNeededValue(b);
-      if (value === 'unset') return '<span class="badge badge--attention" data-action="edit-config" data-id="'+b.id+'" style="cursor:pointer;" title="Click Edit to choose">Not set &mdash; choose</span>';
-      const needed = b.mainInterviewRequired || b.mockInterviewRequired;
-      return needed
-        ? '<span class="badge badge--yes">' + esc(interviewNeededLabel(b)) + '</span>'
-        : '<span class="muted-cell">No interview for this batch</span>';
-    }
-    const current = interviewNeededValue(d);
-    const opts = [
-      ['unset', 'Not set &mdash; choose one'],
-      ['none', 'No interview'],
-      ['main', 'Main only'],
-      ['mock', 'Mock only'],
-      ['both', 'Main &amp; Mock']
-    ];
-    return '<select class="cell-input interview-needed-select" data-id="'+b.id+'">'
-      + opts.map(([v, label]) => '<option value="'+v+'"'+(v===current?' selected':'')+'>'+label+'</option>').join('')
-      + '</select>';
+  function interviewNeededCell(b) {
+    const value = interviewNeededValue(b);
+    if (value === 'unset') return '<span class="badge badge--attention" data-action="edit-nxtmock-config" data-id="'+b.id+'" style="cursor:pointer;" title="Click to choose">Not set &mdash; choose</span>';
+    const needed = b.mainInterviewRequired || b.mockInterviewRequired;
+    return needed
+      ? '<span class="badge badge--yes">' + esc(interviewNeededLabel(b)) + '</span>'
+      : '<span class="muted-cell">No interview for this batch</span>';
   }
 
-  function nxtmockConfigActionsCell(id, editing) {
+  function nxtmockConfigActionsCell(id) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
-    if (editing) {
-      return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save-config">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel-config">Cancel</button></div>';
-    }
     return '<div class="actions">'
-      + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit-config" data-id="'+id+'">Edit</button>'
+      + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit-nxtmock-config" data-id="'+id+'">Edit</button>'
       + '<button type="button" class="btn btn--ghost btn--xs" data-action="view-syllabus" data-id="'+id+'">View Syllabus</button>'
       + '<button type="button" class="btn--icon-danger" data-action="clear-nxtmock-config" data-id="'+id+'" aria-label="Clear mock config" title="Clear mock config">'+ICON_TRASH+'</button>'
       + '</div>';
   }
 
   function nxtmockConfigRowHTML(b, index) {
-    const editing = configEditingId === b.id;
-    const d = editing ? configDraft : b;
     const status = nxtmockConfigStatus(b);
-    const mainInterviewOn = editing ? d.mainInterviewRequired : b.mainInterviewRequired;
-    const mockInterviewOn = editing ? d.mockInterviewRequired : b.mockInterviewRequired;
-    return '<tr class="'+(editing?'row-editing':'')+'" id="mcrow-'+b.id+'" data-id="'+b.id+'">'
+    const mainInterviewOn = b.mainInterviewRequired;
+    const mockInterviewOn = b.mockInterviewRequired;
+    return '<tr id="mcrow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-nxtmock" data-id="'+b.id+'"'+(selectedNxtmockIds.has(b.id)?' checked':'')+'> ' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
-      + '<td>' + interviewNeededCell(b, d, editing) + '</td>'
-      + '<td>' + (mainInterviewOn === null ? '<span class="muted-cell">Not set</span>' : mainInterviewOn ? configField('mainInterviewConfigUrl', d.mainInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + (mockInterviewOn === null ? '<span class="muted-cell">Not set</span>' : mockInterviewOn ? configField('mockInterviewConfigUrl', d.mockInterviewConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + interviewNeededCell(b) + '</td>'
+      + '<td>' + (mainInterviewOn === null ? '<span class="muted-cell">Not set</span>' : mainInterviewOn ? configField(b.mainInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (mockInterviewOn === null ? '<span class="muted-cell">Not set</span>' : mockInterviewOn ? configField(b.mockInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
-      + '<td class="col-actions">' + nxtmockConfigActionsCell(b.id, editing) + '</td>'
+      + '<td class="col-actions">' + nxtmockConfigActionsCell(b.id) + '</td>'
       + '</tr>';
   }
 
@@ -2540,8 +2621,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     populateNxtmockConfigFilterOptions();
     let filtered = getFilteredNxtmockConfigBatches();
     updateNxtmockConfigSelectionUI(filtered);
-    if (configEditingId && !filtered.some(b => b.id === configEditingId)) {
-      const eb = batches.find(b => b.id === configEditingId);
+    if (nxtmockConfigModalId && !filtered.some(b => b.id === nxtmockConfigModalId)) {
+      const eb = batches.find(b => b.id === nxtmockConfigModalId);
       if (eb) filtered = [eb].concat(filtered);
     }
     if (!filtered.length) {
@@ -2572,8 +2653,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
     const configColsHidden = canViewConfigColumns() ? '' : ' hidden';
     const configCols =
-        '<td' + configColsHidden + '>' + (d.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, false) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td' + configColsHidden + '>' + configField('mainConfigUrl', d.mainConfigUrl, false) + '</td>';
+        '<td' + configColsHidden + '>' + (d.mockRequired ? configField(d.mockConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td' + configColsHidden + '>' + configField(d.mainConfigUrl) + '</td>';
 
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + programCell(d.program, editing) + '</td>'
@@ -3066,8 +3147,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '<div class="muted-cell">' + count + ' student' + (count === 1 ? '' : 's') + '</div></td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
-      + '<td>' + (status === 'published' ? publishedLinkCell(b.mainConfigUrl, b.mainAssessmentLink) : configField('mainConfigUrl', b.mainConfigUrl, false)) + '</td>'
-      + '<td>' + (b.mockRequired ? (status === 'published' ? publishedLinkCell(b.mockConfigUrl, b.mockAssessmentLink) : configField('mockConfigUrl', b.mockConfigUrl, false)) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + (status === 'published' ? publishedLinkCell(b.mainConfigUrl, b.mainAssessmentLink) : configField(b.mainConfigUrl)) + '</td>'
+      + '<td>' + (b.mockRequired ? (status === 'published' ? publishedLinkCell(b.mockConfigUrl, b.mockAssessmentLink) : configField(b.mockConfigUrl)) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + statusCell + '</td>'
       + '<td class="col-actions">' + assessActionsCell(b) + '</td>'
       + '</tr>';
@@ -4742,40 +4823,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     flashToast(msg, 'success');
   }
 
-  function startConfigEdit(id) {
-    if (!canWrite) return;
-    const b = batches.find(x => x.id === id);
-    if (!b) return;
-    configEditingId = id;
-    configDraft = {
-      mockConfigUrl: b.mockConfigUrl,
-      mockInterviewConfigUrl: b.mockInterviewConfigUrl,
-      mainConfigUrl: b.mainConfigUrl,
-      mainInterviewConfigUrl: b.mainInterviewConfigUrl,
-      mainInterviewRequired: b.mainInterviewRequired,
-      mockInterviewRequired: b.mockInterviewRequired
-    };
-    render();
-  }
-
-  function cancelConfigEdit() {
-    configEditingId = null;
-    configDraft = null;
-    render();
-  }
-
-  function saveConfig() {
-    const idx = batches.findIndex(b => b.id === configEditingId);
-    if (idx === -1) return;
-    const updated = { ...batches[idx], ...configDraft, updatedAt: new Date().toISOString() };
-    batches[idx] = updated;
-    configEditingId = null;
-    configDraft = null;
-    render();
-    persistSave(updated);
-    flashToast('Config saved.', 'success');
-  }
-
   function clearConfig(id) {
     if (!canWrite) return;
     if (!confirm('Clear the Mock Assessment and Main Assessment config links for this entry? This cannot be undone.')) return;
@@ -4783,7 +4830,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (idx === -1) return;
     const updated = { ...batches[idx], mockConfigUrl: '', mainConfigUrl: '', updatedAt: new Date().toISOString() };
     batches[idx] = updated;
-    if (configEditingId === id) { configEditingId = null; configDraft = null; }
     if (topinConfigModalId === id) closeTopinConfigModal();
     render();
     persistSave(updated);
@@ -5459,6 +5505,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       const configTr = e.target.closest('#configs-tbody tr[data-id]');
       if (configTr && !e.target.closest('input, select, a, button, textarea')) {
         openTopinConfigModal(configTr.dataset.id);
+        return;
+      }
+      const nxtmockTr = e.target.closest('#nxtmock-config-tbody tr[data-id]');
+      if (nxtmockTr && !e.target.closest('input, select, a, button, textarea')) {
+        openNxtmockConfigModal(nxtmockTr.dataset.id);
       }
       return;
     }
@@ -5527,13 +5578,13 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'confirm-shortlist-import') confirmShortlistImport();
     else if (action === 'download-shortlist-sample') downloadShortlistSampleCSV();
     else if (action === 'download-shortlist-uids') downloadShortlistUidsCSV();
-    else if (action === 'edit-config') startConfigEdit(id);
-    else if (action === 'cancel-config') cancelConfigEdit();
-    else if (action === 'save-config') saveConfig();
     else if (action === 'clear-config') clearConfig(id);
     else if (action === 'edit-topin-config') openTopinConfigModal(id);
     else if (action === 'close-topin-config') requestCloseTopinConfigModal();
     else if (action === 'save-topin-config') saveTopinConfig();
+    else if (action === 'edit-nxtmock-config') openNxtmockConfigModal(id);
+    else if (action === 'close-nxtmock-config') requestCloseNxtmockConfigModal();
+    else if (action === 'save-nxtmock-config') saveNxtmockConfig();
     else if (action === 'clear-nxtmock-config') clearMockConfig(id);
     else if (action === 'view-syllabus') viewSyllabus(id);
     else if (action === 'config-tab') {
@@ -5789,11 +5840,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       renameProgramOption(Number(t.dataset.index), t.value);
       return;
     }
-    if (t.matches('.config-cell-input')) {
-      if (!configDraft) return;
-      configDraft[t.dataset.field] = t.value;
-      return;
-    }
     if (!draft) return;
     if (t.matches('.syllabus-subject-input')) {
       draft.syllabusItems[Number(t.dataset.index)].subject = t.value;
@@ -5813,6 +5859,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (t.id === 'syllabus-filter-program') { syllabusProgramFilter = t.value; renderRecordsTable(); return; }
     if (t.id === 'syllabus-date-from') { syllabusDateFrom = t.value; renderRecordsTable(); return; }
     if (t.id === 'syllabus-date-to') { syllabusDateTo = t.value; renderRecordsTable(); return; }
+    if (t.id === 'nxtmock-config-needed') { nxtmockConfigModalNeeded = t.value; renderNxtmockConfigModal(); return; }
     if (t.id === 'ov-from') { overviewDateRange.from = t.value; renderKPICards(); return; }
     if (t.id === 'ov-to') { overviewDateRange.to = t.value; renderKPICards(); return; }
     if (t.id === 'wn-date') { whatsNextDate = t.value; renderTimeline(); return; }
@@ -5888,20 +5935,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     if (t.matches('.invite-mode-select')) {
       toggleInterviewInviteMode(t.dataset.id, t.value);
-      return;
-    }
-    if (t.matches('.interview-needed-select')) {
-      if (!configDraft) return;
-      const v = t.value;
-      if (v === 'unset') {
-        configDraft.mainInterviewRequired = null;
-        configDraft.mockInterviewRequired = null;
-      } else {
-        configDraft.mainInterviewRequired = v === 'main' || v === 'both';
-        configDraft.mockInterviewRequired = v === 'mock' || v === 'both';
-      }
-      renderNxtmockConfigsTable();
-      renderConfigsTable();
       return;
     }
     if (!draft) return;
