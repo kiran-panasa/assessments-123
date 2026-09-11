@@ -149,6 +149,8 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .section-heading{font-family:var(--font-display);font-weight:700;font-size:17px;color:var(--ink);margin:0 0 4px;}
 .section-desc{font-size:12.5px;color:var(--muted);margin:0 0 16px;}
 .required-mark{color:var(--danger);}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-top:10px;}
+@media (max-width:520px){ .form-grid{grid-template-columns:1fr;} }
 .filter-bar{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;}
 .filter-field{display:flex;flex-direction:column;gap:4px;}
 .filter-field label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
@@ -516,6 +518,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let editingId = null;
   let draft = null;
   let isNewRow = false;
+  let titleFormSnapshot = '';
   let artifactAPI = null;
   let canWrite = true;
   let toastTimer = null;
@@ -1843,27 +1846,16 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       </div>
     </div>
     <div class="toast" id="toast"></div>
-    <div class="modal-overlay" id="add-title-modal-overlay" hidden>
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="add-title-modal-title">
+    <div class="modal-overlay" id="title-form-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="title-form-modal-title">
         <div class="modal-header">
-          <h3 id="add-title-modal-title">Raise Request</h3>
-          <button type="button" class="modal-close" data-action="close-add-title" aria-label="Close">&times;</button>
+          <h3 id="title-form-modal-title">Raise Request</h3>
+          <button type="button" class="modal-close" data-action="cancel-title-form" aria-label="Close">&times;</button>
         </div>
-        <div class="modal-body">
-          <p class="section-desc">Add a new Title to the curriculum. You can fill in syllabus, assessment and interview details afterward using Edit.</p>
-          <div class="filter-field">
-            <label for="add-title-program">Program <span class="required-mark">*</span></label>
-            <select id="add-title-program"></select>
-          </div>
-          <div class="filter-field">
-            <label for="add-title-name">Title <span class="required-mark">*</span></label>
-            <input type="text" id="add-title-name" placeholder="e.g. CS24-B15">
-          </div>
-          <p class="auth-error" id="add-title-msg" hidden></p>
-        </div>
+        <div class="modal-body" id="title-form-body"></div>
         <div class="modal-footer">
-          <button type="button" class="btn btn--ghost btn--sm" data-action="close-add-title">Cancel</button>
-          <button type="button" class="btn btn--primary btn--sm" data-action="submit-add-title">Add Title</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-action="cancel-title-form">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" data-action="save-title-form">Save</button>
         </div>
       </div>
     </div>
@@ -2226,11 +2218,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (!editing) return d[field] ? '<span class="mono">'+fmtDateTime(d[field])+'</span>' : dash();
     return '<input type="datetime-local" class="cell-input cell-input--datetime" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
   }
-  function actionsCell(id, editing) {
+  function actionsCell(id) {
     if (!canEditRecords()) return '<span class="muted-cell">Locked</span>';
-    if (editing) {
-      return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel">Cancel</button></div>';
-    }
     return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
   }
 
@@ -2488,9 +2477,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function rowHTML(b) {
-    const editing = editingId === b.id;
-    const d = editing ? draft : b;
-    const errors = editing ? validateDraft(d) : {};
+    const editing = false;
+    const d = b;
+    const errors = {};
     const id = b.id;
 
     const mockCols = d.mockRequired
@@ -2515,7 +2504,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
       + mockCols
       + mainCols
-      + '<td class="col-actions">' + actionsCell(id, editing) + '</td>'
+      + '<td class="col-actions">' + actionsCell(id) + '</td>'
       + '</tr>';
   }
 
@@ -4138,6 +4127,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     renderProgressModal();
     if (viewStudentsTargetBatch) renderViewStudentsTable();
     if (shortlistTargetBatchId) renderShortlistCurrentList();
+    if (editingId) renderTitleFormModal();
     if (authTeam === 'admin') renderAppUsersList();
   }
 
@@ -4292,7 +4282,23 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (!b) return;
     editingId = id; isNewRow = false;
     draft = cloneForEdit(b);
+    titleFormSnapshot = JSON.stringify(draft);
     render();
+    openTitleFormModal();
+  }
+
+  function startAdd() {
+    if (!canEditRecords()) return;
+    if (editingId && isNewRow) batches = batches.filter(b => b.id !== editingId);
+    activeSection = 'records';
+    const id = uid();
+    const blank = normalizeBatch({ id });
+    batches.unshift(blank);
+    editingId = id; isNewRow = true;
+    draft = cloneForEdit(blank);
+    titleFormSnapshot = JSON.stringify(draft);
+    render();
+    openTitleFormModal();
   }
 
   function cloneForEdit(b) {
@@ -4302,56 +4308,75 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     };
   }
 
-  function openAddTitleModal() {
-    if (!canEditRecords()) return;
-    if (editingId && isNewRow) { batches = batches.filter(b => b.id !== editingId); editingId = null; draft = null; isNewRow = false; }
-    activeSection = 'records';
-    render();
-    const sel = document.getElementById('add-title-program');
-    if (sel) sel.innerHTML = '<option value="">&mdash; Select &mdash;</option>' + programOptions.map(p => '<option value="'+esc(p)+'">'+esc(p)+'</option>').join('');
-    const nameEl = document.getElementById('add-title-name');
-    if (nameEl) nameEl.value = '';
-    const msgEl = document.getElementById('add-title-msg');
-    if (msgEl) msgEl.hidden = true;
-    const overlay = document.getElementById('add-title-modal-overlay');
+  function openTitleFormModal() {
+    const overlay = document.getElementById('title-form-modal-overlay');
     if (overlay) overlay.hidden = false;
-    requestAnimationFrame(() => { if (sel) sel.focus(); });
+    renderTitleFormModal();
   }
 
-  function closeAddTitleModal() {
-    const overlay = document.getElementById('add-title-modal-overlay');
+  function closeTitleFormModal() {
+    const overlay = document.getElementById('title-form-modal-overlay');
     if (overlay) overlay.hidden = true;
   }
 
-  function submitAddTitle() {
-    if (!canEditRecords()) return;
-    const sel = document.getElementById('add-title-program');
-    const nameEl = document.getElementById('add-title-name');
-    const msgEl = document.getElementById('add-title-msg');
-    const program = sel ? sel.value : '';
-    const title = nameEl ? nameEl.value.trim() : '';
-    if (!program || !title) {
-      if (msgEl) { msgEl.textContent = 'Program and Title are both required.'; msgEl.hidden = false; }
-      return;
-    }
-    const blank = normalizeBatch({ id: uid(), program: program, batch: title, updatedAt: new Date().toISOString() });
-    batches = [blank].concat(batches);
-    closeAddTitleModal();
-    render();
-    persistSave(blank);
-    flashToast('Title added.', 'success');
+  function renderTitleFormModal() {
+    const body = document.getElementById('title-form-body');
+    if (!body || !draft) return;
+    const d = draft;
+    const errors = validateDraft(d);
+    const id = editingId;
+    const mockFieldsHTML = d.mockRequired
+      ? '<div class="form-grid">'
+        + '<div class="filter-field"><label>Mock Title</label>' + textCell('mockTitle', d.mockTitle, true, 'Title') + '</div>'
+        + '<div class="filter-field"><label>Mock Start Date &amp; Time</label>' + dateTimeCell('mockStartAt', d, true) + '</div>'
+        + '<div class="filter-field"><label>Mock End Date &amp; Time</label>' + dateTimeCell('mockEndAt', d, true) + errSpan('mock', id, errors.mock) + '</div>'
+        + '<div class="filter-field"><label>Mock Tag</label>' + textCell('mockTag', d.mockTag, true, 'Tag') + '</div>'
+        + '</div>'
+      : '';
+    body.innerHTML =
+      '<div class="filter-field"><label>Program <span class="required-mark">*</span></label>' + programCell(d.program, true) + '</div>'
+      + '<div class="filter-field"><label>Title <span class="required-mark">*</span></label>' + textCell('batch', d.batch, true, 'Title') + '</div>'
+      + '<hr class="modal-divider">'
+      + '<p class="modal-subheading">Syllabus</p>'
+      + syllabusPairCell(d.syllabusItems, true, id)
+      + '<hr class="modal-divider">'
+      + '<div class="filter-field" style="max-width:260px;"><label>Main Assessment SEB Status</label>' + sebCell(d, true) + '</div>'
+      + '<hr class="modal-divider">'
+      + '<p class="modal-subheading">Mock Assessment</p>'
+      + '<div class="filter-field" style="max-width:220px;"><label>Mock Required</label>' + toggleCell(d.mockRequired, true, 'toggle-mock', false) + '</div>'
+      + mockFieldsHTML
+      + '<hr class="modal-divider">'
+      + '<p class="modal-subheading">Main Assessment</p>'
+      + '<div class="form-grid">'
+        + '<div class="filter-field"><label>Main Title</label>' + textCell('mainTitle', d.mainTitle, true, 'Title') + '</div>'
+        + '<div class="filter-field"><label>Main Start Date &amp; Time</label>' + dateTimeCell('mainStartAt', d, true) + '</div>'
+        + '<div class="filter-field"><label>Main End Date &amp; Time</label>' + dateTimeCell('mainEndAt', d, true) + errSpan('main', id, errors.main) + '</div>'
+        + '<div class="filter-field"><label>Main Tag</label>' + textCell('mainTag', d.mainTag, true, 'Tag') + '</div>'
+      + '</div>';
+    const titleEl = document.getElementById('title-form-modal-title');
+    if (titleEl) titleEl.textContent = isNewRow ? 'Raise Request' : ('Edit Title — ' + (d.batch || ''));
+  }
+
+  function requestCancelTitleForm() {
+    if (!draft) { closeTitleFormModal(); return; }
+    const changed = JSON.stringify(draft) !== titleFormSnapshot;
+    if (changed && !confirm('Discard unsaved changes to this Title?')) return;
+    cancel();
+    closeTitleFormModal();
   }
 
   function save() {
     if (!canEditRecords()) return;
     const errors = validateDraft(draft);
-    if (Object.keys(errors).length) { updateErrorDisplays(); flashToast('Fix the highlighted time ranges before saving.', 'error'); return; }
+    if (Object.keys(errors).length) { updateErrorDisplays(); renderTitleFormModal(); flashToast('Fix the highlighted time ranges before saving.', 'error'); return; }
+    if (!draft.program) { flashToast('Program is required.', 'error'); return; }
     if (!draft.batch.trim()) { flashToast('Title is required.', 'error'); return; }
     draft.updatedAt = new Date().toISOString();
     const idx = batches.findIndex(b => b.id === editingId);
     if (idx > -1) batches[idx] = { ...draft };
     const saved = { ...draft };
-    editingId = null; draft = null; isNewRow = false;
+    editingId = null; draft = null; isNewRow = false; titleFormSnapshot = '';
+    closeTitleFormModal();
     render();
     persistSave(saved);
     flashToast('Title saved.', 'success');
@@ -4359,7 +4384,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function cancel() {
     if (isNewRow) batches = batches.filter(b => b.id !== editingId);
-    editingId = null; draft = null; isNewRow = false;
+    editingId = null; draft = null; isNewRow = false; titleFormSnapshot = '';
     if (latestRemote) batches = latestRemote;
     render();
   }
@@ -5091,11 +5116,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'refresh-team-list') { loadAppUsers(); return; }
     else if (action === 'edit') startEdit(id);
     else if (action === 'delete') removeBatch(id);
-    else if (action === 'save') save();
-    else if (action === 'cancel') cancel();
-    else if (action === 'add-batch') openAddTitleModal();
-    else if (action === 'close-add-title') closeAddTitleModal();
-    else if (action === 'submit-add-title') submitAddTitle();
+    else if (action === 'save-title-form') save();
+    else if (action === 'cancel-title-form') requestCancelTitleForm();
+    else if (action === 'add-batch') startAdd();
     else if (action === 'edit-student') startStudentEdit(id);
     else if (action === 'delete-student') removeStudent(id);
     else if (action === 'save-student') saveStudent();
