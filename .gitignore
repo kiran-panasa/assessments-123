@@ -4,3 +4,6 @@ server/topin-session.json
 server/topin-tokens.json
 server/automation-key.json
 .env*
+
+.vercel
+.env*
