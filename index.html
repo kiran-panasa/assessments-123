@@ -691,6 +691,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return true;
   }
 
+  function canViewConfigColumns() {
+    if (!authGatingActive()) return true;
+    return authTeam === 'admin' || authTeam === 'content';
+  }
+
   function canEditAssessments() {
     if (!canWrite) return false;
     if (authGatingActive() && authTeam === 'onground') return false;
@@ -1452,6 +1457,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                     <th rowspan="2">Students</th>
                     <th colspan="2">Syllabus</th>
                     <th rowspan="2">Main Assessment SEB Status</th>
+                    <th rowspan="2" id="th-mock-config">Mock Assessment Config</th>
+                    <th rowspan="2" id="th-main-config">Main Assessment Config</th>
                     <th colspan="5" class="grp-amber">Mock Assessment</th>
                     <th colspan="4" class="grp-blue">Main Assessment</th>
                     <th class="col-actions" rowspan="2">Actions</th>
@@ -2521,12 +2528,18 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td>'+dateTimeCell('mainEndAt', d, editing)+errSpan('main', id, errors.main)+'</td>'
       + '<td class="col-wrap-text">'+textCell('mainTag', d.mainTag, editing, 'Tag')+'</td>';
 
+    const configColsHidden = canViewConfigColumns() ? '' : ' hidden';
+    const configCols =
+        '<td' + configColsHidden + '>' + (d.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, false) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td' + configColsHidden + '>' + configField('mainConfigUrl', d.mainConfigUrl, false) + '</td>';
+
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + programCell(d.program, editing) + '</td>'
       + '<td>' + textCell('batch', d.batch, editing, 'Title') + '</td>'
       + '<td>' + studentsButtonCell(id, d.batch) + '</td>'
       + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing, id) + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
+      + configCols
       + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
       + mockCols
       + mainCols
@@ -2726,6 +2739,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const tbody = document.getElementById('tbody');
     if (!tbody) return;
     populateSyllabusProgramFilterOptions();
+    const showConfigCols = canViewConfigColumns();
+    const thMockConfig = document.getElementById('th-mock-config');
+    if (thMockConfig) thMockConfig.hidden = !showConfigCols;
+    const thMainConfig = document.getElementById('th-main-config');
+    if (thMainConfig) thMainConfig.hidden = !showConfigCols;
     let filtered = getFilteredBatches();
     if (editingId && !filtered.some(b => b.id === editingId)) {
       const editingBatch = batches.find(b => b.id === editingId);
@@ -2733,7 +2751,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     updateRecordsSelectionUI(filtered);
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="17"><div class="empty-state">No records match your filters.'+(canEditRecords()?'<div><button type="button" class="btn btn--primary" data-action="add-batch">Raise Request</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="18"><div class="empty-state">No records match your filters.'+(canEditRecords()?'<div><button type="button" class="btn btn--primary" data-action="add-batch">Raise Request</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
