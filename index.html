@@ -702,8 +702,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return true;
   }
 
-  // Adding new Titles, Bulk Import, and Notify SMEs stay off-limits for Content
-  // team even though they can edit Assessment Config on existing Titles.
+  // Adding new Titles, Bulk Import, and Notify SMEs (both on Curriculum and on
+  // NxtMock Config) stay off-limits for Content team even though they can edit
+  // Assessment Config on existing Titles.
   function canManageRecordCatalog() {
     if (!canWrite) return false;
     if (authGatingActive() && authTeam === 'content') return false;
@@ -2596,6 +2597,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function updateNxtmockConfigSelectionUI(filtered) {
     const btn = document.getElementById('nxtmock-notify-smes-btn');
     if (btn) {
+      btn.hidden = !canManageRecordCatalog();
       btn.disabled = selectedNxtmockIds.size === 0;
       btn.textContent = 'Notify SMEs' + (selectedNxtmockIds.size ? ' (' + selectedNxtmockIds.size + ')' : '');
     }
@@ -5186,7 +5188,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function openNxtmockNotifyModal() {
-    if (!selectedNxtmockIds.size) return;
+    if (!canManageRecordCatalog() || !selectedNxtmockIds.size) return;
     const selected = batches.filter(b => selectedNxtmockIds.has(b.id));
     const names = selected.map(b => b.batch);
     const overlay = document.getElementById('notify-modal-overlay');
