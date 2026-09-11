@@ -164,7 +164,6 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .settings-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:480px;}
 .admin-register-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;}
 @media (max-width:520px){ .admin-register-grid{grid-template-columns:1fr;} }
-.team-edit-select{min-width:150px;}
 .settings-panel-title{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--ink);margin:0 0 4px;}
 
 .help-hero{display:flex;align-items:center;gap:18px;background:linear-gradient(135deg,var(--accent-soft),var(--blue-soft));border:1px solid var(--border);border-radius:18px;padding:26px 28px;margin-bottom:26px;}
@@ -236,6 +235,7 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .notif-card-body{margin:0;font-size:13px;color:var(--ink-2);}
 .notif-card-foot{margin-top:6px;font-size:11.5px;}
 .notify-recipient-row{display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0;}
+.team-checkbox-group{display:flex;flex-wrap:wrap;gap:4px 16px;}
 .program-owner-row{display:flex;align-items:flex-start;gap:16px;padding:10px 0;border-bottom:1px solid var(--border-soft);}
 .program-owner-row-name{min-width:160px;font-weight:600;}
 .program-owner-row-checks{display:flex;flex-wrap:wrap;gap:6px 18px;}
@@ -553,6 +553,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let authInstance = null;
   let authUser = null;
   let authTeam = null;
+  let authTeams = [];
   let authReady = false;
   let authMode = 'signin';
   let authError = '';
@@ -722,44 +723,55 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return firebaseConfigured && !isClaudeEnv;
   }
 
-  function allowedSections() {
-    if (!authGatingActive()) return TEAM_SECTIONS.admin;
-    if (!authTeam) return [];
-    return TEAM_SECTIONS[authTeam] || [];
+  // Whether the signed-in user belongs to team `t`. A person can now belong
+  // to more than one team at once (e.g. Admin + Onground) -- gating checks
+  // should use this instead of comparing the single legacy `authTeam`.
+  function hasTeam(t) {
+    return authTeams.includes(t);
   }
 
-  // Full field-by-field editing of existing Titles. False for Content team --
-  // they only get the narrower canViewConfigColumns() edit (Assessment Config
-  // fields only, via startEditConfigOnly) and read-only viewing otherwise.
+  function allowedSections() {
+    if (!authGatingActive()) return TEAM_SECTIONS.admin;
+    if (!authTeams.length) return [];
+    const set = new Set();
+    authTeams.forEach(t => (TEAM_SECTIONS[t] || []).forEach(s => set.add(s)));
+    return Array.from(set);
+  }
+
+  // Full field-by-field editing of existing Titles. False only when EVERY
+  // team the user belongs to is Content -- they only get the narrower
+  // canViewConfigColumns() edit (Assessment Config fields only, via
+  // startEditConfigOnly) and read-only viewing otherwise. Someone who is
+  // both Content and another team gets the broader access.
   function canEditRecords() {
     if (!canWrite) return false;
-    if (authGatingActive() && authTeam === 'content') return false;
+    if (authGatingActive() && authTeams.length && authTeams.every(t => t === 'content')) return false;
     return true;
   }
 
   // Adding new Titles, Bulk Import, and Notify SMEs (both on Curriculum and on
-  // NxtMock Config) stay off-limits for Content team even though they can edit
-  // Assessment Config on existing Titles.
+  // NxtMock Config) stay off-limits for Content-only users even though they
+  // can edit Assessment Config on existing Titles.
   function canManageRecordCatalog() {
     if (!canWrite) return false;
-    if (authGatingActive() && authTeam === 'content') return false;
+    if (authGatingActive() && authTeams.length && authTeams.every(t => t === 'content')) return false;
     return true;
   }
 
   function canViewConfigColumns() {
     if (!authGatingActive()) return true;
-    return authTeam === 'admin' || authTeam === 'content';
+    return hasTeam('admin') || hasTeam('content');
   }
 
   function canEditAssessments() {
     if (!canWrite) return false;
-    if (authGatingActive() && authTeam === 'onground') return false;
+    if (authGatingActive() && authTeams.length && authTeams.every(t => t === 'onground')) return false;
     return true;
   }
 
   async function handleAuthStateChanged(user) {
     if (!user) {
-      authUser = null; authTeam = null; authStatus = null; appUsers = [];
+      authUser = null; authTeam = null; authTeams = []; authStatus = null; appUsers = [];
       authReady = true;
       render();
       return;
@@ -771,17 +783,26 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         const data = snap.data();
         authUser.name = data.name || '';
         authStatus = data.status || 'active';
-        authTeam = authStatus === 'active' ? (data.team || null) : null;
+        const teams = teamsOf(data);
+        authTeams = authStatus === 'active' ? teams : [];
+        authTeam = authTeams[0] || null;
       } else {
-        authStatus = null; authTeam = null;
+        authStatus = null; authTeam = null; authTeams = [];
       }
     } catch (err) {
       console.error('Could not load team assignment', err);
-      authStatus = null; authTeam = null;
+      authStatus = null; authTeam = null; authTeams = [];
     }
     authReady = true;
     render();
-    if (authTeam) loadAppUsers();
+    if (authTeams.length) loadAppUsers();
+  }
+
+  // A user doc may still have the old singular `team` field (pre-multi-team);
+  // normalize either shape into an array.
+  function teamsOf(u) {
+    if (Array.isArray(u.teams)) return u.teams;
+    return u.team ? [u.team] : [];
   }
 
   function authErrorMessage(err) {
@@ -822,7 +843,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       const record = {
         name: name.trim(),
         email,
-        team: isBootstrap ? 'admin' : team,
+        teams: [isBootstrap ? 'admin' : team],
         status: isBootstrap ? 'active' : 'pending',
         createdAt: new Date().toISOString()
       };
@@ -908,12 +929,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   async function approveUser(uid) {
-    if (authTeam !== 'admin') return;
-    const sel = document.querySelector('.pending-team-select[data-id="' + uid + '"]');
-    const team = sel ? sel.value : '';
-    if (!team) { flashToast('Pick a team before approving.', 'error'); return; }
+    if (!hasTeam('admin')) return;
+    const checks = document.querySelectorAll('.pending-team-check[data-id="' + uid + '"]:checked');
+    const teams = Array.from(checks).map(c => c.value);
+    if (!teams.length) { flashToast('Pick at least one team before approving.', 'error'); return; }
     try {
-      await fs.setDoc(fs.doc(db, 'users', uid), { team, status: 'active', approvedAt: new Date().toISOString() }, { merge: true });
+      await fs.setDoc(fs.doc(db, 'users', uid), { teams, status: 'active', approvedAt: new Date().toISOString() }, { merge: true });
       await loadAppUsers();
       flashToast('Approved.', 'success');
     } catch (err) {
@@ -922,7 +943,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   async function rejectUser(uid) {
-    if (authTeam !== 'admin') return;
+    if (!hasTeam('admin')) return;
     if (!confirm('Reject this access request? They will need to register again if they still want access.')) return;
     try {
       await fs.deleteDoc(fs.doc(db, 'users', uid));
@@ -934,7 +955,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   async function removeAppUser(uid) {
-    if (authTeam !== 'admin') return;
+    if (!hasTeam('admin')) return;
     if (uid === (authUser && authUser.uid)) { flashToast('You can\'t remove your own access.', 'error'); return; }
     if (!confirm('Remove this person\'s access? Their login still exists, but they will be blocked from the app until re-approved.')) return;
     try {
@@ -947,7 +968,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function startTeamEdit(uid) {
-    if (authTeam !== 'admin') return;
+    if (!hasTeam('admin')) return;
     teamEditingId = uid;
     renderAppUsersList();
   }
@@ -958,12 +979,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   async function saveTeamEdit(uid) {
-    if (authTeam !== 'admin') return;
-    const sel = document.querySelector('.team-edit-select[data-id="' + uid + '"]');
-    const newTeam = sel ? sel.value : '';
-    if (!newTeam) { flashToast('Pick a team first.', 'error'); return; }
+    if (!hasTeam('admin')) return;
+    const checks = document.querySelectorAll('.team-edit-check[data-id="' + uid + '"]:checked');
+    const teams = Array.from(checks).map(c => c.value);
+    if (!teams.length) { flashToast('Pick at least one team.', 'error'); return; }
     try {
-      await fs.setDoc(fs.doc(db, 'users', uid), { team: newTeam }, { merge: true });
+      await fs.setDoc(fs.doc(db, 'users', uid), { teams }, { merge: true });
       teamEditingId = null;
       await loadAppUsers();
       flashToast('Team updated.', 'success');
@@ -973,18 +994,18 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   async function adminRegisterUser() {
-    if (authTeam !== 'admin') return;
+    if (!hasTeam('admin')) return;
     const nameEl = document.getElementById('admin-reg-name');
     const emailEl = document.getElementById('admin-reg-email');
-    const teamEl = document.getElementById('admin-reg-team');
     const passwordEl = document.getElementById('admin-reg-password');
     const name = nameEl ? nameEl.value.trim() : '';
     const email = emailEl ? emailEl.value.trim() : '';
-    const team = teamEl ? teamEl.value : '';
+    const teamChecks = document.querySelectorAll('.admin-reg-team-check:checked');
+    const teams = Array.from(teamChecks).map(c => c.value);
     const password = passwordEl ? passwordEl.value : '';
     if (!name) { flashToast('Enter a full name.', 'error'); return; }
     if (!email) { flashToast('Enter an email.', 'error'); return; }
-    if (!team) { flashToast('Select a team.', 'error'); return; }
+    if (!teams.length) { flashToast('Select at least one team.', 'error'); return; }
     if (password.length < 6) { flashToast('Password must be at least 6 characters.', 'error'); return; }
     let secondaryApp = null;
     try {
@@ -996,14 +1017,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       const uid = cred.user.uid;
       await authFs.signOut(secondaryAuth);
       await fs.setDoc(fs.doc(db, 'users', uid), {
-        name, email, team, status: 'active',
+        name, email, teams, status: 'active',
         createdAt: new Date().toISOString(),
         approvedAt: new Date().toISOString(),
         approvedBy: authUser.email
       });
       if (nameEl) nameEl.value = '';
       if (emailEl) emailEl.value = '';
-      if (teamEl) teamEl.value = '';
+      teamChecks.forEach(c => { c.checked = false; });
       if (passwordEl) passwordEl.value = '';
       await loadAppUsers();
       flashToast('User registered and approved.', 'success');
@@ -1014,8 +1035,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
   }
 
-  function teamSelectOptionsHTML(selected) {
-    return Object.keys(TEAM_LABELS).map(k => '<option value="' + k + '"' + (k === selected ? ' selected' : '') + '>' + esc(TEAM_LABELS[k]) + '</option>').join('');
+  function teamCheckboxesHTML(cls, uid, selectedTeams) {
+    return '<div class="team-checkbox-group">' + Object.keys(TEAM_LABELS).map(k =>
+      '<label class="notify-recipient-row"><input type="checkbox" class="' + cls + '" data-id="' + uid + '" value="' + k + '"' + (selectedTeams.includes(k) ? ' checked' : '') + '> ' + esc(TEAM_LABELS[k]) + '</label>'
+    ).join('') + '</div>';
   }
 
   function getFilteredAppUsers() {
@@ -1024,7 +1047,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       const status = u.status === 'active' ? 'active' : 'pending';
       if (teamStatusTab !== 'all' && teamStatusTab !== status) return false;
       if (q) {
-        const hay = [u.name, u.email, TEAM_LABELS[u.team] || u.team].join(' ').toLowerCase();
+        const hay = [u.name, u.email].concat(teamsOf(u).map(t => TEAM_LABELS[t] || t)).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -1041,11 +1064,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function appUserRowHTML(u) {
     const isPending = u.status !== 'active';
     const isEditingTeam = teamEditingId === u.id;
+    const userTeams = teamsOf(u);
     const teamCell = isPending
-      ? '<select class="cell-input pending-team-select" data-id="' + u.id + '">' + teamSelectOptionsHTML(u.team) + '</select>'
+      ? teamCheckboxesHTML('pending-team-check', u.id, userTeams)
       : (isEditingTeam
-          ? '<select class="cell-input team-edit-select" data-id="' + u.id + '">' + teamSelectOptionsHTML(u.team) + '</select>'
-          : (esc(TEAM_LABELS[u.team] || u.team) || dash()));
+          ? teamCheckboxesHTML('team-edit-check', u.id, userTeams)
+          : (userTeams.map(t => TEAM_LABELS[t] || t).join(', ') || dash()));
     const statusCell = isPending
       ? '<span class="invite-status invite-status--pending">Pending</span>'
       : '<span class="invite-status invite-status--active">Active</span>';
@@ -1184,7 +1208,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     if (badge) {
       badge.hidden = false;
-      badge.innerHTML = '<strong>' + esc(authUser.name || authUser.email) + '</strong> &middot; ' + esc(TEAM_LABELS[authTeam] || authTeam);
+      badge.innerHTML = '<strong>' + esc(authUser.name || authUser.email) + '</strong> &middot; ' + esc(authTeams.map(t => TEAM_LABELS[t] || t).join(', '));
     }
     if (signOutBtn) signOutBtn.hidden = false;
   }
@@ -1813,14 +1837,13 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                 <div class="filter-field"><label for="admin-reg-name">Full Name</label><input type="text" id="admin-reg-name" placeholder="User's full name"></div>
                 <div class="filter-field"><label for="admin-reg-email">Email</label><input type="email" id="admin-reg-email" placeholder="user@nxtwave.co.in"></div>
                 <div class="filter-field">
-                  <label for="admin-reg-team">Team</label>
-                  <select id="admin-reg-team">
-                    <option value="" selected>Select team</option>
-                    <option value="admin">Admin</option>
-                    <option value="content">Content Team</option>
-                    <option value="assessments_ops">Assessments Ops Team</option>
-                    <option value="onground">Onground Team</option>
-                  </select>
+                  <label>Team(s)</label>
+                  <div class="team-checkbox-group">
+                    <label class="notify-recipient-row"><input type="checkbox" class="admin-reg-team-check" value="admin"> Admin</label>
+                    <label class="notify-recipient-row"><input type="checkbox" class="admin-reg-team-check" value="content"> Content Team</label>
+                    <label class="notify-recipient-row"><input type="checkbox" class="admin-reg-team-check" value="assessments_ops"> Assessments Ops Team</label>
+                    <label class="notify-recipient-row"><input type="checkbox" class="admin-reg-team-check" value="onground"> Onground Team</label>
+                  </div>
                 </div>
                 <div class="filter-field"><label for="admin-reg-password">Initial Password</label><input type="text" id="admin-reg-password" placeholder="Min. 6 characters"></div>
               </div>
@@ -3458,7 +3481,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function renderProgramOwnersPanel() {
     const el = document.getElementById('program-owners-list');
     if (!el) return;
-    const opsUsers = appUsers.filter(u => u.team === 'assessments_ops' && u.status !== 'pending');
+    const opsUsers = appUsers.filter(u => teamsOf(u).includes('assessments_ops') && u.status !== 'pending');
     if (!programOptions.length) {
       el.innerHTML = '<p class="section-desc">Add a program on the Programs tab first.</p>';
       return;
@@ -4507,7 +4530,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (viewStudentsTargetBatch) renderViewStudentsTable();
     if (shortlistTargetBatchId) renderShortlistCurrentList();
     if (editingId) renderTitleFormModal();
-    if (authTeam === 'admin') renderAppUsersList();
+    if (hasTeam('admin')) renderAppUsersList();
   }
 
   function updateErrorDisplays() {
@@ -5367,7 +5390,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function notificationVisible(n) {
     if (!authUser) return false;
-    if (n.audienceAdmins && authTeam === 'admin') return true;
+    if (n.audienceAdmins && hasTeam('admin')) return true;
     if (n.audienceUids.includes(authUser.uid)) return true;
     if (n.audienceProgram && (programOwners[n.audienceProgram] || []).includes(authUser.uid)) return true;
     return false;
@@ -5512,7 +5535,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const opsNames = ownerUids.map(uid => { const u = appUsers.find(x => x.id === uid); return u ? (u.name || u.email) : ''; }).filter(Boolean);
     const opsEl = document.getElementById('send-notify-ops');
     if (opsEl) opsEl.textContent = opsNames.length ? ('Assessments Ops auto-notified: ' + opsNames.join(', ')) : 'No Assessments Ops owner mapped for this program — add one in Settings → Program Owners.';
-    const contentUsers = appUsers.filter(u => u.team === 'content' && u.status !== 'pending');
+    const contentUsers = appUsers.filter(u => teamsOf(u).includes('content') && u.status !== 'pending');
     const listEl = document.getElementById('send-notify-recipients-list');
     if (listEl) {
       listEl.innerHTML = contentUsers.length
