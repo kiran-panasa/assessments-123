@@ -78,7 +78,6 @@ thead th.col-syllabus{z-index:5;background:var(--surface-2);}
 th.col-actions,td.col-actions{position:sticky;right:0;z-index:2;background:var(--surface);box-shadow:-1px 0 0 var(--border);}
 thead th.col-actions{z-index:5;background:var(--surface-2);}
 tbody td{padding:9px 12px;border-bottom:1px solid var(--border-soft);vertical-align:top;}
-tbody tr:not(.row-editing):hover td{background:var(--surface-2);}
 tr.row-editing td{background:var(--surface-2);}
 tr.row-editing td.col-syllabus,tr.row-editing td.col-actions{background:var(--surface-2);}
 tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 var(--border);}
@@ -396,14 +395,17 @@ button.kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px -14px rg
 
 .table-wrap{transition:box-shadow .25s ease;}
 tbody tr:not(.row-editing){transition:background-color .15s ease,box-shadow .15s ease;}
-tbody tr:not(.row-editing):hover td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 var(--border);}
 /* Zebra striping so rows are easy to tell apart at a glance, across every
-   table in the app -- they all share this same tbody/td structure. The
-   hover accent bar above still makes hover distinguishable from a
-   resting even row even though both use the same tint. */
+   table in the app -- they all share this same tbody/td structure. */
 tbody tr:nth-child(even):not(.row-editing) td,
 tbody tr:nth-child(even):not(.row-editing) td.col-syllabus,
 tbody tr:nth-child(even):not(.row-editing) td.col-actions{background:var(--surface-2);}
+/* Hover uses a distinct color (not the zebra tint) and is placed after the
+   zebra rule so it wins on both odd and even rows. */
+tbody tr:not(.row-editing):hover td,
+tbody tr:not(.row-editing):hover td.col-syllabus,
+tbody tr:not(.row-editing):hover td.col-actions{background:var(--blue-soft);}
+tbody tr:not(.row-editing):hover td.col-syllabus{box-shadow:inset 3px 0 0 var(--blue),1px 0 0 var(--border);}
 
 .badge{position:relative;transition:box-shadow .15s ease;}
 .badge--yes{padding-left:20px;box-shadow:0 0 0 1px var(--accent-soft) inset;}
@@ -555,7 +557,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     onground: 'Onground Team',
     assessments_ops: 'Assessments Ops Team'
   };
-  let latestRemote = null;
   let activeSection = 'overview';
   let searchQuery = '';
   let expandedTopics = new Set();
@@ -568,6 +569,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let viewStudentsTargetProgram = '';
   let selectedBatchIds = new Set();
   let syllabusProgramFilter = '';
+  let syllabusDateFrom = '';
+  let syllabusDateTo = '';
   const PROGRAM_OPTIONS_LS_KEY = 'cohort-ledger:program-options:v1';
   let programOptions = [];
   try {
@@ -1253,7 +1256,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function applyRemoteBatches(list) {
-    latestRemote = list;
     if (editingId === null) { batches = list; render(); }
   }
 
@@ -1433,6 +1435,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             <div class="filter-bar">
               <div class="filter-field"><label for="syllabus-search">Search</label><input type="text" id="syllabus-search" placeholder="Search title, subject, topic&hellip;"></div>
               <div class="filter-field"><label for="syllabus-filter-program">Program</label><select id="syllabus-filter-program"><option value="">All Programs</option></select></div>
+              <div class="filter-field"><label for="syllabus-date-from">Assessment date from</label><input type="date" id="syllabus-date-from"></div>
+              <div class="filter-field"><label for="syllabus-date-to">To</label><input type="date" id="syllabus-date-to"></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-syllabus-filter">Clear</button>
               <button type="button" class="btn btn--ghost btn--sm" id="notify-smes-btn" data-action="open-notify" disabled>Notify SMEs</button>
               <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="import-batches-btn" data-action="open-import">Bulk Import</button>
@@ -2654,17 +2658,46 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     ).join('');
   }
 
+  function assessmentDatesFor(b) {
+    return [b.mockStartAt, b.mockEndAt, b.mainStartAt, b.mainEndAt]
+      .filter(Boolean)
+      .map(dt => dt.split('T')[0]);
+  }
+
+  function earliestAssessmentDate(b) {
+    const dates = assessmentDatesFor(b);
+    return dates.length ? dates.sort()[0] : null;
+  }
+
   function getFilteredBatches() {
     const q = searchQuery.trim().toLowerCase();
-    return batches.filter(b => {
+    const dateFilterActive = !!(syllabusDateFrom || syllabusDateTo);
+    let list = batches.filter(b => {
       if (q) {
         const syllabusText = b.syllabusItems.map(it => it.subject + ' ' + it.topics).join(' ');
         const hay = [b.batch, syllabusText, b.mockTitle, b.mockTag, b.mockInterviewTitle, b.mockInterviewTag, b.mainTitle, b.mainTag, b.mainInterviewTitle, b.mainInterviewTag].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (syllabusProgramFilter && b.program !== syllabusProgramFilter) return false;
+      if (dateFilterActive) {
+        const dates = assessmentDatesFor(b);
+        if (!dates.length) return false;
+        const inRange = dates.some(d => (!syllabusDateFrom || d >= syllabusDateFrom) && (!syllabusDateTo || d <= syllabusDateTo));
+        if (!inRange) return false;
+      }
       return true;
     });
+    if (dateFilterActive) {
+      list = list.slice().sort((a, b) => {
+        const da = earliestAssessmentDate(a);
+        const db = earliestAssessmentDate(b);
+        if (da && db) return da < db ? -1 : da > db ? 1 : 0;
+        if (da) return -1;
+        if (db) return 1;
+        return 0;
+      });
+    }
+    return list;
   }
 
   function populateSyllabusProgramFilterOptions() {
@@ -4308,11 +4341,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function startAdd() {
     if (!canEditRecords()) return;
-    if (editingId && isNewRow) batches = batches.filter(b => b.id !== editingId);
     activeSection = 'records';
     const id = uid();
     const blank = normalizeBatch({ id });
-    batches.unshift(blank);
     editingId = id; isNewRow = true;
     draft = cloneForEdit(blank);
     titleFormSnapshot = JSON.stringify(draft);
@@ -4393,6 +4424,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     draft.updatedAt = new Date().toISOString();
     const idx = batches.findIndex(b => b.id === editingId);
     if (idx > -1) batches[idx] = { ...draft };
+    else batches = [{ ...draft }].concat(batches);
     const saved = { ...draft };
     editingId = null; draft = null; isNewRow = false; titleFormSnapshot = '';
     closeTitleFormModal();
@@ -4402,9 +4434,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function cancel() {
-    if (isNewRow) batches = batches.filter(b => b.id !== editingId);
     editingId = null; draft = null; isNewRow = false; titleFormSnapshot = '';
-    if (latestRemote) batches = latestRemote;
     render();
   }
 
@@ -5305,7 +5335,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'clear-syllabus-filter') {
       searchQuery = '';
       syllabusProgramFilter = '';
+      syllabusDateFrom = '';
+      syllabusDateTo = '';
       const searchEl = document.getElementById('syllabus-search'); if (searchEl) searchEl.value = '';
+      const dateFromEl = document.getElementById('syllabus-date-from'); if (dateFromEl) dateFromEl.value = '';
+      const dateToEl = document.getElementById('syllabus-date-to'); if (dateToEl) dateToEl.value = '';
       renderRecordsTable();
     }
     else if (action === 'toggle-topics') {
@@ -5495,6 +5529,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   root.addEventListener('change', e => {
     const t = e.target;
     if (t.id === 'syllabus-filter-program') { syllabusProgramFilter = t.value; renderRecordsTable(); return; }
+    if (t.id === 'syllabus-date-from') { syllabusDateFrom = t.value; renderRecordsTable(); return; }
+    if (t.id === 'syllabus-date-to') { syllabusDateTo = t.value; renderRecordsTable(); return; }
     if (t.id === 'ov-from') { overviewDateRange.from = t.value; renderKPICards(); return; }
     if (t.id === 'ov-to') { overviewDateRange.to = t.value; renderKPICards(); return; }
     if (t.id === 'wn-date') { whatsNextDate = t.value; renderTimeline(); return; }
