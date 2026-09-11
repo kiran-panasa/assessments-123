@@ -3861,6 +3861,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function interviewStatus(b) {
     if (b.mainInterviewRequired === null || b.mockInterviewRequired === null) return 'not-set';
     if (!b.mainInterviewRequired && !b.mockInterviewRequired) return 'not-required';
+    const mainConfigReady = !b.mainInterviewRequired || !!b.mainInterviewConfigUrl;
+    const mockConfigReady = !b.mockInterviewRequired || !!b.mockInterviewConfigUrl;
+    if (!mainConfigReady || !mockConfigReady) return 'awaiting-config';
     const mainDone = !b.mainInterviewRequired || !!b.mainInterviewLink;
     const mockDone = !b.mockInterviewRequired || !!b.mockInterviewLink;
     return (mainDone && mockDone) ? 'loaded' : 'ready';
@@ -3897,6 +3900,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const s = interviewStatus(b);
     if (s === 'not-set') return '<button type="button" class="badge badge--attention" data-action="nav" data-section="nxtmock-config" style="cursor:pointer;border:none;font:inherit;" title="Set this on NxtMock Config">Not set</button>';
     if (s === 'not-required') return '<span class="muted-cell">No interview for this batch</span>';
+    if (s === 'awaiting-config') return '<button type="button" class="badge badge--attention" data-action="nav" data-section="nxtmock-config" style="cursor:pointer;border:none;font:inherit;" title="Add the Main/Mock Interview Config link on NxtMock Config">Config Pending</button>';
     return '<span class="badge '+(s==='loaded'?'badge--yes':'badge--no')+'">'+(s==='loaded'?'Loaded in Prod':'Ready to Load in Prod')+'</span>';
   }
 
