@@ -688,6 +688,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function canEditRecords() {
+    return canWrite;
+  }
+
+  // Adding new Titles, Bulk Import, and Notify SMEs stay off-limits for Content
+  // team even though they can now edit existing Titles freely.
+  function canManageRecordCatalog() {
     if (!canWrite) return false;
     if (authGatingActive() && authTeam === 'content') return false;
     return true;
@@ -2566,10 +2572,13 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function updateAccessBanner() {
     const el = document.getElementById('access-banner');
     if (el) el.hidden = canEditRecords() || activeSection !== 'records';
+    const canCatalog = canManageRecordCatalog();
     const addBtn = document.getElementById('add-batch-btn');
-    if (addBtn) addBtn.disabled = !canEditRecords();
+    if (addBtn) addBtn.hidden = activeSection !== 'records' || !canCatalog;
     const importBtn = document.getElementById('import-batches-btn');
-    if (importBtn) importBtn.disabled = !canEditRecords();
+    if (importBtn) importBtn.hidden = !canCatalog;
+    const notifyBtn = document.getElementById('notify-smes-btn');
+    if (notifyBtn) notifyBtn.hidden = !canCatalog;
   }
 
   function todayISO() {
@@ -2767,7 +2776,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     updateRecordsSelectionUI(filtered);
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="19"><div class="empty-state">No records match your filters.'+(canEditRecords()?'<div><button type="button" class="btn btn--primary" data-action="add-batch">Raise Request</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="19"><div class="empty-state">No records match your filters.'+(canManageRecordCatalog()?'<div><button type="button" class="btn btn--primary" data-action="add-batch">Raise Request</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
@@ -4198,9 +4207,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     document.querySelectorAll('.content-section').forEach(sec => {
       sec.classList.toggle('active', sec.id === 'section-' + activeSection);
     });
-    const addBtn0 = document.getElementById('add-batch-btn');
-    if (addBtn0) addBtn0.hidden = activeSection !== 'records';
-
     renderKPICards();
     renderTimeline();
     renderRecordsTable();
@@ -4378,7 +4384,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function startAdd() {
-    if (!canEditRecords()) return;
+    if (!canManageRecordCatalog()) return;
     activeSection = 'records';
     const id = uid();
     const blank = normalizeBatch({ id });
@@ -4976,7 +4982,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function openNotifyModal() {
-    if (!selectedBatchIds.size) return;
+    if (!canManageRecordCatalog() || !selectedBatchIds.size) return;
     const selected = batches.filter(b => selectedBatchIds.has(b.id));
     const names = selected.map(b => b.batch);
     const overlay = document.getElementById('notify-modal-overlay');
@@ -5524,7 +5530,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       downloadSampleXLSX();
     }
     else if (action === 'open-import') {
-      if (!canEditRecords()) return;
+      if (!canManageRecordCatalog()) return;
       openImportModal();
     }
     else if (action === 'close-import') {
@@ -5585,7 +5591,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'get-otp-inline') { getOtpInline(); }
     else if (action === 'submit-inline-otp') { submitInlineOTP(); }
     else if (action === 'confirm-import') {
-      if (!canEditRecords() || !importPreview || !importPreview.batches.length) return;
+      if (!canManageRecordCatalog() || !importPreview || !importPreview.batches.length) return;
       const imported = importPreview.batches;
       const existingIds = new Set(batches.map(b => b.id));
       const newOnes = imported.filter(b => !existingIds.has(b.id));
