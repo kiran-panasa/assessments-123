@@ -598,6 +598,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let configSearchQuery = '';
   let configProgramFilter = '';
   let configStatusTab = 'all';
+  let configDateFrom = '';
+  let configDateTo = '';
   let nxtmockConfigSearchQuery = '';
   let nxtmockConfigProgramFilter = '';
   let nxtmockConfigInterviewFilter = '';
@@ -1520,6 +1522,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             <div class="filter-bar">
               <div class="filter-field"><label for="config-search">Search</label><input type="text" id="config-search" placeholder="Search title&hellip;"></div>
               <div class="filter-field"><label for="config-filter-program">Program</label><select id="config-filter-program"><option value="">All Programs</option></select></div>
+              <div class="filter-field"><label for="config-date-from">Assessment date from</label><input type="date" id="config-date-from"></div>
+              <div class="filter-field"><label for="config-date-to">To</label><input type="date" id="config-date-to"></div>
               <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="clear-config-filter">Clear</button>
             </div>
             <div class="table-wrap">
@@ -2984,6 +2988,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (!tbody) return;
     populateConfigFilterOptions();
     const q = configSearchQuery.trim().toLowerCase();
+    const dateFilterActive = !!(configDateFrom || configDateTo);
     let filtered = batches.filter(b => {
       if (q) {
         const hay = b.batch.toLowerCase();
@@ -2991,8 +2996,24 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       }
       if (configProgramFilter && b.program !== configProgramFilter) return false;
       if (configStatusTab !== 'all' && configStatus(b) !== configStatusTab) return false;
+      if (dateFilterActive) {
+        const dates = assessmentDatesFor(b);
+        if (!dates.length) return false;
+        const inRange = dates.some(d => (!configDateFrom || d >= configDateFrom) && (!configDateTo || d <= configDateTo));
+        if (!inRange) return false;
+      }
       return true;
     });
+    if (dateFilterActive) {
+      filtered = filtered.slice().sort((a, b) => {
+        const da = earliestAssessmentDate(a);
+        const db = earliestAssessmentDate(b);
+        if (da && db) return da < db ? -1 : da > db ? 1 : 0;
+        if (da) return -1;
+        if (db) return 1;
+        return 0;
+      });
+    }
     if (topinConfigModalId && !filtered.some(b => b.id === topinConfigModalId)) {
       const eb = batches.find(b => b.id === topinConfigModalId);
       if (eb) filtered = [eb].concat(filtered);
@@ -5603,8 +5624,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       updateSettingsTabVisibility();
     }
     else if (action === 'clear-config-filter') {
-      configSearchQuery = ''; configProgramFilter = '';
+      configSearchQuery = ''; configProgramFilter = ''; configDateFrom = ''; configDateTo = '';
       const searchEl = document.getElementById('config-search'); if (searchEl) searchEl.value = '';
+      const dateFromEl = document.getElementById('config-date-from'); if (dateFromEl) dateFromEl.value = '';
+      const dateToEl = document.getElementById('config-date-to'); if (dateToEl) dateToEl.value = '';
       renderConfigsTable();
     }
     else if (action === 'clear-nxtmock-config-filter') {
@@ -5860,6 +5883,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (t.id === 'syllabus-date-from') { syllabusDateFrom = t.value; renderRecordsTable(); return; }
     if (t.id === 'syllabus-date-to') { syllabusDateTo = t.value; renderRecordsTable(); return; }
     if (t.id === 'nxtmock-config-needed') { nxtmockConfigModalNeeded = t.value; renderNxtmockConfigModal(); return; }
+    if (t.id === 'config-date-from') { configDateFrom = t.value; renderConfigsTable(); return; }
+    if (t.id === 'config-date-to') { configDateTo = t.value; renderConfigsTable(); return; }
     if (t.id === 'ov-from') { overviewDateRange.from = t.value; renderKPICards(); return; }
     if (t.id === 'ov-to') { overviewDateRange.to = t.value; renderKPICards(); return; }
     if (t.id === 'wn-date') { whatsNextDate = t.value; renderTimeline(); return; }
