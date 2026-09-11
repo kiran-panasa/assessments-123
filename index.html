@@ -227,6 +227,18 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .auth-forgot-link{align-self:flex-end;border:none;background:none;color:var(--btn-primary-bg);font-size:12px;font-weight:600;cursor:pointer;padding:0;margin-top:-6px;font-family:inherit;}
 .auth-forgot-link:hover{text-decoration:underline;}
 .auth-user-badge{font-size:12px;color:var(--muted);margin-right:4px;}
+.notif-bell-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--ink-2);cursor:pointer;}
+.notif-bell-btn:hover{background:var(--surface-2);}
+.notif-bell-count{position:absolute;top:-5px;right:-5px;min-width:16px;height:16px;padding:0 3px;border-radius:999px;background:var(--amber);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center;}
+.notif-card{border:1px solid var(--border-soft);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--surface);}
+.notif-card--unread{border-color:var(--amber);background:var(--amber-soft);}
+.notif-card-head{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+.notif-card-body{margin:0;font-size:13px;color:var(--ink-2);}
+.notif-card-foot{margin-top:6px;font-size:11.5px;}
+.notify-recipient-row{display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0;}
+.program-owner-row{display:flex;align-items:flex-start;gap:16px;padding:10px 0;border-bottom:1px solid var(--border-soft);}
+.program-owner-row-name{min-width:160px;font-weight:600;}
+.program-owner-row-checks{display:flex;flex-wrap:wrap;gap:6px 18px;}
 .auth-user-badge strong{color:var(--ink);}
 .invite-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
 .invite-row:last-child{border-bottom:none;}
@@ -487,6 +499,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   const ICON_LOGOUT = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><path d="M6.5 13.5H3.8C3.4 13.5 3 13.1 3 12.7V3.3C3 2.9 3.4 2.5 3.8 2.5H6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.5 11L13.5 8L10.5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.3 8H6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
   const ICON_HELP = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M6.1 6.3C6.1 5.1 6.9 4.4 8 4.4C9.1 4.4 9.9 5.1 9.9 6.1C9.9 7.6 8 7.4 8 9.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="11.4" r="0.9" fill="currentColor"/></svg>';
   const ICON_EYE = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 8C1.5 8 4 3.5 8 3.5C12 3.5 14.5 8 14.5 8C14.5 8 12 12.5 8 12.5C4 12.5 1.5 8 1.5 8Z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.3"/></svg>';
+  const ICON_BELL = '<svg width="17" height="17" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 2.3C6.1 2.3 4.6 3.8 4.6 5.7V7.9C4.6 8.3 4.4 8.8 4.1 9.1L3.3 10C3 10.3 3.2 10.9 3.6 10.9H12.4C12.8 10.9 13 10.3 12.7 10L11.9 9.1C11.6 8.8 11.4 8.3 11.4 7.9V5.7C11.4 3.8 9.9 2.3 8 2.3Z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.6 12.7C6.9 13.2 7.4 13.5 8 13.5C8.6 13.5 9.1 13.2 9.4 12.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
   const ICON_EYE_OFF = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.2 2.2L13.8 13.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6.6 4C7.05 3.87 7.52 3.8 8 3.8C11.5 3.8 13.8 8 13.8 8C13.5 8.6 13 9.4 12.3 10.1M4.3 5.1C2.6 6.2 1.7 8 1.7 8C1.7 8 4 12.2 8 12.2C8.9 12.2 9.7 12 10.4 11.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.6 8C6.6 8.77 7.23 9.4 8 9.4C8.4 9.4 8.76 9.23 9.02 8.97" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
   // One-time automation setup via a shared link (?serverUrl=...&automationKey=...),
@@ -589,6 +602,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     try { localStorage.setItem(PROGRAM_OPTIONS_LS_KEY, JSON.stringify(programOptions)); } catch (e) {}
   }
   let notifyLastRecipients = '';
+  let notifications = [];
+  let programOwners = {};
+  let notifPanelOpen = false;
+  let pendingNotifyContext = null;
+  let notifyRecipientUids = new Set();
   let addStudentsTargetBatch = '';
   let addStudentsTargetBatchId = '';
   let addStudentsRows = [];
@@ -675,6 +693,22 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       }, err => {
         console.error('Firestore test UIDs sync error', err);
       });
+      const notificationsCol = fs.collection(db, 'notifications');
+      fs.onSnapshot(notificationsCol, snap => {
+        notifications = snap.docs.map(d => normalizeNotification({ id: d.id, ...d.data() }));
+        updateNotificationBell();
+        if (notifPanelOpen) renderNotificationsPanel();
+      }, err => {
+        console.error('Firestore notifications sync error', err);
+      });
+      fs.onSnapshot(fs.doc(db, 'settings', 'programOwners'), snap => {
+        programOwners = (snap.exists() && snap.data().map) || {};
+        renderProgramOwnersPanel();
+        updateNotificationBell();
+        if (notifPanelOpen) renderNotificationsPanel();
+      }, err => {
+        console.error('Firestore program owners sync error', err);
+      });
       updateSyncBadge();
     } catch (err) {
       console.error('Firebase init failed', err);
@@ -747,7 +781,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     authReady = true;
     render();
-    if (authTeam === 'admin') loadAppUsers();
+    if (authTeam) loadAppUsers();
   }
 
   function authErrorMessage(err) {
@@ -794,6 +828,16 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       };
       await fs.setDoc(fs.doc(db, 'users', cred.user.uid), record);
       if (isBootstrap) await fs.setDoc(fs.doc(db, 'meta', 'bootstrap'), { adminCreated: true });
+      else createNotification({
+        type: 'access-request',
+        headline: 'New Access Request',
+        badgeLabel: 'NEW REQUEST',
+        badgeTone: 'attention',
+        body: name.trim() + ' (' + email + ') from ' + (TEAM_LABELS[team] || team) + ' has requested access and is awaiting approval.',
+        navSection: 'teams',
+        navTeamTab: 'pending',
+        audienceAdmins: true
+      });
     } catch (err) {
       authError = authErrorMessage(err);
     }
@@ -1035,6 +1079,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function renderAppUsersList() {
     const tbody = document.getElementById('app-users-tbody');
     if (!tbody) return;
+    document.querySelectorAll('#section-teams .tab-row .tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === teamStatusTab));
     if (!appUsers.length) {
       tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No one has registered yet.</div></td></tr>';
       return;
@@ -1191,6 +1236,25 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (/^\d{4}-\d{2}-\d{2}[ T]\d{1,2}[:.]\d{2}$/.test(s)) return true;
     if (/^\d{1,2}[-\/]\d{1,2}[-\/]\d{4}[ T]\d{1,2}[:.]\d{2}$/.test(s)) return true;
     return false;
+  }
+
+  function normalizeNotification(n) {
+    return {
+      id: n.id,
+      type: n.type || '',
+      headline: n.headline || '',
+      badgeLabel: n.badgeLabel || '',
+      badgeTone: n.badgeTone || 'attention',
+      body: n.body || '',
+      navSection: n.navSection || null,
+      navTeamTab: n.navTeamTab || null,
+      audienceUids: Array.isArray(n.audienceUids) ? n.audienceUids : [],
+      audienceProgram: n.audienceProgram || null,
+      audienceAdmins: !!n.audienceAdmins,
+      readBy: Array.isArray(n.readBy) ? n.readBy : [],
+      createdAt: n.createdAt || '',
+      createdBy: n.createdBy || ''
+    };
   }
 
   function normalizeStudent(s) {
@@ -1426,6 +1490,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
           <h1 class="app-title">Assessments &amp; NxtMock Ops</h1>
         </div>
         <div class="header-right">
+          <button type="button" class="notif-bell-btn" id="notif-bell-btn" data-action="notif-bell" aria-label="Notifications" title="Notifications" hidden>${ICON_BELL}<span class="notif-bell-count" id="notif-bell-count" hidden>0</span></button>
           <span class="auth-user-badge" id="auth-user-badge" hidden></span>
           <button type="button" class="btn btn--primary" id="add-batch-btn" data-action="add-batch">Raise Request</button>
         </div>
@@ -1675,6 +1740,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             <div class="tab-row">
               <button type="button" class="tab-btn active" data-action="settings-tab" data-tab="programs">Programs</button>
               <button type="button" class="tab-btn" data-action="settings-tab" data-tab="testuids">Test UIDs</button>
+              <button type="button" class="tab-btn" data-action="settings-tab" data-tab="owners">Program Owners</button>
             </div>
 
             <div class="settings-tab-panel" id="settings-tab-programs">
@@ -1724,6 +1790,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                 </div>
                 <button type="button" class="btn btn--primary btn--sm" data-action="add-test-uid">Add</button>
               </div>
+            </div>
+            </div>
+
+            <div class="settings-tab-panel" id="settings-tab-owners" hidden>
+            <div class="settings-panel">
+              <h3 class="settings-panel-title">Program Owners</h3>
+              <p class="section-desc">Map each program to the Assessments Ops team member(s) who own it. When a Title under that program is raised or updated in Curriculum, they&rsquo;re notified automatically &mdash; one person can own several programs.</p>
+              <div id="program-owners-list"></div>
             </div>
             </div>
           </section>
@@ -2152,6 +2226,40 @@ function boot(seedBatches, seedStudents, seedTestUids) {
           <button type="button" class="btn btn--ghost btn--sm" data-action="close-notify">Cancel</button>
           <button type="button" class="btn btn--ghost btn--sm" data-action="open-notify-web">Open in Teams Web</button>
           <button type="button" class="btn btn--primary btn--sm" data-action="open-notify-app">Open in Teams App</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="notifications-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="notifications-modal-title">
+        <div class="modal-header">
+          <h3 id="notifications-modal-title">Notifications</h3>
+          <button type="button" class="btn btn--ghost btn--xs" id="notif-mark-all-btn" data-action="notif-mark-all">Mark all read</button>
+          <button type="button" class="modal-close" data-action="close-notifications" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="notifications-list"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="send-notify-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="send-notify-modal-title">
+        <div class="modal-header">
+          <h3 id="send-notify-modal-title">Notify Team</h3>
+          <button type="button" class="modal-close" data-action="close-send-notify" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc" id="send-notify-summary"></p>
+          <p class="section-desc" id="send-notify-ops"></p>
+          <div class="modal-field-stack">
+            <div class="filter-field">
+              <label>Content Team recipients (optional)</label>
+              <div id="send-notify-recipients-list"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-send-notify">Skip</button>
+          <button type="button" class="btn btn--primary btn--sm" data-action="send-notify-submit">Send Notification</button>
         </div>
       </div>
     </div>
@@ -3329,9 +3437,45 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function updateSettingsTabVisibility() {
     const programsPanel = document.getElementById('settings-tab-programs');
     const testUidsPanel = document.getElementById('settings-tab-testuids');
+    const ownersPanel = document.getElementById('settings-tab-owners');
     if (programsPanel) programsPanel.hidden = settingsTab !== 'programs';
     if (testUidsPanel) testUidsPanel.hidden = settingsTab !== 'testuids';
+    if (ownersPanel) ownersPanel.hidden = settingsTab !== 'owners';
     document.querySelectorAll('#section-settings .tab-row .tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === settingsTab));
+  }
+
+  function toggleProgramOwner(program, uid, checked) {
+    if (!fs || !db) return;
+    const current = (programOwners[program] || []).slice();
+    const next = checked ? Array.from(new Set(current.concat([uid]))) : current.filter(id => id !== uid);
+    const updatedMap = { ...programOwners, [program]: next };
+    fs.setDoc(fs.doc(db, 'settings', 'programOwners'), { map: updatedMap }, { merge: true }).catch(err => {
+      console.error('Could not save program owner mapping', err);
+      flashToast('Could not save that mapping.', 'error');
+    });
+  }
+
+  function renderProgramOwnersPanel() {
+    const el = document.getElementById('program-owners-list');
+    if (!el) return;
+    const opsUsers = appUsers.filter(u => u.team === 'assessments_ops' && u.status !== 'pending');
+    if (!programOptions.length) {
+      el.innerHTML = '<p class="section-desc">Add a program on the Programs tab first.</p>';
+      return;
+    }
+    if (!opsUsers.length) {
+      el.innerHTML = '<p class="section-desc">No Assessments Ops team members yet — register one on the Teams page first.</p>';
+      return;
+    }
+    el.innerHTML = programOptions.map(program => {
+      const owners = programOwners[program] || [];
+      return '<div class="program-owner-row">'
+        + '<div class="program-owner-row-name">' + esc(program) + '</div>'
+        + '<div class="program-owner-row-checks">' + opsUsers.map(u =>
+            '<label class="notify-recipient-row"><input type="checkbox" class="program-owner-check" data-program="' + esc(program) + '" data-id="' + u.id + '"' + (owners.includes(u.id) ? ' checked' : '') + '> ' + esc(u.name || u.email) + '</label>'
+          ).join('') + '</div>'
+        + '</div>';
+    }).join('');
   }
 
   function testUidsForProgram(program) {
@@ -4353,9 +4497,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     renderInterviewsTable();
     renderProgramOptionsList();
     renderTestUidsList();
+    renderProgramOwnersPanel();
     updateSettingsTabVisibility();
     updateAccessBanner();
     updateSyncBadge();
+    updateNotificationBell();
+    if (notifPanelOpen) renderNotificationsPanel();
     renderProgressModal();
     if (viewStudentsTargetBatch) renderViewStudentsTable();
     if (shortlistTargetBatchId) renderShortlistCurrentList();
@@ -4645,6 +4792,35 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     closeTitleFormModal();
   }
 
+  function handlePostSaveNotify(saved, wasNewRow, beforeSnapshotJson) {
+    if (!fs || !db) return;
+    if (wasNewRow) {
+      openSendNotifyModal({
+        kind: 'raised',
+        program: saved.program,
+        batchName: saved.batch,
+        headline: 'New Assignment Request — ' + saved.program + ' · ' + saved.batch,
+        badgeLabel: 'PENDING',
+        badgeTone: 'attention',
+        body: (authUser ? authUser.email : 'Someone') + ' raised an assignment request for ' + saved.program + ' · ' + saved.batch + '. Please prepare the syllabus and assessment config.'
+      });
+      return;
+    }
+    let before = {};
+    try { before = beforeSnapshotJson ? JSON.parse(beforeSnapshotJson) : {}; } catch (e) {}
+    const changed = summarizeTitleChanges(before, saved);
+    if (!changed.length) return;
+    openSendNotifyModal({
+      kind: 'changed',
+      program: saved.program,
+      batchName: saved.batch,
+      headline: 'Title Updated — ' + saved.program + ' · ' + saved.batch,
+      badgeLabel: 'UPDATED',
+      badgeTone: 'no',
+      body: (authUser ? authUser.email : 'Someone') + ' updated ' + saved.program + ' · ' + saved.batch + ' (' + changed.join(', ') + ').'
+    });
+  }
+
   function save() {
     const allowed = titleFormConfigOnly ? canViewConfigColumns() : canEditRecords();
     if (!allowed) return;
@@ -4657,11 +4833,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (idx > -1) batches[idx] = { ...draft };
     else batches = [{ ...draft }].concat(batches);
     const saved = { ...draft };
+    const wasNewRow = isNewRow;
+    const wasConfigOnly = titleFormConfigOnly;
+    const beforeSnapshotJson = titleFormSnapshot;
     editingId = null; draft = null; isNewRow = false; titleFormSnapshot = ''; titleFormReadOnly = false; titleFormConfigOnly = false;
     closeTitleFormModal();
     render();
     persistSave(saved);
     flashToast('Title saved.', 'success');
+    if (!wasConfigOnly) handlePostSaveNotify(saved, wasNewRow, beforeSnapshotJson);
   }
 
   function cancel() {
@@ -5161,6 +5341,201 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function assessmentNeededLabel(b) {
     return b.mockRequired ? 'Main & Mock Assessment' : 'Main Assessment only';
+  }
+
+  function createNotification(opts) {
+    if (!fs || !db) return;
+    const data = {
+      type: opts.type || '',
+      headline: opts.headline || '',
+      badgeLabel: opts.badgeLabel || '',
+      badgeTone: opts.badgeTone || 'attention',
+      body: opts.body || '',
+      navSection: opts.navSection || null,
+      navTeamTab: opts.navTeamTab || null,
+      audienceUids: opts.audienceUids || [],
+      audienceProgram: opts.audienceProgram || null,
+      audienceAdmins: !!opts.audienceAdmins,
+      readBy: [],
+      createdAt: new Date().toISOString(),
+      createdBy: (authUser && authUser.email) || ''
+    };
+    fs.addDoc(fs.collection(db, 'notifications'), data).catch(err => {
+      console.error('Notification create failed', err);
+    });
+  }
+
+  function notificationVisible(n) {
+    if (!authUser) return false;
+    if (n.audienceAdmins && authTeam === 'admin') return true;
+    if (n.audienceUids.includes(authUser.uid)) return true;
+    if (n.audienceProgram && (programOwners[n.audienceProgram] || []).includes(authUser.uid)) return true;
+    return false;
+  }
+
+  function myNotifications() {
+    return notifications.filter(notificationVisible).slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  }
+
+  function isNotificationRead(n) {
+    return !!(authUser && n.readBy.includes(authUser.uid));
+  }
+
+  function unreadNotificationCount() {
+    return myNotifications().filter(n => !isNotificationRead(n)).length;
+  }
+
+  function markNotificationRead(id) {
+    if (!fs || !db || !authUser) return;
+    const n = notifications.find(x => x.id === id);
+    if (!n || isNotificationRead(n)) return;
+    fs.setDoc(fs.doc(db, 'notifications', id), { readBy: n.readBy.concat([authUser.uid]) }, { merge: true }).catch(err => console.error('Mark read failed', err));
+  }
+
+  function markAllNotificationsRead() {
+    if (!fs || !db || !authUser) return;
+    myNotifications().filter(n => !isNotificationRead(n)).forEach(n => {
+      fs.setDoc(fs.doc(db, 'notifications', n.id), { readBy: n.readBy.concat([authUser.uid]) }, { merge: true }).catch(err => console.error('Mark read failed', err));
+    });
+  }
+
+  function updateNotificationBell() {
+    const btn = document.getElementById('notif-bell-btn');
+    const countEl = document.getElementById('notif-bell-count');
+    if (!btn || !countEl) return;
+    const show = authGatingActive() && !!authUser && !!authTeam;
+    btn.hidden = !show;
+    if (!show) return;
+    const count = unreadNotificationCount();
+    countEl.hidden = count === 0;
+    countEl.textContent = count > 9 ? '9+' : String(count);
+  }
+
+  function openNotificationsPanel() {
+    notifPanelOpen = true;
+    const overlay = document.getElementById('notifications-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    renderNotificationsPanel();
+  }
+
+  function closeNotificationsPanel() {
+    notifPanelOpen = false;
+    const overlay = document.getElementById('notifications-modal-overlay');
+    if (overlay) overlay.hidden = true;
+  }
+
+  function notificationNavLabel(n) {
+    if (n.navSection === 'teams') return 'Go to Teams &rarr; Pending &rarr;';
+    if (n.navSection === 'records') return 'Go to Curriculum &rarr;';
+    return '';
+  }
+
+  function notificationCardHTML(n) {
+    const read = isNotificationRead(n);
+    const dateLabel = fmtUpdatedAt(n.createdAt) || '';
+    const navLabel = notificationNavLabel(n);
+    return '<div class="notif-card' + (read ? '' : ' notif-card--unread') + '" data-action="notif-open" data-id="' + n.id + '">'
+      + '<div class="notif-card-head"><strong>' + esc(n.headline) + '</strong> <span class="badge badge--' + esc(n.badgeTone) + '">' + esc(n.badgeLabel) + '</span></div>'
+      + '<p class="notif-card-body">' + esc(n.body) + '</p>'
+      + '<div class="notif-card-foot"><span class="muted-cell">' + esc(dateLabel) + '</span>'
+      + (navLabel ? ' &middot; <a href="javascript:void(0)" data-action="notif-nav" data-id="' + n.id + '">' + navLabel + '</a>' : '')
+      + '</div></div>';
+  }
+
+  function renderNotificationsPanel() {
+    const list = document.getElementById('notifications-list');
+    if (!list) return;
+    const mine = myNotifications();
+    list.innerHTML = mine.length
+      ? mine.map(notificationCardHTML).join('')
+      : '<div class="empty-state">No notifications yet.</div>';
+    const markAllBtn = document.getElementById('notif-mark-all-btn');
+    if (markAllBtn) markAllBtn.disabled = !mine.some(n => !isNotificationRead(n));
+  }
+
+  function notifNavigate(id) {
+    const n = notifications.find(x => x.id === id);
+    markNotificationRead(id);
+    closeNotificationsPanel();
+    if (n && n.navSection) {
+      activeSection = n.navSection;
+      if (n.navTeamTab) teamStatusTab = n.navTeamTab;
+      render();
+    } else {
+      renderNotificationsPanel();
+      updateNotificationBell();
+    }
+  }
+
+  function summarizeTitleChanges(before, after) {
+    const fields = [
+      ['mainStartAt', 'Main Assessment start'],
+      ['mainEndAt', 'Main Assessment end'],
+      ['mockStartAt', 'Mock Assessment start'],
+      ['mockEndAt', 'Mock Assessment end'],
+      ['mockRequired', 'Mock Assessment required'],
+      ['mainConfigUrl', 'Main Assessment Config link'],
+      ['mockConfigUrl', 'Mock Assessment Config link'],
+      ['mainSebStatus', 'Main Assessment SEB Status']
+    ];
+    const changed = [];
+    fields.forEach(([key, label]) => {
+      if ((before[key] || '') !== (after[key] || '')) changed.push(label);
+    });
+    if (JSON.stringify(before.syllabusItems || []) !== JSON.stringify(after.syllabusItems || [])) changed.push('Syllabus');
+    return changed;
+  }
+
+  function openSendNotifyModal(ctx) {
+    if (!fs || !db) return;
+    pendingNotifyContext = ctx;
+    notifyRecipientUids = new Set();
+    const overlay = document.getElementById('send-notify-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    renderSendNotifyModal();
+  }
+
+  function closeSendNotifyModal() {
+    const overlay = document.getElementById('send-notify-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    pendingNotifyContext = null;
+  }
+
+  function renderSendNotifyModal() {
+    if (!pendingNotifyContext) return;
+    const ctx = pendingNotifyContext;
+    const titleEl = document.getElementById('send-notify-modal-title');
+    if (titleEl) titleEl.textContent = ctx.kind === 'raised' ? 'Notify Team — New Title Raised' : 'Notify Team — Title Updated';
+    const summaryEl = document.getElementById('send-notify-summary');
+    if (summaryEl) summaryEl.textContent = ctx.program + ' · ' + ctx.batchName;
+    const ownerUids = programOwners[ctx.program] || [];
+    const opsNames = ownerUids.map(uid => { const u = appUsers.find(x => x.id === uid); return u ? (u.name || u.email) : ''; }).filter(Boolean);
+    const opsEl = document.getElementById('send-notify-ops');
+    if (opsEl) opsEl.textContent = opsNames.length ? ('Assessments Ops auto-notified: ' + opsNames.join(', ')) : 'No Assessments Ops owner mapped for this program — add one in Settings → Program Owners.';
+    const contentUsers = appUsers.filter(u => u.team === 'content' && u.status !== 'pending');
+    const listEl = document.getElementById('send-notify-recipients-list');
+    if (listEl) {
+      listEl.innerHTML = contentUsers.length
+        ? contentUsers.map(u => '<label class="notify-recipient-row"><input type="checkbox" class="send-notify-recipient" data-id="' + u.id + '"' + (notifyRecipientUids.has(u.id) ? ' checked' : '') + '> ' + esc(u.name || u.email) + '</label>').join('')
+        : '<p class="section-desc">No Content team members yet.</p>';
+    }
+  }
+
+  function sendNotificationNow() {
+    if (!pendingNotifyContext) return;
+    const ctx = pendingNotifyContext;
+    createNotification({
+      type: ctx.kind === 'raised' ? 'title-raised' : 'title-changed',
+      headline: ctx.headline,
+      badgeLabel: ctx.badgeLabel,
+      badgeTone: ctx.badgeTone,
+      body: ctx.body,
+      navSection: 'records',
+      audienceUids: Array.from(notifyRecipientUids),
+      audienceProgram: ctx.program
+    });
+    closeSendNotifyModal();
+    flashToast('Notification sent.', 'success');
   }
 
   function defaultNotifyMessage(selected) {
@@ -5762,6 +6137,29 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'open-notify-web') {
       openNotifyIn('web');
     }
+    else if (action === 'notif-bell') {
+      openNotificationsPanel();
+    }
+    else if (action === 'close-notifications') {
+      closeNotificationsPanel();
+    }
+    else if (action === 'notif-mark-all') {
+      markAllNotificationsRead();
+    }
+    else if (action === 'notif-open') {
+      markNotificationRead(id);
+      renderNotificationsPanel();
+      updateNotificationBell();
+    }
+    else if (action === 'notif-nav') {
+      notifNavigate(id);
+    }
+    else if (action === 'close-send-notify') {
+      closeSendNotifyModal();
+    }
+    else if (action === 'send-notify-submit') {
+      sendNotificationNow();
+    }
     else if (action === 'open-publish-modal') {
       openPublishModal(id, btn.dataset.type);
     }
@@ -5921,6 +6319,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       publishModalConfirmed = t.checked;
       const submitBtn = document.getElementById('publish-modal-submit');
       if (submitBtn) submitBtn.disabled = !publishModalConfirmed;
+      return;
+    }
+    if (t.matches('.send-notify-recipient')) {
+      const uid = t.dataset.id;
+      if (t.checked) notifyRecipientUids.add(uid); else notifyRecipientUids.delete(uid);
+      return;
+    }
+    if (t.matches('.program-owner-check')) {
+      toggleProgramOwner(t.dataset.program, t.dataset.id, t.checked);
       return;
     }
     if (t.matches('.row-checkbox-batch')) {
