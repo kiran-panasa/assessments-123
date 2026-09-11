@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style id="app-style"></style>
 </head>
 <body>
@@ -448,6 +449,7 @@ function fullDocumentHTML(batches, students, testUids) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"><\/script>
 <style id="app-style"></style>
 </head>
 <body>
@@ -2037,10 +2039,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         <div class="modal-body">
           <div class="import-file-row">
             <input type="file" id="import-file-input" accept=".csv">
-            <button type="button" class="btn btn--ghost btn--sm" data-action="download-sample">Download sample sheet</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-action="download-sample">Download sample sheet (.xlsx)</button>
           </div>
           <details class="import-help">
             <summary>Which columns can I use?</summary>
+            <p class="section-desc">The downloaded sample is an Excel file with real dropdowns on Program, Mock Assessment Required, and SEB Status, plus a Read Me tab. Fill it in using the dropdowns, then in Excel or Google Sheets use <strong>File &rarr; Save As / Download &rarr; CSV</strong>, and upload that CSV here &mdash; this importer only reads CSV files.</p>
             <p class="section-desc">One CSV row per subject. Repeat the same <strong>Title</strong> on multiple rows to add several subjects to one title &mdash; everything else is read from the first row for that title.</p>
             <p class="section-desc">These are exactly the fields you'd fill in by hand when editing a title &mdash; nothing extra. Column <strong>order doesn't matter</strong>, only the header names do &mdash; the sample sheet lists them in the same order as the Curriculum table: Program, Title, Subject, Topics, SEB Status, then Mock Assessment, then Main Assessment.</p>
             <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Program, Title, Subject, Topics, SEB Status, Mock Assessment Required, Mock Assessment Title, Mock Assessment Start Date &amp; Time, Mock Assessment End Date &amp; Time, Mock Assessment Tag, Main Assessment Title, Main Assessment Start Date &amp; Time, Main Assessment End Date &amp; Time, Main Assessment Tag. Unrecognized columns are ignored. Leave a field blank to keep a title's existing value when re-importing.</p>
@@ -5048,18 +5051,19 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (confirmBtn) confirmBtn.disabled = false;
   }
 
+  const SAMPLE_HEADERS = ['Program','Title','Subject','Topics','SEB Status','Mock Assessment Required','Mock Assessment Title','Mock Assessment Start Date & Time','Mock Assessment End Date & Time','Mock Assessment Tag','Main Assessment Title','Main Assessment Start Date & Time','Main Assessment End Date & Time','Main Assessment Tag'];
+  const SAMPLE_ROWS = [
+    ['Intensive Offline','CS25-B10','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Non-SEB','Yes','Frontend Mock Test','2026-09-10 10:00','2026-09-10 12:00','Mock','Frontend Main Exam','2026-09-15 09:00','2026-09-15 11:00','Main Exam'],
+    ['Intensive Offline','CS25-B10','Backend Development','Intro to Node.js | REST APIs | Databases','','','','','','','','','',''],
+    ['NIAT','CS25-B11','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','SEB','No','','','','','DSA Main Exam','2026-09-20 09:00','2026-09-20 11:00','Main Exam']
+  ];
+
   function buildSampleCSV() {
-    const headers = ['Program','Title','Subject','Topics','SEB Status','Mock Assessment Required','Mock Assessment Title','Mock Assessment Start Date & Time','Mock Assessment End Date & Time','Mock Assessment Tag','Main Assessment Title','Main Assessment Start Date & Time','Main Assessment End Date & Time','Main Assessment Tag'];
-    const rows = [
-      ['Intensive Offline','CS25-B10','Frontend Development','Intro to HTML | Intro to CSS | Intro to JavaScript','Non-SEB','Yes','Frontend Mock Test','2026-09-10 10:00','2026-09-10 12:00','Mock','Frontend Main Exam','2026-09-15 09:00','2026-09-15 11:00','Main Exam'],
-      ['Intensive Offline','CS25-B10','Backend Development','Intro to Node.js | REST APIs | Databases','','','','','','','','','',''],
-      ['NIAT','CS25-B11','Data Structures & Algorithms','Arrays | Linked Lists | Trees | Graphs','SEB','No','','','','','DSA Main Exam','2026-09-20 09:00','2026-09-20 11:00','Main Exam']
-    ];
     const escCsv = v => {
       const s = String(v == null ? '' : v);
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
-    const lines = [headers.map(escCsv).join(',')].concat(rows.map(r => r.map(escCsv).join(',')));
+    const lines = [SAMPLE_HEADERS.map(escCsv).join(',')].concat(SAMPLE_ROWS.map(r => r.map(escCsv).join(',')));
     return lines.join('\r\n');
   }
 
@@ -5098,6 +5102,87 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       flashToast('Could not download the sample sheet.', 'error');
+    }
+  }
+
+  async function buildSampleWorkbook() {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Assessments & NxtMock Ops';
+    const ws = wb.addWorksheet('Bulk Import');
+    ws.addRow(SAMPLE_HEADERS);
+    const headerRow = ws.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDF1EA' } }; });
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    SAMPLE_HEADERS.forEach((h, i) => { ws.getColumn(i + 1).width = Math.max(16, h.length + 4); });
+    SAMPLE_ROWS.forEach(r => ws.addRow(r));
+
+    const programList = (programOptions.length ? programOptions : ['NIAT', 'Intensive Offline', 'Academy', 'Edge 2.0']).join(',');
+    const lastRow = 300;
+    for (let r = 2; r <= lastRow; r++) {
+      ws.getCell('A' + r).dataValidation = { type: 'list', allowBlank: true, formulae: ['"' + programList + '"'], showErrorMessage: true, errorTitle: 'Invalid Program', error: 'Pick a program from the dropdown list.' };
+      ws.getCell('E' + r).dataValidation = { type: 'list', allowBlank: true, formulae: ['"SEB,Non-SEB"'], showErrorMessage: true, errorTitle: 'Invalid SEB Status', error: 'Pick SEB or Non-SEB.' };
+      ws.getCell('F' + r).dataValidation = { type: 'list', allowBlank: true, formulae: ['"Yes,No"'], showErrorMessage: true, errorTitle: 'Invalid value', error: 'Pick Yes or No.' };
+    }
+
+    const help = wb.addWorksheet('Read Me');
+    help.getColumn(1).width = 100;
+    [
+      'How to use this sheet',
+      '1. One row per subject. Repeat the same Title on multiple rows to add several subjects to one title -- everything else is read from the first row for that title.',
+      '2. Program, SEB Status, and Mock Assessment Required have dropdowns on the Bulk Import sheet -- use them to avoid typos. Anything typed outside these values is rejected on import.',
+      '3. Date & time columns: use YYYY-MM-DD HH:MM in 24-hour time, e.g. 2026-09-12 14:30 for 2:30 PM. Anything else is rejected on import.',
+      '4. When you are done, use File -> Save As / Download -> Comma Separated Values (.csv), then upload that CSV in Bulk Import.',
+      '',
+      'Accepted values',
+      'Program: ' + programList.split(',').join(', '),
+      'Mock Assessment Required: Yes or No',
+      'SEB Status: SEB or Non-SEB'
+    ].forEach(line => help.addRow([line]));
+    help.getRow(1).font = { bold: true, size: 13 };
+    help.getRow(7).font = { bold: true };
+
+    return wb;
+  }
+
+  async function downloadSampleXLSX() {
+    if (typeof ExcelJS === 'undefined') {
+      flashToast('Sample sheet generator failed to load — downloading a plain CSV instead.', 'error');
+      downloadSampleCSV();
+      return;
+    }
+    let buffer;
+    try {
+      const wb = await buildSampleWorkbook();
+      buffer = await wb.xlsx.writeBuffer();
+    } catch (e) {
+      flashToast('Could not build the sample sheet — downloading a plain CSV instead.', 'error');
+      downloadSampleCSV();
+      return;
+    }
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        // .xlsx isn't in this preview's downloadable-extension allowlist -- fall back to the CSV here.
+        flashToast('Excel downloads aren\'t available in this preview — downloading a plain CSV instead. Use the deployed site for the Excel version with dropdowns.', 'error');
+        downloadSampleCSV();
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'bulk-import-sample.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      flashToast('Sample sheet downloaded.', 'success');
+    } catch (e) {
+      flashToast('Could not download the sample sheet — downloading a plain CSV instead.', 'error');
+      downloadSampleCSV();
     }
   }
 
@@ -5368,7 +5453,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       render();
     }
     else if (action === 'download-sample') {
-      downloadSampleCSV();
+      downloadSampleXLSX();
     }
     else if (action === 'open-import') {
       if (!canEditRecords()) return;
