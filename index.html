@@ -148,6 +148,7 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .filter-bar-count{font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--ink-2);align-self:center;white-space:nowrap;}
 .section-heading{font-family:var(--font-display);font-weight:700;font-size:17px;color:var(--ink);margin:0 0 4px;}
 .section-desc{font-size:12.5px;color:var(--muted);margin:0 0 16px;}
+.required-mark{color:var(--danger);}
 .filter-bar{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;}
 .filter-field{display:flex;flex-direction:column;gap:4px;}
 .filter-field label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
@@ -1842,6 +1843,30 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       </div>
     </div>
     <div class="toast" id="toast"></div>
+    <div class="modal-overlay" id="add-title-modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="add-title-modal-title">
+        <div class="modal-header">
+          <h3 id="add-title-modal-title">Raise Request</h3>
+          <button type="button" class="modal-close" data-action="close-add-title" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc">Add a new Title to the curriculum. You can fill in syllabus, assessment and interview details afterward using Edit.</p>
+          <div class="filter-field">
+            <label for="add-title-program">Program <span class="required-mark">*</span></label>
+            <select id="add-title-program"></select>
+          </div>
+          <div class="filter-field">
+            <label for="add-title-name">Title <span class="required-mark">*</span></label>
+            <input type="text" id="add-title-name" placeholder="e.g. CS24-B15">
+          </div>
+          <p class="auth-error" id="add-title-msg" hidden></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-add-title">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" data-action="submit-add-title">Add Title</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-overlay" id="add-students-modal-overlay" hidden>
       <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="add-students-modal-title">
         <div class="modal-header">
@@ -4277,23 +4302,44 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     };
   }
 
-  function startAdd() {
+  function openAddTitleModal() {
     if (!canEditRecords()) return;
-    if (editingId && isNewRow) batches = batches.filter(b => b.id !== editingId);
+    if (editingId && isNewRow) { batches = batches.filter(b => b.id !== editingId); editingId = null; draft = null; isNewRow = false; }
     activeSection = 'records';
-    const id = uid();
-    const blank = normalizeBatch({ id });
-    batches.unshift(blank);
-    editingId = id; isNewRow = true;
-    draft = cloneForEdit(blank);
     render();
-    const wrap = document.querySelector('#section-records .table-wrap'); if (wrap) wrap.scrollLeft = 0;
-    requestAnimationFrame(() => {
-      const el = document.querySelector('#row-' + id + ' .cell-input[data-field="batch"]');
-      if (el) el.focus();
-      const rowEl = document.getElementById('row-' + id);
-      if (rowEl) rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
+    const sel = document.getElementById('add-title-program');
+    if (sel) sel.innerHTML = '<option value="">&mdash; Select &mdash;</option>' + programOptions.map(p => '<option value="'+esc(p)+'">'+esc(p)+'</option>').join('');
+    const nameEl = document.getElementById('add-title-name');
+    if (nameEl) nameEl.value = '';
+    const msgEl = document.getElementById('add-title-msg');
+    if (msgEl) msgEl.hidden = true;
+    const overlay = document.getElementById('add-title-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    requestAnimationFrame(() => { if (sel) sel.focus(); });
+  }
+
+  function closeAddTitleModal() {
+    const overlay = document.getElementById('add-title-modal-overlay');
+    if (overlay) overlay.hidden = true;
+  }
+
+  function submitAddTitle() {
+    if (!canEditRecords()) return;
+    const sel = document.getElementById('add-title-program');
+    const nameEl = document.getElementById('add-title-name');
+    const msgEl = document.getElementById('add-title-msg');
+    const program = sel ? sel.value : '';
+    const title = nameEl ? nameEl.value.trim() : '';
+    if (!program || !title) {
+      if (msgEl) { msgEl.textContent = 'Program and Title are both required.'; msgEl.hidden = false; }
+      return;
+    }
+    const blank = normalizeBatch({ id: uid(), program: program, batch: title, updatedAt: new Date().toISOString() });
+    batches = [blank].concat(batches);
+    closeAddTitleModal();
+    render();
+    persistSave(blank);
+    flashToast('Title added.', 'success');
   }
 
   function save() {
@@ -5047,7 +5093,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'delete') removeBatch(id);
     else if (action === 'save') save();
     else if (action === 'cancel') cancel();
-    else if (action === 'add-batch') startAdd();
+    else if (action === 'add-batch') openAddTitleModal();
+    else if (action === 'close-add-title') closeAddTitleModal();
+    else if (action === 'submit-add-title') submitAddTitle();
     else if (action === 'edit-student') startStudentEdit(id);
     else if (action === 'delete-student') removeStudent(id);
     else if (action === 'save-student') saveStudent();
