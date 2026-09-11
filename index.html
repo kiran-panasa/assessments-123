@@ -396,6 +396,7 @@ button.kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px -14px rg
 
 .table-wrap{transition:box-shadow .25s ease;}
 tbody tr:not(.row-editing){transition:background-color .15s ease,box-shadow .15s ease;}
+#tbody tr[data-id]{cursor:pointer;}
 /* Zebra striping so rows are easy to tell apart at a glance, across every
    table in the app -- they all share this same tbody/td structure. */
 tbody tr:nth-child(even):not(.row-editing) td,
@@ -523,6 +524,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let draft = null;
   let isNewRow = false;
   let titleFormSnapshot = '';
+  let titleFormReadOnly = false;
   let artifactAPI = null;
   let canWrite = true;
   let toastTimer = null;
@@ -1892,8 +1894,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         </div>
         <div class="modal-body" id="title-form-body"></div>
         <div class="modal-footer">
-          <button type="button" class="btn btn--ghost btn--sm" data-action="cancel-title-form">Cancel</button>
-          <button type="button" class="btn btn--primary btn--sm" data-action="save-title-form">Save</button>
+          <button type="button" class="btn btn--ghost btn--sm" id="title-form-cancel-btn" data-action="cancel-title-form">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" id="title-form-save-btn" data-action="save-title-form">Save</button>
         </div>
       </div>
     </div>
@@ -4369,6 +4371,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (!b) return;
     editingId = id; isNewRow = false;
     draft = cloneForEdit(b);
+    titleFormReadOnly = false;
     titleFormSnapshot = JSON.stringify(draft);
     render();
     openTitleFormModal();
@@ -4381,6 +4384,18 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const blank = normalizeBatch({ id });
     editingId = id; isNewRow = true;
     draft = cloneForEdit(blank);
+    titleFormReadOnly = false;
+    titleFormSnapshot = JSON.stringify(draft);
+    render();
+    openTitleFormModal();
+  }
+
+  function viewTitleDetails(id) {
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    editingId = id; isNewRow = false;
+    draft = cloneForEdit(b);
+    titleFormReadOnly = true;
     titleFormSnapshot = JSON.stringify(draft);
     render();
     openTitleFormModal();
@@ -4408,46 +4423,51 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const body = document.getElementById('title-form-body');
     if (!body || !draft) return;
     const d = draft;
+    const editing = !titleFormReadOnly;
     const errors = validateDraft(d);
     const id = editingId;
     const mockFieldsHTML = d.mockRequired
       ? '<div class="form-grid">'
-        + '<div class="filter-field"><label>Mock Title</label>' + textCell('mockTitle', d.mockTitle, true, 'Title') + '</div>'
-        + '<div class="filter-field"><label>Mock Start Date &amp; Time</label>' + dateTimeCell('mockStartAt', d, true) + '</div>'
-        + '<div class="filter-field"><label>Mock End Date &amp; Time</label>' + dateTimeCell('mockEndAt', d, true) + errSpan('mock', id, errors.mock) + '</div>'
-        + '<div class="filter-field"><label>Mock Tag</label>' + textCell('mockTag', d.mockTag, true, 'Tag') + '</div>'
+        + '<div class="filter-field"><label>Mock Title</label>' + textCell('mockTitle', d.mockTitle, editing, 'Title') + '</div>'
+        + '<div class="filter-field"><label>Mock Start Date &amp; Time</label>' + dateTimeCell('mockStartAt', d, editing) + '</div>'
+        + '<div class="filter-field"><label>Mock End Date &amp; Time</label>' + dateTimeCell('mockEndAt', d, editing) + errSpan('mock', id, errors.mock) + '</div>'
+        + '<div class="filter-field"><label>Mock Tag</label>' + textCell('mockTag', d.mockTag, editing, 'Tag') + '</div>'
         + '</div>'
       : '';
     body.innerHTML =
-      '<div class="filter-field"><label>Program <span class="required-mark">*</span></label>' + programCell(d.program, true) + '</div>'
-      + '<div class="filter-field"><label>Title <span class="required-mark">*</span></label>' + textCell('batch', d.batch, true, 'Title') + '</div>'
+      '<div class="filter-field"><label>Program' + (editing ? ' <span class="required-mark">*</span>' : '') + '</label>' + programCell(d.program, editing) + '</div>'
+      + '<div class="filter-field"><label>Title' + (editing ? ' <span class="required-mark">*</span>' : '') + '</label>' + textCell('batch', d.batch, editing, 'Title') + '</div>'
       + '<hr class="modal-divider">'
       + '<p class="modal-subheading">Syllabus</p>'
-      + syllabusPairCell(d.syllabusItems, true, id)
+      + syllabusPairCell(d.syllabusItems, editing, id)
       + '<hr class="modal-divider">'
-      + '<div class="filter-field" style="max-width:260px;"><label>Main Assessment SEB Status</label>' + sebCell(d, true) + '</div>'
+      + '<div class="filter-field" style="max-width:260px;"><label>Main Assessment SEB Status</label>' + sebCell(d, editing) + '</div>'
       + '<hr class="modal-divider">'
       + '<p class="modal-subheading">Mock Assessment</p>'
-      + '<div class="filter-field" style="max-width:220px;"><label>Mock Required</label>' + toggleCell(d.mockRequired, true, 'toggle-mock', false) + '</div>'
+      + '<div class="filter-field" style="max-width:220px;"><label>Mock Required</label>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</div>'
       + mockFieldsHTML
       + '<hr class="modal-divider">'
       + '<p class="modal-subheading">Main Assessment</p>'
       + '<div class="form-grid">'
-        + '<div class="filter-field"><label>Main Title</label>' + textCell('mainTitle', d.mainTitle, true, 'Title') + '</div>'
-        + '<div class="filter-field"><label>Main Start Date &amp; Time</label>' + dateTimeCell('mainStartAt', d, true) + '</div>'
-        + '<div class="filter-field"><label>Main End Date &amp; Time</label>' + dateTimeCell('mainEndAt', d, true) + errSpan('main', id, errors.main) + '</div>'
-        + '<div class="filter-field"><label>Main Tag</label>' + textCell('mainTag', d.mainTag, true, 'Tag') + '</div>'
+        + '<div class="filter-field"><label>Main Title</label>' + textCell('mainTitle', d.mainTitle, editing, 'Title') + '</div>'
+        + '<div class="filter-field"><label>Main Start Date &amp; Time</label>' + dateTimeCell('mainStartAt', d, editing) + '</div>'
+        + '<div class="filter-field"><label>Main End Date &amp; Time</label>' + dateTimeCell('mainEndAt', d, editing) + errSpan('main', id, errors.main) + '</div>'
+        + '<div class="filter-field"><label>Main Tag</label>' + textCell('mainTag', d.mainTag, editing, 'Tag') + '</div>'
       + '</div>'
       + (canViewConfigColumns()
         ? '<hr class="modal-divider">'
           + '<p class="modal-subheading">Assessment Config</p>'
           + '<div class="form-grid">'
-            + '<div class="filter-field"><label>Mock Assessment Config</label>' + (d.mockRequired ? textCell('mockConfigUrl', d.mockConfigUrl, true, 'https://…') : '<span class="muted-cell">Not Required</span>') + '</div>'
-            + '<div class="filter-field"><label>Main Assessment Config</label>' + textCell('mainConfigUrl', d.mainConfigUrl, true, 'https://…') + '</div>'
+            + '<div class="filter-field"><label>Mock Assessment Config</label>' + (d.mockRequired ? textCell('mockConfigUrl', d.mockConfigUrl, editing, 'https://…') : '<span class="muted-cell">Not Required</span>') + '</div>'
+            + '<div class="filter-field"><label>Main Assessment Config</label>' + textCell('mainConfigUrl', d.mainConfigUrl, editing, 'https://…') + '</div>'
           + '</div>'
         : '');
     const titleEl = document.getElementById('title-form-modal-title');
-    if (titleEl) titleEl.textContent = isNewRow ? 'Raise Request' : ('Edit Title — ' + (d.batch || ''));
+    if (titleEl) titleEl.textContent = titleFormReadOnly ? ('View Title — ' + (d.batch || '')) : (isNewRow ? 'Raise Request' : ('Edit Title — ' + (d.batch || '')));
+    const saveBtn = document.getElementById('title-form-save-btn');
+    if (saveBtn) saveBtn.hidden = titleFormReadOnly;
+    const cancelBtn = document.getElementById('title-form-cancel-btn');
+    if (cancelBtn) cancelBtn.textContent = titleFormReadOnly ? 'Close' : 'Cancel';
   }
 
   function requestCancelTitleForm() {
@@ -4469,7 +4489,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (idx > -1) batches[idx] = { ...draft };
     else batches = [{ ...draft }].concat(batches);
     const saved = { ...draft };
-    editingId = null; draft = null; isNewRow = false; titleFormSnapshot = '';
+    editingId = null; draft = null; isNewRow = false; titleFormSnapshot = ''; titleFormReadOnly = false;
     closeTitleFormModal();
     render();
     persistSave(saved);
@@ -4477,7 +4497,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function cancel() {
-    editingId = null; draft = null; isNewRow = false; titleFormSnapshot = '';
+    editingId = null; draft = null; isNewRow = false; titleFormSnapshot = ''; titleFormReadOnly = false;
     render();
   }
 
@@ -5315,7 +5335,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   root.addEventListener('click', e => {
     const btn = e.target.closest('[data-action]');
-    if (!btn) return;
+    if (!btn) {
+      const tr = e.target.closest('#tbody tr[data-id]');
+      if (tr && !e.target.closest('input, select, a, button, textarea')) {
+        const rid = tr.dataset.id;
+        if (canEditRecords()) startEdit(rid);
+        else viewTitleDetails(rid);
+      }
+      return;
+    }
     const action = btn.dataset.action;
     const id = btn.dataset.id;
     if (action === 'auth-tab') {
