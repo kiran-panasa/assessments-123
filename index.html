@@ -1301,6 +1301,16 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const dt = new Date(Date.UTC(parts[0], parts[1]-1, parts[2]));
     return dt.toLocaleDateString('en-US', { day:'2-digit', month:'short', year:'numeric', timeZone:'UTC' });
   }
+  function fmtDateShort(iso) {
+    if (!iso) return '';
+    const parts = iso.split('-').map(Number);
+    const dt = new Date(Date.UTC(parts[0], parts[1]-1, parts[2]));
+    return dt.toLocaleDateString('en-US', { day:'numeric', month:'short', timeZone:'UTC' });
+  }
+  function mainAssessmentDateCell(b) {
+    if (!b.mainStartAt) return dash();
+    return fmtDateShort(b.mainStartAt.split('T')[0]);
+  }
   function fmt12(t) {
     if (!t) return '';
     const p = t.split(':').map(Number);
@@ -1454,6 +1464,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                   <tr class="thead-groups">
                     <th class="col-syllabus" rowspan="2"><input type="checkbox" id="records-select-all" aria-label="Select all"> Program</th>
                     <th rowspan="2">Title</th>
+                    <th rowspan="2">Assessment Date</th>
                     <th rowspan="2">Students</th>
                     <th colspan="2">Syllabus</th>
                     <th rowspan="2">Main Assessment SEB Status</th>
@@ -1501,6 +1512,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                     <th>#</th>
                     <th class="col-syllabus">Program</th>
                     <th>Title</th>
+                    <th>Assessment Date</th>
                     <th>Assessment Type</th>
                     <th>Mock Assessment Config</th>
                     <th>Main Assessment Config</th>
@@ -2358,6 +2370,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
+      + '<td class="mono">' + mainAssessmentDateCell(b) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + configField('mainConfigUrl', d.mainConfigUrl, editing) + '</td>'
@@ -2536,6 +2549,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + programCell(d.program, editing) + '</td>'
       + '<td>' + textCell('batch', d.batch, editing, 'Title') + '</td>'
+      + '<td class="mono">' + mainAssessmentDateCell(b) + '</td>'
       + '<td>' + studentsButtonCell(id, d.batch) + '</td>'
       + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing, id) + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
@@ -2751,7 +2765,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     updateRecordsSelectionUI(filtered);
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="18"><div class="empty-state">No records match your filters.'+(canEditRecords()?'<div><button type="button" class="btn btn--primary" data-action="add-batch">Raise Request</button></div>':'')+'</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="19"><div class="empty-state">No records match your filters.'+(canEditRecords()?'<div><button type="button" class="btn btn--primary" data-action="add-batch">Raise Request</button></div>':'')+'</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map(rowHTML).join('');
@@ -2870,7 +2884,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       if (eb) filtered = [eb].concat(filtered);
     }
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">No entries match your filters.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state">No entries match your filters.</div></td></tr>';
       return;
     }
     tbody.innerHTML = filtered.map((b, i) => configRowHTML(b, i + 1)).join('');
