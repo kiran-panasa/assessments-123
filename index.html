@@ -397,6 +397,7 @@ button.kpi-card:hover{transform:translateY(-3px);box-shadow:0 14px 28px -14px rg
 .table-wrap{transition:box-shadow .25s ease;}
 tbody tr:not(.row-editing){transition:background-color .15s ease,box-shadow .15s ease;}
 #tbody tr[data-id]{cursor:pointer;}
+#configs-tbody tr[data-id]{cursor:pointer;}
 /* Zebra striping so rows are easy to tell apart at a glance, across every
    table in the app -- they all share this same tbody/td structure. */
 tbody tr:nth-child(even):not(.row-editing) td,
@@ -592,6 +593,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let addStudentsImportPreview = null;
   let configEditingId = null;
   let configDraft = null;
+  let topinConfigModalId = null;
   let configSearchQuery = '';
   let configProgramFilter = '';
   let configStatusTab = 'all';
@@ -1911,6 +1913,19 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         </div>
       </div>
     </div>
+    <div class="modal-overlay" id="topin-config-modal-overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="topin-config-modal-title">
+        <div class="modal-header">
+          <h3 id="topin-config-modal-title">Edit Config</h3>
+          <button type="button" class="modal-close" data-action="close-topin-config" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body" id="topin-config-modal-body"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-topin-config">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" data-action="save-topin-config">Save</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-overlay" id="add-students-modal-overlay" hidden>
       <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="add-students-modal-title">
         <div class="modal-header">
@@ -2369,34 +2384,29 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return d.toLocaleDateString('en-US', { day:'2-digit', month:'short', year:'numeric' }) + ', ' + d.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
   }
 
-  function configActionsCell(id, editing) {
+  function configActionsCell(id) {
     if (!canWrite) return '<span class="muted-cell">Locked</span>';
-    if (editing) {
-      return '<div class="actions"><button type="button" class="btn btn--primary btn--xs" data-action="save-config">Save</button><button type="button" class="btn btn--ghost btn--xs" data-action="cancel-config">Cancel</button></div>';
-    }
     return '<div class="actions">'
-      + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit-config" data-id="'+id+'">Edit</button>'
+      + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit-topin-config" data-id="'+id+'">Edit</button>'
       + '<button type="button" class="btn btn--ghost btn--xs" data-action="view-syllabus" data-id="'+id+'">View Syllabus</button>'
       + '<button type="button" class="btn--icon-danger" data-action="clear-config" data-id="'+id+'" aria-label="Clear config" title="Clear config">'+ICON_TRASH+'</button>'
       + '</div>';
   }
 
   function configRowHTML(b, index) {
-    const editing = configEditingId === b.id;
-    const d = editing ? configDraft : b;
     const status = configStatus(b);
-    return '<tr class="'+(editing?'row-editing':'')+'" id="crow-'+b.id+'" data-id="'+b.id+'">'
+    return '<tr id="crow-'+b.id+'" data-id="'+b.id+'">'
       + '<td class="mono">' + index + '</td>'
       + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td class="mono">' + mainAssessmentDateCell(b) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
-      + '<td>' + (b.mockRequired ? configField('mockConfigUrl', d.mockConfigUrl, editing) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + configField('mainConfigUrl', d.mainConfigUrl, editing) + '</td>'
+      + '<td>' + (b.mockRequired ? configField('mockConfigUrl', b.mockConfigUrl, false) : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + configField('mainConfigUrl', b.mainConfigUrl, false) + '</td>'
       + '<td>' + (b.mainSebStatus ? '<span class="badge '+(b.mainSebStatus==='SEB'?'badge--yes':'badge--no')+'">'+esc(b.mainSebStatus)+'</span>' : dash()) + '</td>'
       + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
-      + '<td class="col-actions">' + configActionsCell(b.id, editing) + '</td>'
+      + '<td class="col-actions">' + configActionsCell(b.id) + '</td>'
       + '</tr>';
   }
 
@@ -2902,8 +2912,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       if (configStatusTab !== 'all' && configStatus(b) !== configStatusTab) return false;
       return true;
     });
-    if (configEditingId && !filtered.some(b => b.id === configEditingId)) {
-      const eb = batches.find(b => b.id === configEditingId);
+    if (topinConfigModalId && !filtered.some(b => b.id === topinConfigModalId)) {
+      const eb = batches.find(b => b.id === topinConfigModalId);
       if (eb) filtered = [eb].concat(filtered);
     }
     if (!filtered.length) {
@@ -4774,9 +4784,69 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const updated = { ...batches[idx], mockConfigUrl: '', mainConfigUrl: '', updatedAt: new Date().toISOString() };
     batches[idx] = updated;
     if (configEditingId === id) { configEditingId = null; configDraft = null; }
+    if (topinConfigModalId === id) closeTopinConfigModal();
     render();
     persistSave(updated);
     flashToast('Config cleared.', 'success');
+  }
+
+  function openTopinConfigModal(id) {
+    if (!canWrite) return;
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    topinConfigModalId = id;
+    render();
+    const overlay = document.getElementById('topin-config-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    renderTopinConfigModal();
+  }
+
+  function closeTopinConfigModal() {
+    const overlay = document.getElementById('topin-config-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    topinConfigModalId = null;
+  }
+
+  function renderTopinConfigModal() {
+    const body = document.getElementById('topin-config-modal-body');
+    if (!body || !topinConfigModalId) return;
+    const b = batches.find(x => x.id === topinConfigModalId);
+    if (!b) { closeTopinConfigModal(); return; }
+    body.innerHTML =
+      '<p class="section-desc">Program: <strong>' + (esc(b.program) || '—') + '</strong> &middot; Title: <strong>' + esc(b.batch) + '</strong></p>'
+      + '<div class="filter-field"><label>Mock Assessment Config</label>' + (b.mockRequired
+          ? '<input type="text" class="cell-input" id="topin-config-mock" value="'+esc(b.mockConfigUrl)+'" placeholder="https://…">'
+          : '<span class="muted-cell">Not Required</span>') + '</div>'
+      + '<div class="filter-field" style="margin-top:14px;"><label>Main Assessment Config</label><input type="text" class="cell-input" id="topin-config-main" value="'+esc(b.mainConfigUrl)+'" placeholder="https://…"></div>';
+    const titleEl = document.getElementById('topin-config-modal-title');
+    if (titleEl) titleEl.textContent = 'Edit Config — ' + (b.batch || '');
+  }
+
+  function requestCloseTopinConfigModal() {
+    const b = batches.find(x => x.id === topinConfigModalId);
+    if (!b) { closeTopinConfigModal(); return; }
+    const mockEl = document.getElementById('topin-config-mock');
+    const mainEl = document.getElementById('topin-config-main');
+    const mockChanged = mockEl && mockEl.value.trim() !== (b.mockConfigUrl || '');
+    const mainChanged = mainEl && mainEl.value.trim() !== (b.mainConfigUrl || '');
+    if ((mockChanged || mainChanged) && !confirm('Discard unsaved changes to this config?')) return;
+    closeTopinConfigModal();
+  }
+
+  function saveTopinConfig() {
+    if (!canWrite || !topinConfigModalId) return;
+    const idx = batches.findIndex(b => b.id === topinConfigModalId);
+    if (idx === -1) return;
+    const mockEl = document.getElementById('topin-config-mock');
+    const mainEl = document.getElementById('topin-config-main');
+    const updated = { ...batches[idx], updatedAt: new Date().toISOString() };
+    if (batches[idx].mockRequired && mockEl) updated.mockConfigUrl = mockEl.value.trim();
+    if (mainEl) updated.mainConfigUrl = mainEl.value.trim();
+    batches[idx] = updated;
+    closeTopinConfigModal();
+    render();
+    persistSave(updated);
+    flashToast('Config saved.', 'success');
   }
 
   function viewSyllabus(id) {
@@ -5384,6 +5454,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         const rid = tr.dataset.id;
         if (canEditRecords()) startEdit(rid);
         else viewTitleDetails(rid);
+        return;
+      }
+      const configTr = e.target.closest('#configs-tbody tr[data-id]');
+      if (configTr && !e.target.closest('input, select, a, button, textarea')) {
+        openTopinConfigModal(configTr.dataset.id);
       }
       return;
     }
@@ -5456,6 +5531,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'cancel-config') cancelConfigEdit();
     else if (action === 'save-config') saveConfig();
     else if (action === 'clear-config') clearConfig(id);
+    else if (action === 'edit-topin-config') openTopinConfigModal(id);
+    else if (action === 'close-topin-config') requestCloseTopinConfigModal();
+    else if (action === 'save-topin-config') saveTopinConfig();
     else if (action === 'clear-nxtmock-config') clearMockConfig(id);
     else if (action === 'view-syllabus') viewSyllabus(id);
     else if (action === 'config-tab') {
