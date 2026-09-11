@@ -1468,10 +1468,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                     <th rowspan="2">Students</th>
                     <th colspan="2">Syllabus</th>
                     <th rowspan="2">Main Assessment SEB Status</th>
-                    <th rowspan="2" id="th-mock-config">Mock Assessment Config</th>
-                    <th rowspan="2" id="th-main-config">Main Assessment Config</th>
                     <th colspan="5" class="grp-amber">Mock Assessment</th>
                     <th colspan="4" class="grp-blue">Main Assessment</th>
+                    <th rowspan="2" id="th-mock-config">Mock Assessment Config</th>
+                    <th rowspan="2" id="th-main-config">Main Assessment Config</th>
                     <th class="col-actions" rowspan="2">Actions</th>
                   </tr>
                   <tr class="thead-fields">
@@ -2553,10 +2553,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td>' + studentsButtonCell(id, d.batch) + '</td>'
       + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing, id) + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
-      + configCols
       + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
       + mockCols
       + mainCols
+      + configCols
       + '<td class="col-actions">' + actionsCell(id) + '</td>'
       + '</tr>';
   }
@@ -4437,7 +4437,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         + '<div class="filter-field"><label>Main Start Date &amp; Time</label>' + dateTimeCell('mainStartAt', d, true) + '</div>'
         + '<div class="filter-field"><label>Main End Date &amp; Time</label>' + dateTimeCell('mainEndAt', d, true) + errSpan('main', id, errors.main) + '</div>'
         + '<div class="filter-field"><label>Main Tag</label>' + textCell('mainTag', d.mainTag, true, 'Tag') + '</div>'
-      + '</div>';
+      + '</div>'
+      + (canViewConfigColumns()
+        ? '<hr class="modal-divider">'
+          + '<p class="modal-subheading">Assessment Config</p>'
+          + '<div class="form-grid">'
+            + '<div class="filter-field"><label>Mock Assessment Config</label>' + (d.mockRequired ? textCell('mockConfigUrl', d.mockConfigUrl, true, 'https://…') : '<span class="muted-cell">Not Required</span>') + '</div>'
+            + '<div class="filter-field"><label>Main Assessment Config</label>' + textCell('mainConfigUrl', d.mainConfigUrl, true, 'https://…') + '</div>'
+          + '</div>'
+        : '');
     const titleEl = document.getElementById('title-form-modal-title');
     if (titleEl) titleEl.textContent = isNewRow ? 'Raise Request' : ('Edit Title — ' + (d.batch || ''));
   }
