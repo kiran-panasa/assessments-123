@@ -3032,8 +3032,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const mockDone = !b.mockRequired || !!b.mockPublished;
     if (mainDone && mockDone) return 'published';
     const mainReady = !!b.mainConfigUrl;
-    const mockReady = !b.mockRequired || !!b.mockConfigUrl;
-    if (mainReady && mockReady) return 'ready';
+    const mockReady = b.mockRequired && !!b.mockConfigUrl;
+    if (mainReady || mockReady) return 'ready';
     return 'not-ready';
   }
 
@@ -3155,14 +3155,20 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function assessRowHTML(b, index) {
     const status = assessStatus(b);
-    const statusLabel = status === 'published' ? 'Live' : (status === 'ready' ? 'Ready' : 'Not Configured');
-    const statusClass = status === 'published' ? 'badge--yes' : 'badge--no';
-    let statusCell = '<span class="badge '+statusClass+'">'+statusLabel+'</span>';
+    let statusCell;
     if (status === 'published') {
       const inviteLine = assessFullyInvited(b)
         ? '<div class="muted-cell">Invited</div>'
         : '<div class="muted-cell">Invites pending</div>';
-      statusCell = (fmtUpdatedAt(b.publishedAt) ? '<div class="muted-cell">Published ' + fmtUpdatedAt(b.publishedAt) + '</div>' : '') + statusCell + inviteLine;
+      statusCell = (fmtUpdatedAt(b.publishedAt) ? '<div class="muted-cell">Published ' + fmtUpdatedAt(b.publishedAt) + '</div>' : '') + '<span class="badge badge--yes">Live</span>' + inviteLine;
+    } else {
+      const mainSubmitted = !!b.mainConfigUrl;
+      const parts = ['<span class="badge '+(mainSubmitted?'badge--yes':'badge--no')+'">Main '+(mainSubmitted?'Submitted':'Pending')+'</span>'];
+      if (b.mockRequired) {
+        const mockSubmitted = !!b.mockConfigUrl;
+        parts.push('<span class="badge '+(mockSubmitted?'badge--yes':'badge--no')+'">Mock '+(mockSubmitted?'Submitted':'Pending')+'</span>');
+      }
+      statusCell = parts.join(' ');
     }
     const count = studentCountForBatch(b.batch);
     return '<tr id="arow-'+b.id+'" data-id="'+b.id+'">'
@@ -5454,8 +5460,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       if (!mapped.name && !mapped.studentId && !mapped.uid) { skipped++; return; }
       if (forcedBatch) mapped.batch = forcedBatch;
       const existing = students.find(s =>
-        (mapped.uid && s.uid && s.uid === mapped.uid) ||
-        (mapped.studentId && s.studentId && s.studentId === mapped.studentId)
+        s.batch === mapped.batch &&
+        ((mapped.uid && s.uid && s.uid === mapped.uid) ||
+        (mapped.studentId && s.studentId && s.studentId === mapped.studentId))
       );
       const id = existing ? existing.id : uid();
       built.push(normalizeStudent({ ...(existing || {}), ...mapped, id: id }));
