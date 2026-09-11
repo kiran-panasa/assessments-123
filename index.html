@@ -5621,7 +5621,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     else if (action === 'toggle-topics') {
       const key = btn.dataset.key;
-      const el = root.querySelector('[data-topics-key="' + key + '"]');
+      // Scoped to the clicked button's own wrapper rather than a global lookup
+      // by key -- the same batch's syllabus can render in more than one place
+      // at once (e.g. the table row still sits behind the Title modal), so a
+      // global querySelector by key can grab the wrong copy's element.
+      const wrap = btn.closest('.syllabus-pair-topics-wrap');
+      const el = wrap ? wrap.querySelector('.syllabus-pair-topics') : null;
       if (el) {
         const wasExpanded = el.classList.contains('expanded');
         el.classList.toggle('expanded');
