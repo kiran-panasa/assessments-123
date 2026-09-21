@@ -606,8 +606,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let notifications = [];
   let programOwners = {};
   let notifPanelOpen = false;
-  let pendingNotifyContext = null;
-  let notifyRecipientUids = new Set();
+  let programContentHeads = {};
   let addStudentsTargetBatch = '';
   let addStudentsTargetBatchId = '';
   let addStudentsRows = [];
@@ -709,6 +708,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         if (notifPanelOpen) renderNotificationsPanel();
       }, err => {
         console.error('Firestore program owners sync error', err);
+      });
+      fs.onSnapshot(fs.doc(db, 'settings', 'programContentHeads'), snap => {
+        programContentHeads = (snap.exists() && snap.data().map) || {};
+        renderProgramOwnersPanel();
+        updateNotificationBell();
+        if (notifPanelOpen) renderNotificationsPanel();
+      }, err => {
+        console.error('Firestore program content heads sync error', err);
       });
       updateSyncBadge();
     } catch (err) {
@@ -1275,6 +1282,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       audienceUids: Array.isArray(n.audienceUids) ? n.audienceUids : [],
       audienceProgram: n.audienceProgram || null,
       audienceAdmins: !!n.audienceAdmins,
+      audienceContentProgram: n.audienceContentProgram || null,
+      audienceTeams: Array.isArray(n.audienceTeams) ? n.audienceTeams : [],
+      createdByUid: n.createdByUid || '',
       readBy: Array.isArray(n.readBy) ? n.readBy : [],
       createdAt: n.createdAt || '',
       createdBy: n.createdBy || ''
@@ -1820,8 +1830,13 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             <div class="settings-tab-panel" id="settings-tab-owners" hidden>
             <div class="settings-panel">
               <h3 class="settings-panel-title">Program Owners</h3>
-              <p class="section-desc">Map each program to the Assessments Ops team member(s) who own it. When a Title under that program is raised or updated in Curriculum, they&rsquo;re notified automatically &mdash; one person can own several programs.</p>
+              <p class="section-desc">Map each program to the Assessments Ops team member(s) who own it. They&rsquo;re notified when a Title under that program changes, when its Assessment Config is added or updated, on NxtMock Config changes, and when it&rsquo;s published &mdash; one person can own several programs.</p>
               <div id="program-owners-list"></div>
+            </div>
+            <div class="settings-panel" style="margin-top:18px;">
+              <h3 class="settings-panel-title">Program Content Heads</h3>
+              <p class="section-desc">Pick the Content team member(s) who head each program &mdash; two or three per program is fine. They&rsquo;re notified when a new request is raised or a Title changes under that program.</p>
+              <div id="program-heads-list"></div>
             </div>
             </div>
           </section>
@@ -2264,28 +2279,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         </div>
       </div>
     </div>
-    <div class="modal-overlay" id="send-notify-modal-overlay" hidden>
-      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="send-notify-modal-title">
-        <div class="modal-header">
-          <h3 id="send-notify-modal-title">Notify Team</h3>
-          <button type="button" class="modal-close" data-action="close-send-notify" aria-label="Close">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p class="section-desc" id="send-notify-summary"></p>
-          <p class="section-desc" id="send-notify-ops"></p>
-          <div class="modal-field-stack">
-            <div class="filter-field">
-              <label>Content Team recipients (optional)</label>
-              <div id="send-notify-recipients-list"></div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn--ghost btn--sm" data-action="close-send-notify">Skip</button>
-          <button type="button" class="btn btn--primary btn--sm" data-action="send-notify-submit">Send Notification</button>
-        </div>
-      </div>
-    </div>
     <div class="modal-overlay" id="publish-modal-overlay" hidden>
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="publish-modal-title">
         <div class="modal-header">
@@ -2652,6 +2645,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const mockOn = needed === 'mock' || needed === 'both';
     const mainInput = document.getElementById('nxtmock-config-main');
     const mockInput = document.getElementById('nxtmock-config-mock');
+    const before = batches[idx];
     const updated = { ...batches[idx], updatedAt: new Date().toISOString() };
     if (needed === 'unset') {
       updated.mainInterviewRequired = null;
@@ -2667,6 +2661,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     render();
     persistSave(updated);
     flashToast('Config saved.', 'success');
+    notifyNxtmockConfigChange(before, updated);
   }
 
   function interviewNeededValue(d) {
@@ -3467,38 +3462,49 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     document.querySelectorAll('#section-settings .tab-row .tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === settingsTab));
   }
 
-  function toggleProgramOwner(program, uid, checked) {
+  // Program -> people mappings (Assessments Ops owners, Content heads) share one
+  // shape: { [program]: [uid, ...] } in a settings doc.
+  function toggleProgramMapping(kind, program, uid, checked) {
     if (!fs || !db) return;
-    const current = (programOwners[program] || []).slice();
-    const next = checked ? Array.from(new Set(current.concat([uid]))) : current.filter(id => id !== uid);
-    const updatedMap = { ...programOwners, [program]: next };
-    fs.setDoc(fs.doc(db, 'settings', 'programOwners'), { map: updatedMap }, { merge: true }).catch(err => {
-      console.error('Could not save program owner mapping', err);
+    const current = kind === 'head' ? programContentHeads : programOwners;
+    const list = (current[program] || []).slice();
+    const next = checked ? Array.from(new Set(list.concat([uid]))) : list.filter(id => id !== uid);
+    const updatedMap = { ...current, [program]: next };
+    const docId = kind === 'head' ? 'programContentHeads' : 'programOwners';
+    fs.setDoc(fs.doc(db, 'settings', docId), { map: updatedMap }, { merge: true }).catch(err => {
+      console.error('Could not save program mapping', err);
       flashToast('Could not save that mapping.', 'error');
     });
   }
 
-  function renderProgramOwnersPanel() {
-    const el = document.getElementById('program-owners-list');
+  function renderProgramMappingPanel(elId, kind, team, teamLabel) {
+    const el = document.getElementById(elId);
     if (!el) return;
-    const opsUsers = appUsers.filter(u => teamsOf(u).includes('assessments_ops') && u.status !== 'pending');
+    const users = appUsers.filter(u => teamsOf(u).includes(team) && u.status !== 'pending');
     if (!programOptions.length) {
       el.innerHTML = '<p class="section-desc">Add a program on the Programs tab first.</p>';
       return;
     }
-    if (!opsUsers.length) {
-      el.innerHTML = '<p class="section-desc">No Assessments Ops team members yet — register one on the Teams page first.</p>';
+    if (!users.length) {
+      el.innerHTML = '<p class="section-desc">No ' + esc(teamLabel) + ' members yet — register one on the Teams page first.</p>';
       return;
     }
+    const map = kind === 'head' ? programContentHeads : programOwners;
+    const cls = kind === 'head' ? 'program-head-check' : 'program-owner-check';
     el.innerHTML = programOptions.map(program => {
-      const owners = programOwners[program] || [];
+      const chosen = map[program] || [];
       return '<div class="program-owner-row">'
         + '<div class="program-owner-row-name">' + esc(program) + '</div>'
-        + '<div class="program-owner-row-checks">' + opsUsers.map(u =>
-            '<label class="notify-recipient-row"><input type="checkbox" class="program-owner-check" data-program="' + esc(program) + '" data-id="' + u.id + '"' + (owners.includes(u.id) ? ' checked' : '') + '> ' + esc(u.name || u.email) + '</label>'
+        + '<div class="program-owner-row-checks">' + users.map(u =>
+            '<label class="notify-recipient-row"><input type="checkbox" class="' + cls + '" data-program="' + esc(program) + '" data-id="' + u.id + '"' + (chosen.includes(u.id) ? ' checked' : '') + '> ' + esc(u.name || u.email) + '</label>'
           ).join('') + '</div>'
         + '</div>';
     }).join('');
+  }
+
+  function renderProgramOwnersPanel() {
+    renderProgramMappingPanel('program-owners-list', 'owner', 'assessments_ops', 'Assessments Ops team');
+    renderProgramMappingPanel('program-heads-list', 'head', 'content', 'Content team');
   }
 
   function testUidsForProgram(program) {
@@ -3766,6 +3772,17 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     batches[idx] = updated;
     render();
     persistSave(updated);
+    const where = updated.program + ' · ' + updated.batch;
+    notifyProgramEvent({
+      type: 'assessment-published',
+      program: updated.program,
+      headline: 'Assessment Published — ' + where,
+      badgeLabel: (type === 'main' ? 'MAIN' : 'MOCK') + ' PUBLISHED',
+      badgeTone: 'yes',
+      body: actorLabel() + ' published the ' + (type === 'main' ? 'Main' : 'Mock') + ' Assessment for ' + where + '.',
+      navSection: 'assessments',
+      to: ['onground', 'ops']
+    });
   }
 
   // Polls for progress instead of using EventSource/SSE. EventSource can't
@@ -4815,32 +4832,78 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     closeTitleFormModal();
   }
 
-  function handlePostSaveNotify(saved, wasNewRow, beforeSnapshotJson) {
+  function handlePostSaveNotify(saved, wasNewRow, beforeSnapshotJson, wasConfigOnly) {
     if (!fs || !db) return;
+    const where = saved.program + ' · ' + saved.batch;
     if (wasNewRow) {
-      openSendNotifyModal({
-        kind: 'raised',
+      notifyProgramEvent({
+        type: 'title-raised',
         program: saved.program,
-        batchName: saved.batch,
-        headline: 'New Assignment Request — ' + saved.program + ' · ' + saved.batch,
+        headline: 'New Assignment Request — ' + where,
         badgeLabel: 'PENDING',
         badgeTone: 'attention',
-        body: (authUser ? authUser.email : 'Someone') + ' raised an assignment request for ' + saved.program + ' · ' + saved.batch + '. Please prepare the syllabus and assessment config.'
+        body: actorLabel() + ' raised an assignment request for ' + where + '. Please prepare the syllabus and assessment config.',
+        to: ['content', 'ops']
       });
       return;
     }
     let before = {};
     try { before = beforeSnapshotJson ? JSON.parse(beforeSnapshotJson) : {}; } catch (e) {}
+    if (wasConfigOnly) {
+      notifyAssessmentConfigChange(before, saved);
+      return;
+    }
     const changed = summarizeTitleChanges(before, saved);
     if (!changed.length) return;
-    openSendNotifyModal({
-      kind: 'changed',
+    notifyProgramEvent({
+      type: 'title-changed',
       program: saved.program,
-      batchName: saved.batch,
-      headline: 'Title Updated — ' + saved.program + ' · ' + saved.batch,
+      headline: 'Title Updated — ' + where,
       badgeLabel: 'UPDATED',
       badgeTone: 'no',
-      body: (authUser ? authUser.email : 'Someone') + ' updated ' + saved.program + ' · ' + saved.batch + ' (' + changed.join(', ') + ').'
+      body: actorLabel() + ' updated ' + where + ' (' + changed.join(', ') + ').',
+      to: ['ops', 'content']
+    });
+  }
+
+  // Assessment Config links (Mock/Main) added or changed on a Title -- tells
+  // the program's Assessments Ops owners the config is ready for them.
+  function notifyAssessmentConfigChange(before, after) {
+    if (!fs || !db) return;
+    const changed = [];
+    if ((before.mainConfigUrl || '') !== (after.mainConfigUrl || '') && after.mainConfigUrl) changed.push('Main Assessment Config');
+    if ((before.mockConfigUrl || '') !== (after.mockConfigUrl || '') && after.mockConfigUrl) changed.push('Mock Assessment Config');
+    if (!changed.length) return;
+    const where = after.program + ' · ' + after.batch;
+    notifyProgramEvent({
+      type: 'config-updated',
+      program: after.program,
+      headline: 'Assessment Config Updated — ' + where,
+      badgeLabel: 'CONFIG UPDATED',
+      badgeTone: 'yes',
+      body: actorLabel() + ' updated the ' + changed.join(' and ') + ' link for ' + where + '.',
+      navSection: 'topin',
+      to: ['ops']
+    });
+  }
+
+  function notifyNxtmockConfigChange(before, after) {
+    if (!fs || !db) return;
+    const changed = [];
+    if (before.mainInterviewRequired !== after.mainInterviewRequired || before.mockInterviewRequired !== after.mockInterviewRequired) changed.push('interview requirement');
+    if ((before.mainInterviewConfigUrl || '') !== (after.mainInterviewConfigUrl || '') && after.mainInterviewConfigUrl) changed.push('Main Interview Config');
+    if ((before.mockInterviewConfigUrl || '') !== (after.mockInterviewConfigUrl || '') && after.mockInterviewConfigUrl) changed.push('Mock Interview Config');
+    if (!changed.length) return;
+    const where = after.program + ' · ' + after.batch;
+    notifyProgramEvent({
+      type: 'nxtmock-config-updated',
+      program: after.program,
+      headline: 'NxtMock Config Updated — ' + where,
+      badgeLabel: 'NXTMOCK',
+      badgeTone: 'yes',
+      body: actorLabel() + ' updated ' + changed.join(', ') + ' for ' + where + '.',
+      navSection: 'nxtmock-config',
+      to: ['ops']
     });
   }
 
@@ -4864,7 +4927,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     render();
     persistSave(saved);
     flashToast('Title saved.', 'success');
-    if (!wasConfigOnly) handlePostSaveNotify(saved, wasNewRow, beforeSnapshotJson);
+    handlePostSaveNotify(saved, wasNewRow, beforeSnapshotJson, wasConfigOnly);
   }
 
   function cancel() {
@@ -5122,6 +5185,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (idx === -1) return;
     const mockEl = document.getElementById('topin-config-mock');
     const mainEl = document.getElementById('topin-config-main');
+    const before = batches[idx];
     const updated = { ...batches[idx], updatedAt: new Date().toISOString() };
     if (batches[idx].mockRequired && mockEl) updated.mockConfigUrl = mockEl.value.trim();
     if (mainEl) updated.mainConfigUrl = mainEl.value.trim();
@@ -5130,6 +5194,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     render();
     persistSave(updated);
     flashToast('Config saved.', 'success');
+    notifyAssessmentConfigChange(before, updated);
   }
 
   function viewSyllabus(id) {
@@ -5379,21 +5444,53 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       audienceUids: opts.audienceUids || [],
       audienceProgram: opts.audienceProgram || null,
       audienceAdmins: !!opts.audienceAdmins,
+      audienceContentProgram: opts.audienceContentProgram || null,
+      audienceTeams: opts.audienceTeams || [],
       readBy: [],
       createdAt: new Date().toISOString(),
-      createdBy: (authUser && authUser.email) || ''
+      createdBy: (authUser && authUser.email) || '',
+      createdByUid: (authUser && authUser.uid) || ''
     };
     fs.addDoc(fs.collection(db, 'notifications'), data).catch(err => {
       console.error('Notification create failed', err);
     });
   }
 
+  // Admins see every notification. Everyone else sees it only if they're in
+  // its audience: a listed user, an Ops owner / Content head of its program,
+  // or a member of a targeted team. The person who triggered it never sees
+  // their own notification.
   function notificationVisible(n) {
     if (!authUser) return false;
-    if (n.audienceAdmins && hasTeam('admin')) return true;
+    if (n.createdByUid && n.createdByUid === authUser.uid) return false;
+    if (hasTeam('admin')) return true;
     if (n.audienceUids.includes(authUser.uid)) return true;
     if (n.audienceProgram && (programOwners[n.audienceProgram] || []).includes(authUser.uid)) return true;
+    if (n.audienceContentProgram && (programContentHeads[n.audienceContentProgram] || []).includes(authUser.uid)) return true;
+    if (n.audienceTeams.some(t => hasTeam(t))) return true;
     return false;
+  }
+
+  // Program-based fan-out used by every trigger. `to` is any of:
+  // 'ops' (Assessments Ops owners of the program), 'content' (Content heads
+  // of the program), or 'onground' (whole Onground team). Admin always sees it.
+  function notifyProgramEvent(opts) {
+    const to = opts.to || [];
+    createNotification({
+      type: opts.type,
+      headline: opts.headline,
+      badgeLabel: opts.badgeLabel,
+      badgeTone: opts.badgeTone,
+      body: opts.body,
+      navSection: opts.navSection || 'records',
+      audienceProgram: to.includes('ops') ? opts.program : null,
+      audienceContentProgram: to.includes('content') ? opts.program : null,
+      audienceTeams: to.includes('onground') ? ['onground'] : []
+    });
+  }
+
+  function actorLabel() {
+    return (authUser && (authUser.name || authUser.email)) || 'Someone';
   }
 
   function myNotifications() {
@@ -5450,6 +5547,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function notificationNavLabel(n) {
     if (n.navSection === 'teams') return 'Go to Teams &rarr; Pending &rarr;';
     if (n.navSection === 'records') return 'Go to Curriculum &rarr;';
+    if (n.navSection === 'topin') return 'Go to Topin Configs &rarr;';
+    if (n.navSection === 'nxtmock-config') return 'Go to NxtMock Config &rarr;';
+    if (n.navSection === 'assessments') return 'Go to Assessments &rarr;';
     return '';
   }
 
@@ -5507,58 +5607,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     });
     if (JSON.stringify(before.syllabusItems || []) !== JSON.stringify(after.syllabusItems || [])) changed.push('Syllabus');
     return changed;
-  }
-
-  function openSendNotifyModal(ctx) {
-    if (!fs || !db) return;
-    pendingNotifyContext = ctx;
-    notifyRecipientUids = new Set();
-    const overlay = document.getElementById('send-notify-modal-overlay');
-    if (overlay) overlay.hidden = false;
-    renderSendNotifyModal();
-  }
-
-  function closeSendNotifyModal() {
-    const overlay = document.getElementById('send-notify-modal-overlay');
-    if (overlay) overlay.hidden = true;
-    pendingNotifyContext = null;
-  }
-
-  function renderSendNotifyModal() {
-    if (!pendingNotifyContext) return;
-    const ctx = pendingNotifyContext;
-    const titleEl = document.getElementById('send-notify-modal-title');
-    if (titleEl) titleEl.textContent = ctx.kind === 'raised' ? 'Notify Team — New Title Raised' : 'Notify Team — Title Updated';
-    const summaryEl = document.getElementById('send-notify-summary');
-    if (summaryEl) summaryEl.textContent = ctx.program + ' · ' + ctx.batchName;
-    const ownerUids = programOwners[ctx.program] || [];
-    const opsNames = ownerUids.map(uid => { const u = appUsers.find(x => x.id === uid); return u ? (u.name || u.email) : ''; }).filter(Boolean);
-    const opsEl = document.getElementById('send-notify-ops');
-    if (opsEl) opsEl.textContent = opsNames.length ? ('Assessments Ops auto-notified: ' + opsNames.join(', ')) : 'No Assessments Ops owner mapped for this program — add one in Settings → Program Owners.';
-    const contentUsers = appUsers.filter(u => teamsOf(u).includes('content') && u.status !== 'pending');
-    const listEl = document.getElementById('send-notify-recipients-list');
-    if (listEl) {
-      listEl.innerHTML = contentUsers.length
-        ? contentUsers.map(u => '<label class="notify-recipient-row"><input type="checkbox" class="send-notify-recipient" data-id="' + u.id + '"' + (notifyRecipientUids.has(u.id) ? ' checked' : '') + '> ' + esc(u.name || u.email) + '</label>').join('')
-        : '<p class="section-desc">No Content team members yet.</p>';
-    }
-  }
-
-  function sendNotificationNow() {
-    if (!pendingNotifyContext) return;
-    const ctx = pendingNotifyContext;
-    createNotification({
-      type: ctx.kind === 'raised' ? 'title-raised' : 'title-changed',
-      headline: ctx.headline,
-      badgeLabel: ctx.badgeLabel,
-      badgeTone: ctx.badgeTone,
-      body: ctx.body,
-      navSection: 'records',
-      audienceUids: Array.from(notifyRecipientUids),
-      audienceProgram: ctx.program
-    });
-    closeSendNotifyModal();
-    flashToast('Notification sent.', 'success');
   }
 
   function defaultNotifyMessage(selected) {
@@ -6177,12 +6225,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'notif-nav') {
       notifNavigate(id);
     }
-    else if (action === 'close-send-notify') {
-      closeSendNotifyModal();
-    }
-    else if (action === 'send-notify-submit') {
-      sendNotificationNow();
-    }
     else if (action === 'open-publish-modal') {
       openPublishModal(id, btn.dataset.type);
     }
@@ -6344,13 +6386,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       if (submitBtn) submitBtn.disabled = !publishModalConfirmed;
       return;
     }
-    if (t.matches('.send-notify-recipient')) {
-      const uid = t.dataset.id;
-      if (t.checked) notifyRecipientUids.add(uid); else notifyRecipientUids.delete(uid);
+    if (t.matches('.program-owner-check')) {
+      toggleProgramMapping('owner', t.dataset.program, t.dataset.id, t.checked);
       return;
     }
-    if (t.matches('.program-owner-check')) {
-      toggleProgramOwner(t.dataset.program, t.dataset.id, t.checked);
+    if (t.matches('.program-head-check')) {
+      toggleProgramMapping('head', t.dataset.program, t.dataset.id, t.checked);
       return;
     }
     if (t.matches('.row-checkbox-batch')) {
