@@ -1683,9 +1683,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                     <th class="col-syllabus">Program</th>
                     <th>Title</th>
                     <th>Assessment Type</th>
+                    <th>Status</th>
                     <th>Main Config Link</th>
                     <th>Mock Config Link</th>
-                    <th>Status</th>
                     <th class="col-actions">Actions</th>
                   </tr>
                 </thead>
@@ -3246,6 +3246,26 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return !!s.date && !!s.time && !!e.time && (s.date + 'T' + e.time) <= (s.date + 'T' + s.time);
   }
 
+  // Admin-only escape hatch for a Main/Mock published flag that's stuck true
+  // without a real publish behind it (e.g. from the log-replay bug that
+  // misapplied one job's "done" result to the other type). Only clears this
+  // app's own record -- never touches anything already live on Topin.
+  function resetAssessmentPublish(id, type) {
+    if (!hasTeam('admin')) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const label = type === 'main' ? 'Main' : 'Mock';
+    if (!confirm('Reset ' + label + ' publish status in this app?\n\nThis only clears the tracking flag here -- it does NOT unpublish or delete anything already created on Topin. Check Topin first if you\'re not sure whether ' + label.toLowerCase() + ' actually published.')) return;
+    const patch = type === 'main'
+      ? { mainPublished: false, mainAssessmentLink: '' }
+      : { mockPublished: false, mockAssessmentLink: '' };
+    const updated = { ...batches[idx], ...patch, updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    render();
+    persistSave(updated);
+    flashToast(label + ' publish status reset.', 'success');
+  }
+
   function assessActionsCell(b) {
     if (!canEditAssessments()) return '<span class="muted-cell">Locked</span>';
     const status = assessStatus(b);
@@ -3256,12 +3276,23 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         : assessmentDateIsPast(b, 'main') ? 'Main assessment date is in the past — update it first'
         : assessmentEndNotAfterStart(b, 'main') ? 'Main end time must be after the start time'
         : '';
-      if (!b.mainPublished) parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="main"'+(mainDisabledReason?' disabled title="'+esc(mainDisabledReason)+'"':'')+'>Publish Main</button>');
+      if (!b.mainPublished) {
+        parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="main"'+(mainDisabledReason?' disabled title="'+esc(mainDisabledReason)+'"':'')+'>Publish Main</button>');
+      } else if (hasTeam('admin')) {
+        // Publish Main is marked done while the row still isn't fully
+        // "published" (mock is required and pending) -- either a real
+        // partial publish, or the stuck-flag bug this button exists to fix.
+        parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="reset-assessment-publish" data-id="'+b.id+'" data-type="main" title="Clear the Main published flag in this app so Publish Main can run again">Reset Main</button>');
+      }
       const mockDisabledReason = !b.mockConfigUrl ? 'Add a mock config link in Topin Configs first'
         : assessmentDateIsPast(b, 'mock') ? 'Mock assessment date is in the past — update it first'
         : assessmentEndNotAfterStart(b, 'mock') ? 'Mock end time must be after the start time'
         : '';
-      if (b.mockRequired && !b.mockPublished) parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="mock"'+(mockDisabledReason?' disabled title="'+esc(mockDisabledReason)+'"':'')+'>Publish Mock</button>');
+      if (b.mockRequired && !b.mockPublished) {
+        parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="mock"'+(mockDisabledReason?' disabled title="'+esc(mockDisabledReason)+'"':'')+'>Publish Mock</button>');
+      } else if (b.mockRequired && hasTeam('admin')) {
+        parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="reset-assessment-publish" data-id="'+b.id+'" data-type="mock" title="Clear the Mock published flag in this app so Publish Mock can run again">Reset Mock</button>');
+      }
       if (assessStatusTab !== 'ready') parts.push(viewStudentsButton(b.id));
       return '<div class="actions">' + parts.join('') + '</div>';
     }
@@ -3343,9 +3374,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '<div class="muted-cell">' + count + ' student' + (count === 1 ? '' : 's') + '</div></td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
+      + '<td>' + statusCell + '</td>'
       + '<td>' + (status === 'published' ? publishedLinkCell(b.mainConfigUrl, b.mainAssessmentLink) : configField(b.mainConfigUrl)) + '</td>'
       + '<td>' + (b.mockRequired ? (status === 'published' ? publishedLinkCell(b.mockConfigUrl, b.mockAssessmentLink) : configField(b.mockConfigUrl)) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + statusCell + '</td>'
       + '<td class="col-actions">' + assessActionsCell(b) + '</td>'
       + '</tr>';
   }
@@ -6403,6 +6434,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     else if (action === 'open-publish-modal') {
       openPublishModal(id, btn.dataset.type);
+    }
+    else if (action === 'reset-assessment-publish') {
+      resetAssessmentPublish(id, btn.dataset.type);
     }
     else if (action === 'close-publish-modal') {
       closePublishModal();
