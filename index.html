@@ -2370,7 +2370,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             <p class="muted-cell" id="progress-creds-status"></p>
           </div>
           <div class="progress-creds-box" id="progress-review-box" hidden>
-            <p class="section-desc">Cloned on Topin as <span id="progress-review-access"></span>. Review and edit before the real publish click:</p>
+            <p class="section-desc">Cloned on Topin as <span id="progress-review-access"></span>. It's opened in a new tab for you to check sections, tags, and Internal Admin Options. <strong>Only the fields below get sent when you confirm</strong> &mdash; anything changed on that page itself won't carry over, so make those changes there and save them directly, separately from this step.</p>
             <div class="publish-detail-list" id="progress-review-link"></div>
             <div class="form-grid">
               <div class="filter-field"><label>Assessment Title</label><input type="text" class="cell-input progress-review-field" data-field="title"></div>
@@ -3938,6 +3938,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       draft: { title: entry.title, tag: entry.uniqueExamId, assessDate: entry.assessmentDate, startTime: entry.startTime, endTime: entry.endTime }
     };
     renderProgressModal();
+    // Open the real cloned draft on Topin so sections, tags, and Internal
+    // Admin Options -- none of which this form edits -- can be checked or
+    // changed there directly. A popup blocker can still stop this; the link
+    // in the review box is the fallback.
+    if (entry.newConfigLink) { try { window.open(entry.newConfigLink, '_blank', 'noopener'); } catch (e) {} }
   }
 
   async function confirmPublishReview() {
