@@ -645,6 +645,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let progressCredsStatus = null;
   let progressMobilePrefill = '';
   let progressReview = null;
+  let progressReviewConfirmed = false;
   let overviewDateRange = getWeekRange(new Date());
   let whatsNextDate = todayISO();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
@@ -2370,7 +2371,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             <p class="muted-cell" id="progress-creds-status"></p>
           </div>
           <div class="progress-creds-box" id="progress-review-box" hidden>
-            <p class="section-desc">Cloned on Topin as <span id="progress-review-access"></span>. It's opened in a new tab for you to check sections, tags, and Internal Admin Options. <strong>Only the fields below get sent when you confirm</strong> &mdash; anything changed on that page itself won't carry over, so make those changes there and save them directly, separately from this step.</p>
+            <p class="section-desc">Cloned on Topin as <span id="progress-review-access"></span> with the details below already set.</p>
             <div class="publish-detail-list" id="progress-review-link"></div>
             <div class="form-grid">
               <div class="filter-field"><label>Assessment Title</label><input type="text" class="cell-input progress-review-field" data-field="title"></div>
@@ -2379,12 +2380,17 @@ function boot(seedBatches, seedStudents, seedTestUids) {
               <div class="filter-field"><label>Start Time</label><input type="time" class="cell-input progress-review-field" data-field="startTime"></div>
               <div class="filter-field"><label>End Time</label><input type="time" class="cell-input progress-review-field" data-field="endTime"></div>
             </div>
+            <label class="publish-modal-confirm">
+              <input type="checkbox" id="progress-review-confirm-check">
+              I've reviewed the details above and confirm they're correct
+            </label>
           </div>
           <div class="progress-result" id="progress-result" hidden></div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" id="progress-cancel-btn" data-action="cancel-automation">Cancel</button>
-          <button type="button" class="btn btn--primary btn--sm" id="progress-confirm-review-btn" data-action="confirm-publish-review" hidden>Confirm &amp; Publish</button>
+          <button type="button" class="btn btn--ghost btn--sm" id="progress-view-config-btn" data-action="view-publish-config" hidden>View Config</button>
+          <button type="button" class="btn btn--primary btn--sm" id="progress-confirm-review-btn" data-action="confirm-publish-review" hidden disabled>Publish Assessment</button>
           <button type="button" class="btn btn--primary btn--sm" id="progress-close-btn" data-action="close-progress-modal" hidden>Close</button>
         </div>
       </div>
@@ -3806,15 +3812,19 @@ function boot(seedBatches, seedStudents, seedTestUids) {
           document.querySelectorAll('.progress-review-field').forEach(el => {
             el.value = progressReview.draft[el.dataset.field] || '';
           });
+          const checkEl = document.getElementById('progress-review-confirm-check');
+          if (checkEl) checkEl.checked = false;
         }
       }
     }
     const cancelBtn = document.getElementById('progress-cancel-btn');
     const closeBtn = document.getElementById('progress-close-btn');
+    const viewConfigBtn = document.getElementById('progress-view-config-btn');
     const confirmReviewBtn = document.getElementById('progress-confirm-review-btn');
     if (cancelBtn) cancelBtn.hidden = !!progressResult;
     if (closeBtn) closeBtn.hidden = !progressResult;
-    if (confirmReviewBtn) confirmReviewBtn.hidden = !progressReview || !!progressResult;
+    if (viewConfigBtn) viewConfigBtn.hidden = !progressReview || !!progressResult;
+    if (confirmReviewBtn) { confirmReviewBtn.hidden = !progressReview || !!progressResult; confirmReviewBtn.disabled = !progressReviewConfirmed; }
   }
 
   function openProgressModal(title) {
@@ -3823,6 +3833,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     progressLogLines = [];
     progressResult = null;
     progressReview = null;
+    progressReviewConfirmed = false;
     progressShowCreds = false;
     progressCredsStatus = null;
     progressMobilePrefill = localStorage.getItem('topinMobile') || '';
@@ -3833,6 +3844,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function closeProgressModal() {
     progressModalOpen = false;
     progressReview = null;
+    progressReviewConfirmed = false;
     pollStopped = true;
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     renderProgressModal();
@@ -3937,18 +3949,20 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       accessType: entry.accessType, newConfigLink: entry.newConfigLink,
       draft: { title: entry.title, tag: entry.uniqueExamId, assessDate: entry.assessmentDate, startTime: entry.startTime, endTime: entry.endTime }
     };
+    progressReviewConfirmed = false;
     renderProgressModal();
-    // Open the real cloned draft on Topin so sections, tags, and Internal
-    // Admin Options -- none of which this form edits -- can be checked or
-    // changed there directly. A popup blocker can still stop this; the link
-    // in the review box is the fallback.
-    if (entry.newConfigLink) { try { window.open(entry.newConfigLink, '_blank', 'noopener'); } catch (e) {} }
+  }
+
+  function viewPublishConfig() {
+    if (!progressReview || !progressReview.newConfigLink) return;
+    try { window.open(progressReview.newConfigLink, '_blank', 'noopener'); } catch (e) {}
   }
 
   async function confirmPublishReview() {
-    if (!progressReview) return;
+    if (!progressReview || !progressReviewConfirmed) return;
     const { jobId, id, type, draft, resumeSeq } = progressReview;
     progressReview = null;
+    progressReviewConfirmed = false;
     renderProgressModal();
     logProgress('info', 'Confirmed — applying any edits and publishing...');
     try {
@@ -6410,6 +6424,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'close-progress-modal') { closeProgressModal(); }
     else if (action === 'cancel-automation') { cancelAutomation(); }
     else if (action === 'confirm-publish-review') { confirmPublishReview(); }
+    else if (action === 'view-publish-config') { viewPublishConfig(); }
     else if (action === 'get-otp-inline') { getOtpInline(); }
     else if (action === 'submit-inline-otp') { submitInlineOTP(); }
     else if (action === 'confirm-import') {
@@ -6540,6 +6555,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       publishModalConfirmed = t.checked;
       const submitBtn = document.getElementById('publish-modal-submit');
       if (submitBtn) submitBtn.disabled = !publishModalConfirmed;
+      return;
+    }
+    if (t.id === 'progress-review-confirm-check') {
+      progressReviewConfirmed = t.checked;
+      const confirmReviewBtn = document.getElementById('progress-confirm-review-btn');
+      if (confirmReviewBtn) confirmReviewBtn.disabled = !progressReviewConfirmed;
       return;
     }
     if (t.matches('.publish-modal-field') && publishModalDraft) {
