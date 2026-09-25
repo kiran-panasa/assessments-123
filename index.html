@@ -3232,12 +3232,18 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return '<button type="button" class="btn btn--ghost btn--xs" data-action="view-students-for-batch" data-id="'+id+'">View Students</button>';
   }
 
-  // Matches the date check inside publishAssessment() -- surfaced here too
-  // so the button is visibly disabled instead of letting someone click
-  // Publish only to be bounced back with a toast.
+  // Matches the checks inside publishAssessment() -- surfaced here too so
+  // the button is visibly disabled instead of letting someone click Publish
+  // only to be bounced back with a toast (or, worse, fail mid-automation).
   function assessmentDateIsPast(b, type) {
     const s = splitDT(type === 'main' ? b.mainStartAt : b.mockStartAt);
     return !!s.date && s.date < todayISO();
+  }
+
+  function assessmentEndNotAfterStart(b, type) {
+    const s = splitDT(type === 'main' ? b.mainStartAt : b.mockStartAt);
+    const e = splitDT(type === 'main' ? b.mainEndAt : b.mockEndAt);
+    return !!s.date && !!s.time && !!e.time && (s.date + 'T' + e.time) <= (s.date + 'T' + s.time);
   }
 
   function assessActionsCell(b) {
@@ -3246,9 +3252,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const parts = [];
 
     if (status !== 'published') {
-      const mainDisabledReason = !b.mainConfigUrl ? 'Add a main config link in Topin Configs first' : assessmentDateIsPast(b, 'main') ? 'Main assessment date is in the past — update it first' : '';
+      const mainDisabledReason = !b.mainConfigUrl ? 'Add a main config link in Topin Configs first'
+        : assessmentDateIsPast(b, 'main') ? 'Main assessment date is in the past — update it first'
+        : assessmentEndNotAfterStart(b, 'main') ? 'Main end time must be after the start time'
+        : '';
       if (!b.mainPublished) parts.push('<button type="button" class="btn btn--primary btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="main"'+(mainDisabledReason?' disabled title="'+esc(mainDisabledReason)+'"':'')+'>Publish Main</button>');
-      const mockDisabledReason = !b.mockConfigUrl ? 'Add a mock config link in Topin Configs first' : assessmentDateIsPast(b, 'mock') ? 'Mock assessment date is in the past — update it first' : '';
+      const mockDisabledReason = !b.mockConfigUrl ? 'Add a mock config link in Topin Configs first'
+        : assessmentDateIsPast(b, 'mock') ? 'Mock assessment date is in the past — update it first'
+        : assessmentEndNotAfterStart(b, 'mock') ? 'Mock end time must be after the start time'
+        : '';
       if (b.mockRequired && !b.mockPublished) parts.push('<button type="button" class="btn btn--ghost btn--xs" data-action="open-publish-modal" data-id="'+b.id+'" data-type="mock"'+(mockDisabledReason?' disabled title="'+esc(mockDisabledReason)+'"':'')+'>Publish Mock</button>');
       if (assessStatusTab !== 'ready') parts.push(viewStudentsButton(b.id));
       return '<div class="actions">' + parts.join('') + '</div>';
@@ -3625,6 +3637,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const idx = batches.findIndex(b => b.id === id);
     if (idx === -1) { closePublishModal(); return; }
     const d = publishModalDraft;
+    // Topin won't accept an end time at or before the start time -- catch it
+    // here instead of letting the automation fail partway through cloning.
+    if (d.assessDate && d.startTime && d.endTime && (d.assessDate + 'T' + d.endTime) <= (d.assessDate + 'T' + d.startTime)) {
+      flashToast('End time must be after start time.', 'error');
+      return;
+    }
     const patch = type === 'main'
       ? { mainTitle: d.title, mainTag: d.tag, mainStartAt: d.assessDate && d.startTime ? d.assessDate + 'T' + d.startTime : '', mainEndAt: d.assessDate && d.endTime ? d.assessDate + 'T' + d.endTime : '' }
       : { mockTitle: d.title, mockTag: d.tag, mockStartAt: d.assessDate && d.startTime ? d.assessDate + 'T' + d.startTime : '', mockEndAt: d.assessDate && d.endTime ? d.assessDate + 'T' + d.endTime : '' };
@@ -4054,6 +4072,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     if (!assessDate || !startTime || !endTime) { flashToast('Set the ' + label.toLowerCase() + ' assessment date and times first.', 'error'); return; }
     if (assessDate < todayISO()) { flashToast('The ' + label.toLowerCase() + ' assessment date (' + fmtDate(assessDate) + ') is in the past — Topin can only schedule future assessments. Update the date first.', 'error'); return; }
+    if ((assessDate + 'T' + endTime) <= (assessDate + 'T' + startTime)) { flashToast('The ' + label.toLowerCase() + ' end time must be after the start time.', 'error'); return; }
     const uniqueExamId = (type === 'main' ? b.mainTag : b.mockTag) || (b.batch + ' ' + label);
     const isSEB = b.mainSebStatus === 'SEB';
 

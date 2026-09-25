@@ -369,6 +369,11 @@ app.post("/api/publish/prepare", requireKey, async (req, res) => {
       });
     } catch (e) {
       broadcast("error", `Prepare failed: ${e.message}`);
+      // Topin may have rotated session cookies during the partial automation
+      // run before it failed -- save them anyway, or the next attempt reads
+      // the old (possibly now-invalid) session file and is forced into an
+      // unnecessary OTP re-login.
+      await context.storageState({ path: SESSION_FILE }).catch(() => {});
       await context.close().catch(() => {});
     } finally {
       jobRunning = false;
