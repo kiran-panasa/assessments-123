@@ -381,11 +381,11 @@ app.post("/api/publish/prepare", requireKey, async (req, res) => {
   })();
 });
 
-// ── Step 3b: Apply any review edits, then actually publish ────
+// ── Step 3b: Publish the already-saved draft ──────────────────
 app.post("/api/publish/confirm", requireKey, async (req, res) => {
   if (jobRunning) return res.status(409).json({ error: "A publish job is already running" });
 
-  const { jobId, title, uniqueExamId, assessmentDate, startTime, endTime } = req.body || {};
+  const { jobId } = req.body || {};
   if (!jobId || !pendingPublishCtx || pendingPublishCtx.jobId !== jobId) {
     return res.status(400).json({ error: "No matching review in progress — start the publish again." });
   }
@@ -400,20 +400,7 @@ app.post("/api/publish/confirm", requireKey, async (req, res) => {
   (async () => {
     try {
       const label = isMock ? "Mock Assessment" : "Main Assessment";
-      const edits = {};
-      if (title && title !== draft.title) edits.title = title;
-      if (uniqueExamId && uniqueExamId !== draft.uniqueExamId) edits.uniqueExamId = uniqueExamId;
-      if (assessmentDate && startTime) {
-        const d = topinClone.buildDate(assessmentDate, startTime);
-        if (+d !== +draft.startDate) edits.startDate = d;
-      }
-      if (assessmentDate && endTime) {
-        const d = topinClone.buildDate(assessmentDate, endTime);
-        if (+d !== +draft.endDate) edits.endDate = d;
-      }
-      if (Object.keys(edits).length) broadcast("info", "Applying your review edits...");
-
-      const result = await topinClone.applyEditsAndPublish(page, draft, edits, msg => broadcast("info", msg));
+      const result = await topinClone.finalizePublish(page, draft, msg => broadcast("info", msg));
 
       if (!result.assessmentLink) {
         // Clone + publish click succeeded, but the Copy Link button's clipboard read failed
@@ -424,7 +411,7 @@ app.post("/api/publish/confirm", requireKey, async (req, res) => {
       broadcast("done", `${label} published successfully!`, {
         assessmentLink: result.assessmentLink,
         newConfigLink:  result.newConfigLink,
-        uniqueExamId: edits.uniqueExamId || draft.uniqueExamId, isMock,
+        uniqueExamId: draft.uniqueExamId, isMock,
       });
     } catch (e) {
       broadcast("error", `Publish failed: ${e.message}`);

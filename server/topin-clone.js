@@ -272,7 +272,6 @@ async function cloneAssessment(page) {
 }
 
 async function publishAssessment(page, accessType) {
-  await saveAndNextLocator(page).click();
   await publishAssessmentLocator(page).waitFor({ timeout: 30000 });
   await publishAssessmentLocator(page).click();
 
@@ -337,31 +336,22 @@ async function cloneAndFillDraft(page, opts, onLog = () => {}) {
   await setQrBasedAttendanceMode(page);
   await setExamPinMode(page);
 
+  // Commits the Final Review fields above to Topin's backend (they only
+  // live in the form until this click) and moves to the Publish & Invite
+  // step. Doing this now, before pausing for review, means "View Config"
+  // in another tab actually shows the name/tag/schedule that were just
+  // set instead of whatever the sample had before cloning.
+  onLog("Saving draft...");
+  await saveAndNextLocator(page).click();
+  await publishAssessmentLocator(page).waitFor({ timeout: 30000 });
+
   return { newConfigLink, accessType: sample.accessType, title, uniqueExamId, startDate, endDate };
 }
 
-// ── Phase 2: apply any edits made during review, then publish ────
-// `draft` is what cloneAndFillDraft() already set on the page; `edits` only
-// carries fields that changed during review, so unedited fields are left as
-// they are instead of being re-filled with an identical value.
-async function applyEditsAndPublish(page, draft, edits, onLog = () => {}) {
-  if (edits.title) {
-    onLog("Updating assessment name...");
-    await page.locator('input[placeholder="Enter Assessment Name"]').fill(edits.title);
-  }
-  if (edits.uniqueExamId) {
-    onLog("Updating tag...");
-    await replaceUniqueExamIdTag(page, draft.uniqueExamId, edits.uniqueExamId);
-  }
-  if (edits.startDate) {
-    onLog("Updating start date & time...");
-    await setDateTimeField(page, "bscd-start-date-time-input", edits.startDate);
-  }
-  if (edits.endDate) {
-    onLog("Updating end date & time...");
-    await setDateTimeField(page, "bscd-end-date-time-input", edits.endDate);
-  }
-
+// ── Phase 2: publish the already-saved draft ──────────────────────
+// Everything (name/tag/schedule) was already committed to Topin at the end
+// of cloneAndFillDraft(); this just clicks the real Publish button.
+async function finalizePublish(page, draft, onLog = () => {}) {
   onLog("Publishing...");
   const assessmentLink = await publishAssessment(page, draft.accessType);
 
@@ -374,7 +364,7 @@ async function applyEditsAndPublish(page, draft, edits, onLog = () => {}) {
 // Kept for anything that still wants the old one-shot behavior.
 async function cloneAndPublish(page, opts, onLog = () => {}) {
   const draft = await cloneAndFillDraft(page, opts, onLog);
-  return applyEditsAndPublish(page, draft, {}, onLog);
+  return finalizePublish(page, draft, onLog);
 }
 
-module.exports = { cloneAndPublish, cloneAndFillDraft, applyEditsAndPublish, buildDate, BASE_URL };
+module.exports = { cloneAndPublish, cloneAndFillDraft, finalizePublish, buildDate, BASE_URL };

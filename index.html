@@ -2371,15 +2371,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             <p class="muted-cell" id="progress-creds-status"></p>
           </div>
           <div class="progress-creds-box" id="progress-review-box" hidden>
-            <p class="section-desc">Cloned on Topin as <span id="progress-review-access"></span> with the details below already set.</p>
+            <p class="section-desc">Cloned and saved on Topin as <span id="progress-review-access"></span>.</p>
             <div class="publish-detail-list" id="progress-review-link"></div>
-            <div class="form-grid">
-              <div class="filter-field"><label>Assessment Title</label><input type="text" class="cell-input progress-review-field" data-field="title"></div>
-              <div class="filter-field"><label>Exam Tag</label><input type="text" class="cell-input progress-review-field" data-field="tag"></div>
-              <div class="filter-field"><label>Assessment Date</label><input type="date" class="cell-input progress-review-field" data-field="assessDate"></div>
-              <div class="filter-field"><label>Start Time</label><input type="time" class="cell-input progress-review-field" data-field="startTime"></div>
-              <div class="filter-field"><label>End Time</label><input type="time" class="cell-input progress-review-field" data-field="endTime"></div>
-            </div>
+            <p class="section-desc" id="progress-review-summary"></p>
             <label class="publish-modal-confirm">
               <input type="checkbox" id="progress-review-confirm-check">
               I've reviewed the details above and confirm they're correct
@@ -3804,14 +3798,17 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             + '<div class="publish-detail-value"><a href="'+esc(progressReview.newConfigLink)+'" target="_blank" rel="noopener noreferrer">'+esc(progressReview.newConfigLink)+'</a></div></div>'
             + '</div>';
         }
-        // Only populate once per review (new jobId) -- re-renders happen for
-        // unrelated reasons (live Firestore updates elsewhere) while this
-        // modal is open, and must not clobber in-progress edits here.
+        const summaryEl = document.getElementById('progress-review-summary');
+        if (summaryEl) {
+          const d = progressReview.draft;
+          summaryEl.innerHTML = '<strong>' + esc(d.title) + '</strong> &middot; Tag: ' + esc(d.tag)
+            + ' &middot; ' + esc(fmtDate(d.assessDate)) + ', ' + esc(fmt12(d.startTime)) + '&ndash;' + esc(fmt12(d.endTime));
+        }
+        // Reset the checkbox only once per review (new jobId) -- re-renders
+        // happen for unrelated reasons (live Firestore updates elsewhere)
+        // while this modal is open, and must not un-tick it each time.
         if (reviewBox.dataset.jobId !== progressReview.jobId) {
           reviewBox.dataset.jobId = progressReview.jobId;
-          document.querySelectorAll('.progress-review-field').forEach(el => {
-            el.value = progressReview.draft[el.dataset.field] || '';
-          });
           const checkEl = document.getElementById('progress-review-confirm-check');
           if (checkEl) checkEl.checked = false;
         }
@@ -3960,18 +3957,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   async function confirmPublishReview() {
     if (!progressReview || !progressReviewConfirmed) return;
-    const { jobId, id, type, draft, resumeSeq } = progressReview;
+    const { jobId, id, type, resumeSeq } = progressReview;
     progressReview = null;
     progressReviewConfirmed = false;
     renderProgressModal();
-    logProgress('info', 'Confirmed — applying any edits and publishing...');
+    logProgress('info', 'Confirmed — publishing...');
     try {
       const resp = await fetch(topinServerUrl() + '/api/publish/confirm', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...automationHeaders() },
-        body: JSON.stringify({
-          jobId, title: draft.title, uniqueExamId: draft.tag,
-          assessmentDate: draft.assessDate, startTime: draft.startTime, endTime: draft.endTime
-        })
+        body: JSON.stringify({ jobId })
       });
       const data = await resp.json();
       // Resume polling from where the review paused it -- restarting at seq
@@ -6505,10 +6499,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     if (t.matches('.publish-modal-field') && publishModalDraft) {
       publishModalDraft[t.dataset.field] = t.value;
-      return;
-    }
-    if (t.matches('.progress-review-field') && progressReview) {
-      progressReview.draft[t.dataset.field] = t.value;
       return;
     }
     if (!draft) return;
