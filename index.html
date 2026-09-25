@@ -633,6 +633,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let interviewProgramFilter = '';
   let interviewStatusTab = 'all';
   let publishModalTarget = null;
+  let publishModalDraft = null;
   let publishModalConfirmed = false;
   let pollTimer = null;
   let pollStopped = false;
@@ -2290,7 +2291,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             <span id="publish-modal-subtitle"></span>
             <span id="publish-modal-badge" class="type-tag type-tag--blue"></span>
           </p>
-          <div class="publish-detail-list" id="publish-modal-details"></div>
+          <div class="publish-detail-list" id="publish-modal-link"></div>
+          <div class="form-grid" id="publish-modal-fields"></div>
           <label class="publish-modal-confirm">
             <input type="checkbox" id="publish-modal-confirm-check">
             I've reviewed the details above and confirm they're correct
@@ -3345,29 +3347,26 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return idx === -1 ? { date: dt, time: '' } : { date: dt.slice(0, idx), time: dt.slice(idx + 1) };
   }
 
-  function publishModalDetails(b, type) {
-    if (type === 'main') {
-      const start = splitDT(b.mainStartAt);
-      const end = splitDT(b.mainEndAt);
-      return [
-        { label: 'Main Config Link', value: b.mainConfigUrl, isLink: true },
-        { label: 'Assessment Date', value: fmtDate(start.date) },
-        { label: 'Start Time', value: fmt12(start.time) },
-        { label: 'End Time', value: fmt12(end.time) },
-        { label: 'Assessment Title', value: b.mainTitle },
-        { label: 'Main Exam Tag', value: b.mainTag },
-      ];
-    }
-    const mockStart = splitDT(b.mockStartAt);
-    const mockEnd = splitDT(b.mockEndAt);
-    return [
-      { label: 'Mock Config Link', value: b.mockConfigUrl, isLink: true },
-      { label: 'Assessment Date', value: fmtDate(mockStart.date) },
-      { label: 'Start Time', value: fmt12(mockStart.time) },
-      { label: 'End Time', value: fmt12(mockEnd.time) },
-      { label: 'Assessment Title', value: b.mockTitle },
-      { label: 'Mock Exam Tag', value: b.mockTag },
-    ];
+  function publishModalConfigLink(b, type) {
+    const url = type === 'main' ? b.mainConfigUrl : b.mockConfigUrl;
+    return { label: type === 'main' ? 'Main Config Link' : 'Mock Config Link', value: url };
+  }
+
+  // What will actually be sent to Topin when Publish is clicked -- editable
+  // here so a wrong date/title/tag/SEB setting can be fixed without leaving
+  // the modal. draftFromBatch()/publishAssessment() stay the single source
+  // of truth for what gets sent; this only changes what's fed into them.
+  function draftFromBatch(b, type) {
+    const start = splitDT(type === 'main' ? b.mainStartAt : b.mockStartAt);
+    const end = splitDT(type === 'main' ? b.mainEndAt : b.mockEndAt);
+    return {
+      title: (type === 'main' ? b.mainTitle : b.mockTitle) || '',
+      tag: (type === 'main' ? b.mainTag : b.mockTag) || '',
+      assessDate: start.date || '',
+      startTime: start.time || '',
+      endTime: end.time || '',
+      sebStatus: b.mainSebStatus || ''
+    };
   }
 
   function renderPublishModal() {
@@ -3379,18 +3378,32 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     overlay.hidden = false;
     const type = publishModalTarget.type;
     const subtitleEl = document.getElementById('publish-modal-subtitle');
-    if (subtitleEl) subtitleEl.innerHTML = 'Marking <strong>' + esc(b.batch) + '</strong> as published.';
+    if (subtitleEl) subtitleEl.innerHTML = 'Preview and edit before publishing <strong>' + esc(b.batch) + '</strong>.';
     const badgeEl = document.getElementById('publish-modal-badge');
     if (badgeEl) badgeEl.textContent = type === 'main' ? 'Main Assessment' : 'Mock Assessment';
-    const detailsEl = document.getElementById('publish-modal-details');
-    if (detailsEl) {
-      detailsEl.innerHTML = publishModalDetails(b, type).map(d =>
-        '<div class="publish-detail-row">'
+    const link = publishModalConfigLink(b, type);
+    const linkEl = document.getElementById('publish-modal-link');
+    if (linkEl) {
+      linkEl.innerHTML = '<div class="publish-detail-row">'
         + '<span class="publish-detail-check">&#10003;</span>'
-        + '<div><div class="publish-detail-label">' + esc(d.label) + '</div>'
-        + '<div class="publish-detail-value">' + (d.value ? (d.isLink ? '<a href="'+esc(d.value)+'" target="_blank" rel="noopener noreferrer">'+esc(d.value)+'</a>' : esc(d.value)) : '<span class="muted-cell">Not set</span>') + '</div></div>'
-        + '</div>'
-      ).join('');
+        + '<div><div class="publish-detail-label">' + esc(link.label) + '</div>'
+        + '<div class="publish-detail-value">' + (link.value ? '<a href="'+esc(link.value)+'" target="_blank" rel="noopener noreferrer">'+esc(link.value)+'</a>' : '<span class="muted-cell">Not set</span>') + '</div></div>'
+        + '</div>';
+    }
+    const d = publishModalDraft || draftFromBatch(b, type);
+    const fieldsEl = document.getElementById('publish-modal-fields');
+    if (fieldsEl) {
+      fieldsEl.innerHTML =
+          '<div class="filter-field"><label>Assessment Title</label><input type="text" class="cell-input publish-modal-field" data-field="title" value="'+esc(d.title)+'"></div>'
+        + '<div class="filter-field"><label>' + (type === 'main' ? 'Main Exam Tag' : 'Mock Exam Tag') + '</label><input type="text" class="cell-input publish-modal-field" data-field="tag" value="'+esc(d.tag)+'"></div>'
+        + '<div class="filter-field"><label>Assessment Date</label><input type="date" class="cell-input publish-modal-field" data-field="assessDate" value="'+esc(d.assessDate)+'"></div>'
+        + '<div class="filter-field"><label>Start Time</label><input type="time" class="cell-input publish-modal-field" data-field="startTime" value="'+esc(d.startTime)+'"></div>'
+        + '<div class="filter-field"><label>End Time</label><input type="time" class="cell-input publish-modal-field" data-field="endTime" value="'+esc(d.endTime)+'"></div>'
+        + '<div class="filter-field"><label>SEB Status</label><select class="cell-input publish-modal-field" data-field="sebStatus">'
+          + '<option value=""'+(d.sebStatus ? '' : ' selected')+'>&mdash; Select &mdash;</option>'
+          + '<option value="Non-SEB"'+(d.sebStatus === 'Non-SEB' ? ' selected' : '')+'>Non-SEB</option>'
+          + '<option value="SEB"'+(d.sebStatus === 'SEB' ? ' selected' : '')+'>SEB</option>'
+        + '</select></div>';
     }
     const checkEl = document.getElementById('publish-modal-confirm-check');
     if (checkEl) checkEl.checked = publishModalConfirmed;
@@ -3400,13 +3413,17 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function openPublishModal(id, type) {
     if (!canEditAssessments()) return;
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
     publishModalTarget = { id, type };
+    publishModalDraft = draftFromBatch(b, type);
     publishModalConfirmed = false;
     renderPublishModal();
   }
 
   function closePublishModal() {
     publishModalTarget = null;
+    publishModalDraft = null;
     publishModalConfirmed = false;
     const overlay = document.getElementById('publish-modal-overlay');
     if (overlay) overlay.hidden = true;
@@ -3577,8 +3594,19 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function submitPublishModal() {
-    if (!publishModalTarget || !publishModalConfirmed) return;
+    if (!publishModalTarget || !publishModalConfirmed || !publishModalDraft) return;
     const { id, type } = publishModalTarget;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) { closePublishModal(); return; }
+    const d = publishModalDraft;
+    const patch = type === 'main'
+      ? { mainTitle: d.title, mainTag: d.tag, mainStartAt: d.assessDate && d.startTime ? d.assessDate + 'T' + d.startTime : '', mainEndAt: d.assessDate && d.endTime ? d.assessDate + 'T' + d.endTime : '' }
+      : { mockTitle: d.title, mockTag: d.tag, mockStartAt: d.assessDate && d.startTime ? d.assessDate + 'T' + d.startTime : '', mockEndAt: d.assessDate && d.endTime ? d.assessDate + 'T' + d.endTime : '' };
+    patch.mainSebStatus = d.sebStatus;
+    const updated = { ...batches[idx], ...patch, updatedAt: new Date().toISOString() };
+    batches[idx] = updated;
+    render();
+    persistSave(updated);
     closePublishModal();
     publishAssessment(id, type);
   }
@@ -6340,6 +6368,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       renameProgramOption(Number(t.dataset.index), t.value);
       return;
     }
+    if (t.matches('.publish-modal-field') && publishModalDraft) {
+      publishModalDraft[t.dataset.field] = t.value;
+      return;
+    }
     if (!draft) return;
     if (t.matches('.syllabus-subject-input')) {
       draft.syllabusItems[Number(t.dataset.index)].subject = t.value;
@@ -6384,6 +6416,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       publishModalConfirmed = t.checked;
       const submitBtn = document.getElementById('publish-modal-submit');
       if (submitBtn) submitBtn.disabled = !publishModalConfirmed;
+      return;
+    }
+    if (t.matches('.publish-modal-field') && publishModalDraft) {
+      publishModalDraft[t.dataset.field] = t.value;
       return;
     }
     if (t.matches('.program-owner-check')) {
