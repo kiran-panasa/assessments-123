@@ -3895,6 +3895,21 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     });
   }
 
+  // Reads the server's current log position without consuming any entries,
+  // so a brand-new publish job can start polling from "now" instead of
+  // from 0 (which would replay every past job's log, including its
+  // "done"/"review" entries, and misapply them to this job).
+  async function currentPublishLogSeq(serverUrl) {
+    try {
+      const resp = await fetch(serverUrl + '/api/publish/poll?since=999999999999', {
+        headers: automationHeaders(), signal: AbortSignal.timeout(5000)
+      });
+      if (!resp.ok) return 0;
+      const data = await resp.json();
+      return data.latestSeq || 0;
+    } catch (e) { return 0; }
+  }
+
   // Polls for progress instead of using EventSource/SSE. EventSource can't
   // send custom headers, which breaks two things it has no way around:
   // the automation key, and ngrok's free-tier interstitial (which otherwise
@@ -4093,8 +4108,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     try { await fetch(serverUrl + '/api/health', { headers: { 'ngrok-skip-browser-warning': 'true' }, signal: AbortSignal.timeout(3000) }); }
     catch { flashToast('Local automation server not reachable — open Automation Server settings for setup steps.', 'error'); return; }
 
+    // The server's log buffer spans every publish job since it started, not
+    // just this one -- polling from seq 0 here would replay a previous job's
+    // "done" entry (wrong assessment link applied) or "review" entry (stuck
+    // showing an old review). Only see what happens from this point on.
+    const startSeq = await currentPublishLogSeq(serverUrl);
+
     openProgressModal(label + ' Assessment — Publish to Topin');
-    connectSSE(serverUrl, id, type);
+    connectSSE(serverUrl, id, type, startSeq);
 
     const params = { configUrl, title, assessDate, startTime, endTime, uniqueExamId, isSEB };
     const run = () => postPublishRun(serverUrl, type, params);
