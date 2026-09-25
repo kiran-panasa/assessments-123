@@ -59,10 +59,11 @@ app.use(express.json());
 // headers. A plain fetch() poll can carry that header, so it works
 // everywhere SSE would and everywhere SSE can't.
 const sseClients = new Set();
-let jobRunning      = false;
-let cancelRequested = false;
-let browser         = null;
-let pendingAuthCtx  = null;
+let jobRunning       = false;
+let cancelRequested  = false;
+let browser          = null;
+let pendingAuthCtx   = null;
+let pendingPublishCtx = null; // { jobId, page, context, draft, isMock, timer } -- held between prepare and confirm
 let logBuffer       = [];
 let logSeq          = 0;
 const LOG_BUFFER_MAX = 300;
@@ -307,15 +308,17 @@ app.post("/api/publish/verify-otp", requireKey, async (req, res) => {
   }
 });
 
-// ── Step 3: Publish by cloning the existing config in the real Topin UI ──
-app.post("/api/publish/run", requireKey, async (req, res) => {
+// ── Step 3a: Clone + fill, then stop for review ───────────────
+// Leaves the cloned draft open on the real Topin UI instead of publishing
+// it right away, so the caller can show what got filled in and let the
+// user edit before the actual publish click happens.
+app.post("/api/publish/prepare", requireKey, async (req, res) => {
   if (jobRunning) return res.status(409).json({ error: "A publish job is already running" });
 
   const {
     configUrl, title,
     assessmentDate, startTime, endTime,
-    uniqueExamId,
-    isSEB = true, isMock = false,
+    uniqueExamId, isMock = false,
   } = req.body || {};
 
   if (!configUrl || !title || !assessmentDate || !startTime || !endTime || !uniqueExamId) {
@@ -327,7 +330,6 @@ app.post("/api/publish/run", requireKey, async (req, res) => {
     return res.status(401).json({ status: "needs_otp", error: "No valid Topin session — complete OTP login first" });
   }
 
-  // Respond immediately so the browser isn't waiting; publish runs async
   res.json({ status: "started" });
   jobRunning = true; cancelRequested = false;
 
@@ -341,12 +343,72 @@ app.post("/api/publish/run", requireKey, async (req, res) => {
       const endDate    = topinClone.buildDate(assessmentDate, endTime);
       broadcast("info", `Schedule: ${startDate.toLocaleString()} → ${endDate.toLocaleString()}`);
       broadcast("info", `Tag: ${uniqueExamId}`);
-      broadcast("info", `Mode: ${isSEB ? "SEB Browser" : "Normal Browser"}`);
 
-      const result = await topinClone.cloneAndPublish(page, {
-        sampleConfigLink: configUrl, title, uniqueExamId,
-        startDate, endDate,
+      const draft = await topinClone.cloneAndFillDraft(page, {
+        sampleConfigLink: configUrl, title, uniqueExamId, startDate, endDate,
       }, msg => broadcast("info", msg));
+
+      const jobId = crypto.randomBytes(8).toString("hex");
+      if (pendingPublishCtx) await pendingPublishCtx.context.close().catch(() => {});
+      pendingPublishCtx = {
+        jobId, page, context, draft, isMock,
+        timer: setTimeout(() => {
+          if (pendingPublishCtx && pendingPublishCtx.jobId === jobId) {
+            broadcast("error", "Review timed out after 10 minutes — the cloned draft was closed. Start the publish again.");
+            pendingPublishCtx.context.close().catch(() => {});
+            pendingPublishCtx = null;
+          }
+        }, 10 * 60 * 1000),
+      };
+
+      broadcast("review", "Cloned — review the details below, then confirm to publish.", {
+        jobId,
+        title: draft.title, uniqueExamId: draft.uniqueExamId,
+        assessmentDate, startTime, endTime,
+        accessType: draft.accessType, newConfigLink: draft.newConfigLink,
+      });
+    } catch (e) {
+      broadcast("error", `Prepare failed: ${e.message}`);
+      await context.close().catch(() => {});
+    } finally {
+      jobRunning = false;
+    }
+  })();
+});
+
+// ── Step 3b: Apply any review edits, then actually publish ────
+app.post("/api/publish/confirm", requireKey, async (req, res) => {
+  if (jobRunning) return res.status(409).json({ error: "A publish job is already running" });
+
+  const { jobId, title, uniqueExamId, assessmentDate, startTime, endTime } = req.body || {};
+  if (!jobId || !pendingPublishCtx || pendingPublishCtx.jobId !== jobId) {
+    return res.status(400).json({ error: "No matching review in progress — start the publish again." });
+  }
+
+  clearTimeout(pendingPublishCtx.timer);
+  const { page, context, draft, isMock } = pendingPublishCtx;
+  pendingPublishCtx = null;
+
+  res.json({ status: "started" });
+  jobRunning = true; cancelRequested = false;
+
+  (async () => {
+    try {
+      const label = isMock ? "Mock Assessment" : "Main Assessment";
+      const edits = {};
+      if (title && title !== draft.title) edits.title = title;
+      if (uniqueExamId && uniqueExamId !== draft.uniqueExamId) edits.uniqueExamId = uniqueExamId;
+      if (assessmentDate && startTime) {
+        const d = topinClone.buildDate(assessmentDate, startTime);
+        if (+d !== +draft.startDate) edits.startDate = d;
+      }
+      if (assessmentDate && endTime) {
+        const d = topinClone.buildDate(assessmentDate, endTime);
+        if (+d !== +draft.endDate) edits.endDate = d;
+      }
+      if (Object.keys(edits).length) broadcast("info", "Applying your review edits...");
+
+      const result = await topinClone.applyEditsAndPublish(page, draft, edits, msg => broadcast("info", msg));
 
       if (!result.assessmentLink) {
         // Clone + publish click succeeded, but the Copy Link button's clipboard read failed
@@ -357,7 +419,7 @@ app.post("/api/publish/run", requireKey, async (req, res) => {
       broadcast("done", `${label} published successfully!`, {
         assessmentLink: result.assessmentLink,
         newConfigLink:  result.newConfigLink,
-        uniqueExamId, isMock,
+        uniqueExamId: edits.uniqueExamId || draft.uniqueExamId, isMock,
       });
     } catch (e) {
       broadcast("error", `Publish failed: ${e.message}`);
@@ -372,8 +434,14 @@ app.post("/api/publish/run", requireKey, async (req, res) => {
 });
 
 // ── Cancel ────────────────────────────────────────────────────
-app.post("/api/publish/cancel", requireKey, (_req, res) => {
+app.post("/api/publish/cancel", requireKey, async (_req, res) => {
   cancelRequested = true;
+  if (pendingPublishCtx) {
+    clearTimeout(pendingPublishCtx.timer);
+    await pendingPublishCtx.context.close().catch(() => {});
+    pendingPublishCtx = null;
+    broadcast("info", "Review cancelled — cloned draft discarded.");
+  }
   broadcast("info", "Cancellation requested...");
   res.json({ status: "cancelling" });
 });

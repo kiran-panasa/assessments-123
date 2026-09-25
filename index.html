@@ -644,6 +644,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let progressShowCreds = false;
   let progressCredsStatus = null;
   let progressMobilePrefill = '';
+  let progressReview = null;
   let overviewDateRange = getWeekRange(new Date());
   let whatsNextDate = todayISO();
   const isConfigured = k => FIREBASE_CONFIG[k] && !String(FIREBASE_CONFIG[k]).startsWith('REPLACE_WITH_');
@@ -2368,10 +2369,22 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             </div>
             <p class="muted-cell" id="progress-creds-status"></p>
           </div>
+          <div class="progress-creds-box" id="progress-review-box" hidden>
+            <p class="section-desc">Cloned on Topin as <span id="progress-review-access"></span>. Review and edit before the real publish click:</p>
+            <div class="publish-detail-list" id="progress-review-link"></div>
+            <div class="form-grid">
+              <div class="filter-field"><label>Assessment Title</label><input type="text" class="cell-input progress-review-field" data-field="title"></div>
+              <div class="filter-field"><label>Exam Tag</label><input type="text" class="cell-input progress-review-field" data-field="tag"></div>
+              <div class="filter-field"><label>Assessment Date</label><input type="date" class="cell-input progress-review-field" data-field="assessDate"></div>
+              <div class="filter-field"><label>Start Time</label><input type="time" class="cell-input progress-review-field" data-field="startTime"></div>
+              <div class="filter-field"><label>End Time</label><input type="time" class="cell-input progress-review-field" data-field="endTime"></div>
+            </div>
+          </div>
           <div class="progress-result" id="progress-result" hidden></div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn--ghost btn--sm" id="progress-cancel-btn" data-action="cancel-automation">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" id="progress-confirm-review-btn" data-action="confirm-publish-review" hidden>Confirm &amp; Publish</button>
           <button type="button" class="btn btn--primary btn--sm" id="progress-close-btn" data-action="close-progress-modal" hidden>Close</button>
         </div>
       </div>
@@ -3740,10 +3753,37 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         res.hidden = true; res.className = 'progress-result'; res.textContent = '';
       }
     }
+    const reviewBox = document.getElementById('progress-review-box');
+    if (reviewBox) {
+      reviewBox.hidden = !progressReview;
+      if (progressReview) {
+        const accessEl = document.getElementById('progress-review-access');
+        if (accessEl) accessEl.textContent = progressReview.accessType || 'Private';
+        const linkEl = document.getElementById('progress-review-link');
+        if (linkEl) {
+          linkEl.innerHTML = '<div class="publish-detail-row">'
+            + '<span class="publish-detail-check">&#10003;</span>'
+            + '<div><div class="publish-detail-label">Cloned Draft Link</div>'
+            + '<div class="publish-detail-value"><a href="'+esc(progressReview.newConfigLink)+'" target="_blank" rel="noopener noreferrer">'+esc(progressReview.newConfigLink)+'</a></div></div>'
+            + '</div>';
+        }
+        // Only populate once per review (new jobId) -- re-renders happen for
+        // unrelated reasons (live Firestore updates elsewhere) while this
+        // modal is open, and must not clobber in-progress edits here.
+        if (reviewBox.dataset.jobId !== progressReview.jobId) {
+          reviewBox.dataset.jobId = progressReview.jobId;
+          document.querySelectorAll('.progress-review-field').forEach(el => {
+            el.value = progressReview.draft[el.dataset.field] || '';
+          });
+        }
+      }
+    }
     const cancelBtn = document.getElementById('progress-cancel-btn');
     const closeBtn = document.getElementById('progress-close-btn');
+    const confirmReviewBtn = document.getElementById('progress-confirm-review-btn');
     if (cancelBtn) cancelBtn.hidden = !!progressResult;
     if (closeBtn) closeBtn.hidden = !progressResult;
+    if (confirmReviewBtn) confirmReviewBtn.hidden = !progressReview || !!progressResult;
   }
 
   function openProgressModal(title) {
@@ -3751,6 +3791,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     progressModalTitle = title;
     progressLogLines = [];
     progressResult = null;
+    progressReview = null;
     progressShowCreds = false;
     progressCredsStatus = null;
     progressMobilePrefill = localStorage.getItem('topinMobile') || '';
@@ -3760,6 +3801,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function closeProgressModal() {
     progressModalOpen = false;
+    progressReview = null;
     pollStopped = true;
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     renderProgressModal();
@@ -3818,11 +3860,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   // the automation key, and ngrok's free-tier interstitial (which otherwise
   // replaces every response with an HTML warning page). A plain fetch()
   // poll carries both.
-  function connectSSE(serverUrl, id, type) {
+  function connectSSE(serverUrl, id, type, sinceSeq) {
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     pollStopped = false;
     let finished = false;
-    let lastSeq = 0;
+    let lastSeq = sinceSeq || 0;
     let misses = 0;
 
     const poll = async () => {
@@ -3838,6 +3880,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
           lastSeq = Math.max(lastSeq, entry.seq || lastSeq);
           if (entry.type === 'connected') continue;
           logProgress(entry.type, entry.message);
+          if (entry.type === 'review') {
+            finished = true;
+            enterPublishReview(id, type, entry, lastSeq);
+          }
           if (entry.type === 'done') {
             finished = true;
             applyPublishResult(id, type, entry);
@@ -3854,9 +3900,45 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     poll();
   }
 
+  function enterPublishReview(id, type, entry, resumeSeq) {
+    progressReview = {
+      jobId: entry.jobId, id, type, resumeSeq: resumeSeq || 0,
+      accessType: entry.accessType, newConfigLink: entry.newConfigLink,
+      draft: { title: entry.title, tag: entry.uniqueExamId, assessDate: entry.assessmentDate, startTime: entry.startTime, endTime: entry.endTime }
+    };
+    renderProgressModal();
+  }
+
+  async function confirmPublishReview() {
+    if (!progressReview) return;
+    const { jobId, id, type, draft, resumeSeq } = progressReview;
+    progressReview = null;
+    renderProgressModal();
+    logProgress('info', 'Confirmed — applying any edits and publishing...');
+    try {
+      const resp = await fetch(topinServerUrl() + '/api/publish/confirm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...automationHeaders() },
+        body: JSON.stringify({
+          jobId, title: draft.title, uniqueExamId: draft.tag,
+          assessmentDate: draft.assessDate, startTime: draft.startTime, endTime: draft.endTime
+        })
+      });
+      const data = await resp.json();
+      // Resume polling from where the review paused it -- restarting at seq
+      // 0 would replay the whole log, including this same 'review' entry,
+      // which would just pop the review screen right back up.
+      if (data.status === 'started') { connectSSE(topinServerUrl(), id, type, resumeSeq); return; }
+      logProgress('error', data.error || 'Unexpected response from the automation server');
+      finishProgress(false, 'Failed to confirm publishing');
+    } catch (e) {
+      logProgress('error', e.message);
+      finishProgress(false, 'Connection error — is the local automation server running?');
+    }
+  }
+
   async function postPublishRun(serverUrl, type, params) {
     try {
-      const resp = await fetch(serverUrl + '/api/publish/run', {
+      const resp = await fetch(serverUrl + '/api/publish/prepare', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...automationHeaders() },
         body: JSON.stringify({
           configUrl: params.configUrl, title: params.title,
@@ -6290,6 +6372,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'check-server-health') { checkServerHealth(); }
     else if (action === 'close-progress-modal') { closeProgressModal(); }
     else if (action === 'cancel-automation') { cancelAutomation(); }
+    else if (action === 'confirm-publish-review') { confirmPublishReview(); }
     else if (action === 'get-otp-inline') { getOtpInline(); }
     else if (action === 'submit-inline-otp') { submitInlineOTP(); }
     else if (action === 'confirm-import') {
@@ -6370,6 +6453,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     if (t.matches('.publish-modal-field') && publishModalDraft) {
       publishModalDraft[t.dataset.field] = t.value;
+      return;
+    }
+    if (t.matches('.progress-review-field') && progressReview) {
+      progressReview.draft[t.dataset.field] = t.value;
       return;
     }
     if (!draft) return;

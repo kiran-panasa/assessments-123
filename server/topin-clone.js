@@ -308,8 +308,10 @@ async function publishAssessment(page, accessType) {
   return scanned || "";
 }
 
-// ── Main entry point ────────────────────────────────────────────
-async function cloneAndPublish(page, opts, onLog = () => {}) {
+// ── Phase 1: clone + fill, then stop short of publishing ─────────
+// Leaves the page sitting on the filled-in draft so the caller can hold it
+// open for a review/edit step before actually publishing.
+async function cloneAndFillDraft(page, opts, onLog = () => {}) {
   const { sampleConfigLink, title, uniqueExamId, startDate, endDate } = opts;
 
   const sample = await openSampleAndReadMetadata(page, sampleConfigLink, onLog);
@@ -335,13 +337,44 @@ async function cloneAndPublish(page, opts, onLog = () => {}) {
   await setQrBasedAttendanceMode(page);
   await setExamPinMode(page);
 
+  return { newConfigLink, accessType: sample.accessType, title, uniqueExamId, startDate, endDate };
+}
+
+// ── Phase 2: apply any edits made during review, then publish ────
+// `draft` is what cloneAndFillDraft() already set on the page; `edits` only
+// carries fields that changed during review, so unedited fields are left as
+// they are instead of being re-filled with an identical value.
+async function applyEditsAndPublish(page, draft, edits, onLog = () => {}) {
+  if (edits.title) {
+    onLog("Updating assessment name...");
+    await page.locator('input[placeholder="Enter Assessment Name"]').fill(edits.title);
+  }
+  if (edits.uniqueExamId) {
+    onLog("Updating tag...");
+    await replaceUniqueExamIdTag(page, draft.uniqueExamId, edits.uniqueExamId);
+  }
+  if (edits.startDate) {
+    onLog("Updating start date & time...");
+    await setDateTimeField(page, "bscd-start-date-time-input", edits.startDate);
+  }
+  if (edits.endDate) {
+    onLog("Updating end date & time...");
+    await setDateTimeField(page, "bscd-end-date-time-input", edits.endDate);
+  }
+
   onLog("Publishing...");
-  const assessmentLink = await publishAssessment(page, sample.accessType);
+  const assessmentLink = await publishAssessment(page, draft.accessType);
 
   return {
-    newConfigLink,
-    assessmentLink: assessmentLink || newConfigLink.replace("/edit-assessment/", "/view-assessment/"),
+    newConfigLink: draft.newConfigLink,
+    assessmentLink: assessmentLink || draft.newConfigLink.replace("/edit-assessment/", "/view-assessment/"),
   };
 }
 
-module.exports = { cloneAndPublish, buildDate, BASE_URL };
+// Kept for anything that still wants the old one-shot behavior.
+async function cloneAndPublish(page, opts, onLog = () => {}) {
+  const draft = await cloneAndFillDraft(page, opts, onLog);
+  return applyEditsAndPublish(page, draft, {}, onLog);
+}
+
+module.exports = { cloneAndPublish, cloneAndFillDraft, applyEditsAndPublish, buildDate, BASE_URL };
