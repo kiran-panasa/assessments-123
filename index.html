@@ -589,6 +589,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let searchQuery = '';
   let expandedTopics = new Set();
   let importPreview = null;
+  let nxtmockImportPreview = null;
   let latestRemoteStudents = null;
   let studentEditingId = null;
   let studentDraft = null;
@@ -1716,6 +1717,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
               </select></div>
               <button type="button" class="btn btn--ghost btn--sm filter-bar-import" data-action="clear-nxtmock-config-filter">Clear</button>
               <button type="button" class="btn btn--ghost btn--sm" id="nxtmock-notify-smes-btn" data-action="open-nxtmock-notify" disabled>Notify SMEs</button>
+              <button type="button" class="btn btn--primary btn--sm filter-bar-import" id="nxtmock-import-btn" data-action="open-nxtmock-import">Bulk Import</button>
             </div>
             <div class="table-wrap">
               <table>
@@ -2253,6 +2255,35 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         </div>
       </div>
     </div>
+    <div class="modal-overlay" id="nxtmock-import-modal-overlay" hidden>
+      <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="nxtmock-import-modal-title">
+        <div class="modal-header">
+          <h3 id="nxtmock-import-modal-title">NxtMock Config — Bulk Import</h3>
+          <button type="button" class="modal-close" data-action="close-nxtmock-import" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="import-file-row">
+            <input type="file" id="nxtmock-import-file-input" accept=".csv">
+            <button type="button" class="btn btn--ghost btn--sm" data-action="download-nxtmock-import-sample">Download sample sheet (.csv)</button>
+          </div>
+          <details class="import-help">
+            <summary>Which columns can I use?</summary>
+            <p class="section-desc">One row per title. <strong>Program</strong> and <strong>Title</strong> together must match an existing Title already in Curriculum &mdash; this only updates NxtMock Config on titles that exist, it doesn't create new ones.</p>
+            <p class="section-desc"><strong>Recognized headers</strong> (case-insensitive): Program, Title, Interview Needed, Main Interview Config, Mock Interview Config. Column order doesn't matter. Leave Main/Mock Interview Config blank to leave that link unchanged.</p>
+            <p class="section-desc"><strong>Restricted values — anything else is rejected, not silently guessed:</strong></p>
+            <ul class="section-desc" style="margin:0 0 16px;padding-left:18px;">
+              <li><strong>Program + Title</strong> must exactly match an existing Title (case-insensitive). No match skips that row with an error.</li>
+              <li><strong>Interview Needed</strong> must be exactly one of <code>Not set</code>, <code>No interview</code>, <code>Main only</code>, <code>Mock only</code>, or <code>Main &amp; Mock</code>. Anything else skips that row with an error.</li>
+            </ul>
+          </details>
+          <div id="nxtmock-import-preview"><p class="section-desc">Choose a CSV file to preview the changes before importing.</p></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="close-nxtmock-import">Cancel</button>
+          <button type="button" class="btn btn--primary btn--sm" id="confirm-nxtmock-import-btn" data-action="confirm-nxtmock-import" disabled>Confirm Import</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-overlay" id="notify-modal-overlay" hidden>
       <div class="modal modal--wide" role="dialog" aria-modal="true" aria-labelledby="notify-modal-title">
         <div class="modal-header">
@@ -2702,6 +2733,206 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return 'No interview for this batch';
   }
 
+  // ── NxtMock Config bulk import ──────────────────────────────────
+  const NXTMOCK_IMPORT_FIELD_MAP = {
+    program: 'program',
+    title: 'batch', batch: 'batch', batchname: 'batch',
+    interviewneeded: 'interviewNeeded',
+    maininterviewconfig: 'mainInterviewConfigUrl', mainconfig: 'mainInterviewConfigUrl',
+    mockinterviewconfig: 'mockInterviewConfigUrl', mockconfig: 'mockInterviewConfigUrl'
+  };
+
+  function mapNxtmockImportRow(row, headers) {
+    const out = {};
+    headers.forEach(h => {
+      const key = NXTMOCK_IMPORT_FIELD_MAP[normHeader(h)];
+      if (key && row[h]) out[key] = row[h];
+    });
+    return out;
+  }
+
+  // Parses an "Interview Needed" cell into the two booleans the app stores.
+  // null means the value wasn't one of the accepted labels.
+  function parseInterviewNeededImport(raw) {
+    const v = String(raw || '').trim().toLowerCase();
+    if (v === 'not set') return { mainInterviewRequired: null, mockInterviewRequired: null };
+    if (v === 'no interview') return { mainInterviewRequired: false, mockInterviewRequired: false };
+    if (v === 'main only') return { mainInterviewRequired: true, mockInterviewRequired: false };
+    if (v === 'mock only') return { mainInterviewRequired: false, mockInterviewRequired: true };
+    if (v === 'main & mock' || v === 'main and mock') return { mainInterviewRequired: true, mockInterviewRequired: true };
+    return null;
+  }
+
+  function buildNxtmockConfigFromImport(headers, rows) {
+    const mapped = rows.map(r => mapNxtmockImportRow(r, headers));
+    let skipped = 0, invalidSkipped = 0;
+    const rowErrors = [];
+    const updates = [];
+    mapped.forEach(r => {
+      const programRaw = (r.program || '').trim();
+      const titleRaw = (r.batch || '').trim();
+      if (!programRaw && !titleRaw) { skipped++; return; }
+      const label = (titleRaw || '(blank title)') + (programRaw ? ' — ' + programRaw : '');
+      const existing = batches.find(b =>
+        b.batch.toLowerCase() === titleRaw.toLowerCase()
+        && (!programRaw || (b.program || '').toLowerCase() === programRaw.toLowerCase())
+      );
+      if (!existing) {
+        rowErrors.push('"' + label + '": no matching Title found in Curriculum — row skipped.');
+        invalidSkipped++;
+        return;
+      }
+      const needed = parseInterviewNeededImport(r.interviewNeeded);
+      if (r.interviewNeeded && !needed) {
+        rowErrors.push('"' + label + '": Interview Needed must be Not set, No interview, Main only, Mock only, or Main & Mock (got "' + r.interviewNeeded + '") — row skipped.');
+        invalidSkipped++;
+        return;
+      }
+      const update = { id: existing.id, batch: existing.batch, program: existing.program };
+      if (needed) { update.mainInterviewRequired = needed.mainInterviewRequired; update.mockInterviewRequired = needed.mockInterviewRequired; }
+      if (r.mainInterviewConfigUrl) update.mainInterviewConfigUrl = r.mainInterviewConfigUrl.trim();
+      if (r.mockInterviewConfigUrl) update.mockInterviewConfigUrl = r.mockInterviewConfigUrl.trim();
+      updates.push(update);
+    });
+    return { updates, skipped, invalidSkipped, rowErrors };
+  }
+
+  function openNxtmockImportModal() {
+    if (!canManageRecordCatalog()) return;
+    nxtmockImportPreview = null;
+    const overlay = document.getElementById('nxtmock-import-modal-overlay');
+    if (overlay) overlay.hidden = false;
+    const fileInput = document.getElementById('nxtmock-import-file-input');
+    if (fileInput) fileInput.value = '';
+    renderNxtmockImportPreview();
+  }
+
+  function closeNxtmockImportModal() {
+    const overlay = document.getElementById('nxtmock-import-modal-overlay');
+    if (overlay) overlay.hidden = true;
+    nxtmockImportPreview = null;
+  }
+
+  function handleNxtmockImportFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = parseCSV(String(reader.result));
+        if (!parsed.rows.length) { flashToast('No rows found in that file.', 'error'); nxtmockImportPreview = null; }
+        else nxtmockImportPreview = buildNxtmockConfigFromImport(parsed.headers, parsed.rows);
+      } catch (err) {
+        nxtmockImportPreview = null;
+        flashToast('Could not read that file — make sure it’s a CSV.', 'error');
+      }
+      renderNxtmockImportPreview();
+    };
+    reader.onerror = () => {
+      nxtmockImportPreview = null;
+      renderNxtmockImportPreview();
+      flashToast('Could not read that file.', 'error');
+    };
+    reader.readAsText(file);
+  }
+
+  function renderNxtmockImportPreview() {
+    const el = document.getElementById('nxtmock-import-preview');
+    const confirmBtn = document.getElementById('confirm-nxtmock-import-btn');
+    if (!el) return;
+    if (!nxtmockImportPreview || !nxtmockImportPreview.updates.length) {
+      el.innerHTML = '<p class="section-desc">Choose a CSV file to preview the changes before importing.</p>'
+        + (nxtmockImportPreview && nxtmockImportPreview.rowErrors.length
+          ? '<p class="import-skip">' + nxtmockImportPreview.rowErrors.map(esc).join('<br>') + '</p>' : '');
+      if (confirmBtn) confirmBtn.disabled = true;
+      return;
+    }
+    const preview = nxtmockImportPreview.updates;
+    el.innerHTML = '<p class="import-summary">' + preview.length + ' title' + (preview.length === 1 ? '' : 's') + ' will be updated.</p>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th>Program</th><th>Title</th><th>Interview Needed</th><th>Main Config</th><th>Mock Config</th></tr></thead><tbody>'
+      + preview.map(u => '<tr>'
+          + '<td>' + (esc(u.program) || dash()) + '</td>'
+          + '<td>' + esc(u.batch) + '</td>'
+          + '<td>' + ('mainInterviewRequired' in u ? esc(interviewNeededLabel({ mainInterviewRequired: u.mainInterviewRequired, mockInterviewRequired: u.mockInterviewRequired })) : '<span class="muted-cell">Unchanged</span>') + '</td>'
+          + '<td>' + (u.mainInterviewConfigUrl ? esc(u.mainInterviewConfigUrl) : '<span class="muted-cell">Unchanged</span>') + '</td>'
+          + '<td>' + (u.mockInterviewConfigUrl ? esc(u.mockInterviewConfigUrl) : '<span class="muted-cell">Unchanged</span>') + '</td>'
+        + '</tr>').join('')
+      + '</tbody></table></div>'
+      + (nxtmockImportPreview.rowErrors.length
+        ? '<p class="import-skip">Skipped ' + nxtmockImportPreview.rowErrors.length + ' row' + (nxtmockImportPreview.rowErrors.length === 1 ? '' : 's') + ':<br>' + nxtmockImportPreview.rowErrors.slice(0, 12).map(esc).join('<br>') + (nxtmockImportPreview.rowErrors.length > 12 ? '<br>...and ' + (nxtmockImportPreview.rowErrors.length - 12) + ' more.' : '') + '</p>'
+        : '');
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+
+  function confirmNxtmockImport() {
+    if (!canManageRecordCatalog() || !nxtmockImportPreview || !nxtmockImportPreview.updates.length) return;
+    const updates = nxtmockImportPreview.updates;
+    updates.forEach(u => {
+      const idx = batches.findIndex(b => b.id === u.id);
+      if (idx === -1) return;
+      const patch = { updatedAt: new Date().toISOString() };
+      if ('mainInterviewRequired' in u) { patch.mainInterviewRequired = u.mainInterviewRequired; patch.mockInterviewRequired = u.mockInterviewRequired; }
+      if ('mainInterviewConfigUrl' in u) patch.mainInterviewConfigUrl = u.mainInterviewConfigUrl;
+      if ('mockInterviewConfigUrl' in u) patch.mockInterviewConfigUrl = u.mockInterviewConfigUrl;
+      const updated = { ...batches[idx], ...patch };
+      batches[idx] = updated;
+      persistSave(updated);
+    });
+    closeNxtmockImportModal();
+    render();
+    flashToast(updates.length + ' title' + (updates.length === 1 ? '' : 's') + ' updated.', 'success');
+  }
+
+  function buildNxtmockImportSampleCSV() {
+    const headers = ['Program', 'Title', 'Interview Needed', 'Main Interview Config', 'Mock Interview Config'];
+    const rows = [
+      [programOptions[0] || 'Intensive Offline', 'A1: Java Batch 1 || Week - 12', 'Main only', 'https://config.topin.tech/…', ''],
+      [programOptions[0] || 'Intensive Offline', 'M7: Batch 24 || Week - 3', 'Main & Mock', 'https://config.topin.tech/…', 'https://config.topin.tech/…']
+    ];
+    const escCsv = v => {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lines = [headers.map(escCsv).join(',')].concat(rows.map(r => r.map(escCsv).join(',')));
+    return lines.join('\r\n');
+  }
+
+  async function downloadNxtmockImportSample() {
+    const sample = buildNxtmockImportSampleCSV();
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        try {
+          await downloads.save({ filename: 'nxtmock-config-import-sample.csv', data: sample });
+          flashToast('Sample sheet downloaded.', 'success');
+        } catch (err) {
+          const code = err && err.code;
+          if (code === 'declined') return;
+          if (code === 'rejected_extension' || code === 'extension_not_enabled') {
+            try {
+              await downloads.save({ filename: 'nxtmock-config-import-sample.txt', data: sample });
+              flashToast('Downloaded as .txt — rename to .csv before importing.', 'success');
+            } catch (e2) { flashToast('Could not download the sample sheet.', 'error'); }
+          } else {
+            flashToast('Could not download the sample sheet.', 'error');
+          }
+        }
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([sample], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'nxtmock-config-import-sample.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      flashToast('Could not download the sample sheet.', 'error');
+    }
+  }
+
   function interviewNeededCell(b) {
     const value = interviewNeededValue(b);
     if (value === 'unset') return '<span class="badge badge--attention" data-action="edit-nxtmock-config" data-id="'+b.id+'" style="cursor:pointer;" title="Click to choose">Not set &mdash; choose</span>';
@@ -2750,6 +2981,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       btn.disabled = selectedNxtmockIds.size === 0;
       btn.textContent = 'Notify SMEs' + (selectedNxtmockIds.size ? ' (' + selectedNxtmockIds.size + ')' : '');
     }
+    const importBtn = document.getElementById('nxtmock-import-btn');
+    if (importBtn) importBtn.hidden = !canManageRecordCatalog();
     const selectAll = document.getElementById('nxtmock-config-select-all');
     if (selectAll) {
       const visibleIds = filtered.map(b => b.id);
@@ -6434,6 +6667,18 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'close-import') {
       closeImportModal();
     }
+    else if (action === 'open-nxtmock-import') {
+      openNxtmockImportModal();
+    }
+    else if (action === 'close-nxtmock-import') {
+      closeNxtmockImportModal();
+    }
+    else if (action === 'confirm-nxtmock-import') {
+      confirmNxtmockImport();
+    }
+    else if (action === 'download-nxtmock-import-sample') {
+      downloadNxtmockImportSample();
+    }
     else if (action === 'open-notify') {
       openNotifyModal();
     }
@@ -6618,6 +6863,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (t.id === 'import-file-input') {
       const file = t.files && t.files[0];
       if (file) handleImportFile(file);
+      return;
+    }
+    if (t.id === 'nxtmock-import-file-input') {
+      const file = t.files && t.files[0];
+      if (file) handleNxtmockImportFile(file);
       return;
     }
     if (t.id === 'add-students-file-input') {
