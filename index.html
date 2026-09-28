@@ -2875,6 +2875,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     updates.forEach(u => {
       const idx = batches.findIndex(b => b.id === u.id);
       if (idx === -1) return;
+      const before = { ...batches[idx] };
       const patch = { updatedAt: new Date().toISOString() };
       if ('mainInterviewRequired' in u) { patch.mainInterviewRequired = u.mainInterviewRequired; patch.mockInterviewRequired = u.mockInterviewRequired; }
       if ('mainInterviewConfigUrl' in u) patch.mainInterviewConfigUrl = u.mainInterviewConfigUrl;
@@ -2882,6 +2883,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       const updated = { ...batches[idx], ...patch };
       batches[idx] = updated;
       persistSave(updated);
+      notifyNxtmockConfigChange(before, updated);
     });
     closeNxtmockImportModal();
     render();
