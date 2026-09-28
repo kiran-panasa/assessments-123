@@ -2264,8 +2264,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         <div class="modal-body">
           <div class="import-file-row">
             <input type="file" id="nxtmock-import-file-input" accept=".csv">
-            <button type="button" class="btn btn--ghost btn--sm" data-action="download-nxtmock-import-sample">Download sample sheet (.csv)</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-action="download-nxtmock-import-sample">Download current view (.csv)</button>
           </div>
+          <p class="section-desc">Downloads exactly what's filtered on the NxtMock Config page right now (Search/Program/Interview Needed) &mdash; Program and Title come pre-filled from your data, so there's nothing to type or mistype there. Just edit the Interview Needed / config columns and re-upload.</p>
           <details class="import-help">
             <summary>Which columns can I use?</summary>
             <p class="section-desc">One row per title. <strong>Program</strong> and <strong>Title</strong> together must match an existing Title already in Curriculum &mdash; this only updates NxtMock Config on titles that exist, it doesn't create new ones.</p>
@@ -2890,12 +2891,28 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     flashToast(updates.length + ' title' + (updates.length === 1 ? '' : 's') + ' updated.', 'success');
   }
 
+  // Matches exactly what parseInterviewNeededImport() accepts back on import
+  // -- round-tripping through export -> edit -> import must never produce a
+  // value the importer itself would reject.
+  function interviewNeededImportLabel(b) {
+    const v = interviewNeededValue(b);
+    return { unset: 'Not set', none: 'No interview', main: 'Main only', mock: 'Mock only', both: 'Main & Mock' }[v] || 'Not set';
+  }
+
+  // Exports whatever's currently on screen (Search/Program/Interview Needed
+  // filters all apply) with Program and Title already filled in exactly as
+  // stored -- typing those by hand is exactly what causes rows to silently
+  // not match anything on import. Falls back to a generic example only when
+  // there's genuinely nothing to export yet.
   function buildNxtmockImportSampleCSV() {
     const headers = ['Program', 'Title', 'Interview Needed', 'Main Interview Config', 'Mock Interview Config'];
-    const rows = [
-      [programOptions[0] || 'Intensive Offline', 'A1: Java Batch 1 || Week - 12', 'Main only', 'https://config.topin.tech/…', ''],
-      [programOptions[0] || 'Intensive Offline', 'M7: Batch 24 || Week - 3', 'Main & Mock', 'https://config.topin.tech/…', 'https://config.topin.tech/…']
-    ];
+    const filtered = getFilteredNxtmockConfigBatches();
+    const rows = filtered.length
+      ? filtered.map(b => [b.program || '', b.batch, interviewNeededImportLabel(b), b.mainInterviewConfigUrl || '', b.mockInterviewConfigUrl || ''])
+      : [
+          [programOptions[0] || 'Intensive Offline', 'A1: Java Batch 1 || Week - 12', 'Main only', 'https://config.topin.tech/…', ''],
+          [programOptions[0] || 'Intensive Offline', 'M7: Batch 24 || Week - 3', 'Main & Mock', 'https://config.topin.tech/…', 'https://config.topin.tech/…']
+        ];
     const escCsv = v => {
       const s = String(v == null ? '' : v);
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -2910,14 +2927,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       const downloads = await window.claude.use('downloads');
       if (downloads) {
         try {
-          await downloads.save({ filename: 'nxtmock-config-import-sample.csv', data: sample });
-          flashToast('Sample sheet downloaded.', 'success');
+          await downloads.save({ filename: 'nxtmock-config-current-view.csv', data: sample });
+          flashToast('Current view downloaded.', 'success');
         } catch (err) {
           const code = err && err.code;
           if (code === 'declined') return;
           if (code === 'rejected_extension' || code === 'extension_not_enabled') {
             try {
-              await downloads.save({ filename: 'nxtmock-config-import-sample.txt', data: sample });
+              await downloads.save({ filename: 'nxtmock-config-current-view.txt', data: sample });
               flashToast('Downloaded as .txt — rename to .csv before importing.', 'success');
             } catch (e2) { flashToast('Could not download the sample sheet.', 'error'); }
           } else {
@@ -2932,7 +2949,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'nxtmock-config-import-sample.csv';
+      a.download = 'nxtmock-config-current-view.csv';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
