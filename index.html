@@ -1646,10 +1646,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                     <th>Title</th>
                     <th>Assessment Date</th>
                     <th>Assessment Type</th>
+                    <th>Status</th>
                     <th>Mock Assessment Config</th>
                     <th>Main Assessment Config</th>
                     <th>SEB Status</th>
-                    <th>Status</th>
                     <th>Updated</th>
                     <th class="col-actions">Actions</th>
                   </tr>
@@ -2564,10 +2564,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td class="mono">' + mainAssessmentDateCell(b) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
+      + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
       + '<td>' + (b.mockRequired ? configField(b.mockConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + configField(b.mainConfigUrl) + '</td>'
       + '<td>' + (b.mainSebStatus ? '<span class="badge '+(b.mainSebStatus==='SEB'?'badge--yes':'badge--no')+'">'+esc(b.mainSebStatus)+'</span>' : dash()) + '</td>'
-      + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
       + '<td class="col-actions">' + configActionsCell(b.id) + '</td>'
       + '</tr>';
