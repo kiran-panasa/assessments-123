@@ -423,6 +423,12 @@ tbody tr:not(.row-editing):hover td,
 tbody tr:not(.row-editing):hover td.col-syllabus,
 tbody tr:not(.row-editing):hover td.col-actions{background:var(--blue-soft);}
 tbody tr:not(.row-editing):hover td.col-syllabus{box-shadow:inset 3px 0 0 var(--blue),1px 0 0 var(--border);}
+/* Brief flash on the row a "Go to Curriculum" notification link lands on --
+   needs to out-rank the zebra/hover rules above, so it matches their
+   specificity and wins on source order. */
+tbody tr.row-notif-highlight:not(.row-editing) td,
+tbody tr.row-notif-highlight:not(.row-editing) td.col-syllabus,
+tbody tr.row-notif-highlight:not(.row-editing) td.col-actions{background:var(--amber-soft);transition:background 1.8s ease;}
 
 .badge{position:relative;transition:box-shadow .15s ease;}
 .badge--yes{padding-left:20px;box-shadow:0 0 0 1px var(--accent-soft) inset;}
@@ -1282,6 +1288,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       body: n.body || '',
       navSection: n.navSection || null,
       navTeamTab: n.navTeamTab || null,
+      navBatchId: n.navBatchId || null,
       audienceUids: Array.isArray(n.audienceUids) ? n.audienceUids : [],
       audienceProgram: n.audienceProgram || null,
       audienceAdmins: !!n.audienceAdmins,
@@ -3917,6 +3924,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     notifyProgramEvent({
       type: 'assessment-published',
       program: updated.program,
+      batchId: id,
       headline: 'Assessment Published — ' + where,
       badgeLabel: (type === 'main' ? 'MAIN' : 'MOCK') + ' PUBLISHED',
       badgeTone: 'yes',
@@ -5046,10 +5054,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       notifyProgramEvent({
         type: 'title-raised',
         program: saved.program,
-        headline: 'New Assignment Request — ' + where,
+        batchId: saved.id,
+        headline: 'New Assessment Request — ' + where,
         badgeLabel: 'PENDING',
         badgeTone: 'attention',
-        body: actorLabel() + ' raised an assignment request for ' + where + '. Please prepare the syllabus and assessment config.',
+        body: actorLabel() + ' raised an assessment request for ' + where + '. Please check the syllabus and update the assessment config before the assessment date.',
         to: ['content', 'ops']
       });
       return;
@@ -5065,6 +5074,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     notifyProgramEvent({
       type: 'title-changed',
       program: saved.program,
+      batchId: saved.id,
       headline: 'Title Updated — ' + where,
       badgeLabel: 'UPDATED',
       badgeTone: 'no',
@@ -5085,6 +5095,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     notifyProgramEvent({
       type: 'config-updated',
       program: after.program,
+      batchId: after.id,
       headline: 'Assessment Config Updated — ' + where,
       badgeLabel: 'CONFIG UPDATED',
       badgeTone: 'yes',
@@ -5105,6 +5116,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     notifyProgramEvent({
       type: 'nxtmock-config-updated',
       program: after.program,
+      batchId: after.id,
       headline: 'NxtMock Config Updated — ' + where,
       badgeLabel: 'NXTMOCK',
       badgeTone: 'yes',
@@ -5648,6 +5660,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       body: opts.body || '',
       navSection: opts.navSection || null,
       navTeamTab: opts.navTeamTab || null,
+      navBatchId: opts.navBatchId || null,
       audienceUids: opts.audienceUids || [],
       audienceProgram: opts.audienceProgram || null,
       audienceAdmins: !!opts.audienceAdmins,
@@ -5690,6 +5703,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       badgeTone: opts.badgeTone,
       body: opts.body,
       navSection: opts.navSection || 'records',
+      navBatchId: opts.batchId || null,
       audienceProgram: to.includes('ops') ? opts.program : null,
       audienceContentProgram: to.includes('content') ? opts.program : null,
       audienceTeams: to.includes('onground') ? ['onground'] : []
@@ -5783,6 +5797,21 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (markAllBtn) markAllBtn.disabled = !mine.some(n => !isNotificationRead(n));
   }
 
+  // Table row id prefixes, one per section a notification can link into --
+  // each table renders its own with a different prefix.
+  const NOTIF_ROW_PREFIX = { records: 'row-', topin: 'crow-', 'nxtmock-config': 'mcrow-', assessments: 'arow-', interviews: 'irow-' };
+
+  function highlightNotifRow(navSection, batchId) {
+    if (!batchId) return;
+    const prefix = NOTIF_ROW_PREFIX[navSection];
+    if (!prefix) return;
+    const el = document.getElementById(prefix + batchId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('row-notif-highlight');
+    setTimeout(() => el.classList.remove('row-notif-highlight'), 3500);
+  }
+
   function notifNavigate(id) {
     const n = notifications.find(x => x.id === id);
     markNotificationRead(id);
@@ -5791,6 +5820,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       activeSection = n.navSection;
       if (n.navTeamTab) teamStatusTab = n.navTeamTab;
       render();
+      if (n.navBatchId) highlightNotifRow(n.navSection, n.navBatchId);
     } else {
       renderNotificationsPanel();
       updateNotificationBell();
