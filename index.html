@@ -5680,10 +5680,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   // its audience: a listed user, an Ops owner / Content head of its program,
   // or a member of a targeted team. The person who triggered it never sees
   // their own notification.
+  // Strictly follows the Settings -> Program Owners / Content Heads mapping
+  // (and any other explicit targeting) -- being Admin is not, by itself, a
+  // reason to see a notification. Only audienceAdmins:true (the access-
+  // request notification) is meant for every Admin regardless of mapping.
   function notificationVisible(n) {
     if (!authUser) return false;
     if (n.createdByUid && n.createdByUid === authUser.uid) return false;
-    if (hasTeam('admin')) return true;
+    if (n.audienceAdmins && hasTeam('admin')) return true;
     if (n.audienceUids.includes(authUser.uid)) return true;
     if (n.audienceProgram && (programOwners[n.audienceProgram] || []).includes(authUser.uid)) return true;
     if (n.audienceContentProgram && (programContentHeads[n.audienceContentProgram] || []).includes(authUser.uid)) return true;
