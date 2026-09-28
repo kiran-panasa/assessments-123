@@ -1727,9 +1727,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                     <th class="col-syllabus"><input type="checkbox" id="nxtmock-config-select-all" aria-label="Select all"> Program</th>
                     <th>Title</th>
                     <th>Interview Needed</th>
+                    <th>Status</th>
                     <th>Main Interview Config</th>
                     <th>Mock Interview Config</th>
-                    <th>Status</th>
                     <th>Updated</th>
                     <th class="col-actions">Actions</th>
                   </tr>
@@ -1765,6 +1765,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                     <th class="col-syllabus">Program</th>
                     <th>Title</th>
                     <th>Interview Type</th>
+                    <th>Status</th>
                     <th>Main Interview Config</th>
                     <th>Main Interview Link</th>
                     <th>Mock Interview Config</th>
@@ -1772,7 +1773,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                     <th>Main Invited</th>
                     <th>Mock Invited</th>
                     <th>Invite List</th>
-                    <th>Status</th>
                     <th class="col-actions">Actions</th>
                   </tr>
                 </thead>
@@ -2605,13 +2605,20 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function nxtmockConfigStatus(b) {
-    if (b.mainInterviewRequired === null || b.mockInterviewRequired === null) return 'pending';
+    if (b.mainInterviewRequired === null || b.mockInterviewRequired === null) return 'not-set';
     const required = [];
     if (b.mockInterviewRequired) required.push('mockInterviewConfigUrl');
     if (b.mainInterviewRequired) required.push('mainInterviewConfigUrl');
-    if (!required.length) return 'submitted';
+    if (!required.length) return 'not-required';
     const filled = required.filter(f => b[f]);
-    return filled.length === required.length ? 'submitted' : 'pending';
+    return filled.length === required.length ? 'ready' : 'pending';
+  }
+
+  function nxtmockConfigStatusBadge(status) {
+    if (status === 'not-set') return '<span class="badge badge--attention">Not Set</span>';
+    if (status === 'not-required') return '<span class="muted-cell">Not Required</span>';
+    if (status === 'ready') return '<span class="badge badge--yes">Config Ready</span>';
+    return '<span class="badge badge--no">Config Pending</span>';
   }
 
   async function clearMockConfig(id) {
@@ -2960,9 +2967,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-nxtmock" data-id="'+b.id+'"'+(selectedNxtmockIds.has(b.id)?' checked':'')+'> ' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td>' + interviewNeededCell(b) + '</td>'
+      + '<td>' + nxtmockConfigStatusBadge(status) + '</td>'
       + '<td>' + (mainInterviewOn === null ? '<span class="muted-cell">Not set</span>' : mainInterviewOn ? configField(b.mainInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (mockInterviewOn === null ? '<span class="muted-cell">Not set</span>' : mockInterviewOn ? configField(b.mockInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
       + '<td class="col-actions">' + nxtmockConfigActionsCell(b.id) + '</td>'
       + '</tr>';
@@ -4542,6 +4549,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td class="col-syllabus">' + (esc(b.program) || dash()) + '</td>'
       + '<td class="cell-strong">' + esc(b.batch) + '</td>'
       + '<td><span class="badge '+(b.mainInterviewRequired?'badge--yes':'badge--no')+'">Main '+(b.mainInterviewRequired?'✓':'✗')+'</span> <span class="badge '+(b.mockInterviewRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockInterviewRequired?'✓':'✗')+'</span></td>'
+      + '<td>' + interviewStatusBadge(b) + '</td>'
       + '<td>' + (b.mainInterviewRequired ? interviewConfigDisplay(b.mainInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mainInterviewRequired ? interviewLinkInput(b, 'mainInterviewLink') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewConfigDisplay(b.mockInterviewConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
@@ -4549,7 +4557,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td>' + (b.mainInterviewRequired ? interviewInvitedSelect(b, 'mainInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + (b.mockInterviewRequired ? interviewInvitedSelect(b, 'mockInterviewInvited') : '<span class="muted-cell">Not Required</span>') + '</td>'
       + '<td>' + inviteModeSelect(b) + '</td>'
-      + '<td>' + interviewStatusBadge(b) + '</td>'
       + '<td class="col-actions">' + interviewActionsCell(b.id, b.interviewInviteMode) + '</td>'
       + '</tr>';
   }
