@@ -2264,9 +2264,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         <div class="modal-body">
           <div class="import-file-row">
             <input type="file" id="nxtmock-import-file-input" accept=".csv">
-            <button type="button" class="btn btn--ghost btn--sm" data-action="download-nxtmock-import-sample">Download current view (.csv)</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-action="download-nxtmock-import-sample">Download current view (.xlsx)</button>
           </div>
-          <p class="section-desc">Downloads exactly what's filtered on the NxtMock Config page right now (Search/Program/Interview Needed) &mdash; Program and Title come pre-filled from your data, so there's nothing to type or mistype there. Just edit the Interview Needed / config columns and re-upload.</p>
+          <p class="section-desc">Downloads exactly what's filtered on the NxtMock Config page right now (Search/Program/Interview Needed) as an Excel file &mdash; Program and Title come pre-filled from your data, and <strong>Interview Needed has a real dropdown</strong>, so there's nothing to type or mistype there. Edit it, then <strong>File &rarr; Save As / Download &rarr; CSV</strong> and upload that CSV here &mdash; this importer only reads CSV files.</p>
           <details class="import-help">
             <summary>Which columns can I use?</summary>
             <p class="section-desc">One row per title. <strong>Program</strong> and <strong>Title</strong> together must match an existing Title already in Curriculum &mdash; this only updates NxtMock Config on titles that exist, it doesn't create new ones.</p>
@@ -2921,7 +2921,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return lines.join('\r\n');
   }
 
-  async function downloadNxtmockImportSample() {
+  async function downloadNxtmockImportSampleCSV() {
     const sample = buildNxtmockImportSampleCSV();
     if (window.claude && typeof window.claude.use === 'function') {
       const downloads = await window.claude.use('downloads');
@@ -2956,6 +2956,95 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       flashToast('Could not download the sample sheet.', 'error');
+    }
+  }
+
+  // Same rows as buildNxtmockImportSampleCSV(), but as a real .xlsx with a
+  // dropdown (data validation) on Interview Needed -- the field the user
+  // specifically asked to be mistake-proof, since it's free text in CSV.
+  async function buildNxtmockImportWorkbook() {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Assessments & NxtMock Ops';
+    const ws = wb.addWorksheet('NxtMock Config');
+    const headers = ['Program', 'Title', 'Interview Needed', 'Main Interview Config', 'Mock Interview Config'];
+    ws.addRow(headers);
+    const headerRow = ws.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDF1EA' } }; });
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+    headers.forEach((h, i) => { ws.getColumn(i + 1).width = Math.max(18, h.length + 4); });
+
+    const filtered = getFilteredNxtmockConfigBatches();
+    const rows = filtered.length
+      ? filtered.map(b => [b.program || '', b.batch, interviewNeededImportLabel(b), b.mainInterviewConfigUrl || '', b.mockInterviewConfigUrl || ''])
+      : [
+          [programOptions[0] || 'Intensive Offline', 'A1: Java Batch 1 || Week - 12', 'Main only', 'https://config.topin.tech/…', ''],
+          [programOptions[0] || 'Intensive Offline', 'M7: Batch 24 || Week - 3', 'Main & Mock', 'https://config.topin.tech/…', 'https://config.topin.tech/…']
+        ];
+    rows.forEach(r => ws.addRow(r));
+
+    const interviewOptions = 'Not set,No interview,Main only,Mock only,Main & Mock';
+    const lastRow = Math.max(rows.length + 1, 300);
+    for (let r = 2; r <= lastRow; r++) {
+      ws.getCell('C' + r).dataValidation = { type: 'list', allowBlank: true, formulae: ['"' + interviewOptions + '"'], showErrorMessage: true, errorTitle: 'Invalid value', error: 'Pick one of: Not set, No interview, Main only, Mock only, Main & Mock.' };
+    }
+
+    const help = wb.addWorksheet('Read Me');
+    help.getColumn(1).width = 100;
+    [
+      'How to use this sheet',
+      '1. Program and Title are pre-filled from what was on screen when you downloaded this -- don\'t retype them, or the row may not match anything on import.',
+      '2. Interview Needed has a dropdown on the NxtMock Config sheet -- use it to avoid typos. Anything typed outside these values is rejected on import.',
+      '3. Leave Main/Mock Interview Config blank to leave that link unchanged.',
+      '4. When you are done, use File -> Save As / Download -> Comma Separated Values (.csv), then upload that CSV in Bulk Import.',
+      '',
+      'Accepted values',
+      'Interview Needed: Not set, No interview, Main only, Mock only, Main & Mock'
+    ].forEach(line => help.addRow([line]));
+    help.getRow(1).font = { bold: true, size: 13 };
+    help.getRow(7).font = { bold: true };
+
+    return wb;
+  }
+
+  async function downloadNxtmockImportSample() {
+    if (typeof ExcelJS === 'undefined') {
+      flashToast('Sample sheet generator failed to load — downloading a plain CSV instead.', 'error');
+      downloadNxtmockImportSampleCSV();
+      return;
+    }
+    let buffer;
+    try {
+      const wb = await buildNxtmockImportWorkbook();
+      buffer = await wb.xlsx.writeBuffer();
+    } catch (e) {
+      flashToast('Could not build the sample sheet — downloading a plain CSV instead.', 'error');
+      downloadNxtmockImportSampleCSV();
+      return;
+    }
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        // .xlsx isn't in this preview's downloadable-extension allowlist -- fall back to the CSV here.
+        flashToast('Excel downloads aren\'t available in this preview — downloading a plain CSV instead. Use the deployed site for the Excel version with the dropdown.', 'error');
+        downloadNxtmockImportSampleCSV();
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'nxtmock-config-current-view.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      flashToast('Current view downloaded.', 'success');
+    } catch (e) {
+      flashToast('Could not download the sample sheet — downloading a plain CSV instead.', 'error');
+      downloadNxtmockImportSampleCSV();
     }
   }
 
