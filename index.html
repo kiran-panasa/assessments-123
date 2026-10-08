@@ -1472,21 +1472,26 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   // to check against, so the rule simply doesn't apply to them.
   const MIN_TICKET_LEAD_DAYS = 4;
   const TICKET_LEAD_MESSAGE = 'Invalid Assessment Date: The Assessment Date must be at least ' + MIN_TICKET_LEAD_DAYS + ' days from the ticket/request date. SMEs require a minimum of ' + MIN_TICKET_LEAD_DAYS + ' days to prepare the necessary configurations. Please select an Assessment Date that provides sufficient preparation time.';
+  // Mock is checked relative to Main, not the ticket date -- it only needs
+  // to land after Main has already happened, not its own 4-day SME buffer.
+  const MIN_MOCK_AFTER_MAIN_DAYS = 1;
+  const MOCK_AFTER_MAIN_MESSAGE = 'Invalid Mock Assessment Date: The Mock Assessment must be scheduled at least ' + MIN_MOCK_AFTER_MAIN_DAYS + ' day after the Main Assessment Date.';
 
   function validateDraft(d) {
     const errors = {};
     if (d.mockRequired && d.mockStartAt && d.mockEndAt && d.mockEndAt <= d.mockStartAt) errors.mock = 'End must be after start.';
     if (d.mainStartAt && d.mainEndAt && d.mainEndAt <= d.mainStartAt) errors.main = 'End must be after start.';
     const referenceDate = d.ticketRaisedAt || (isNewRow ? todayISO() : '');
-    if (referenceDate) {
-      const minDate = addDaysISO(referenceDate, MIN_TICKET_LEAD_DAYS);
-      if (!errors.main) {
-        const mainDate = (d.mainStartAt || '').split('T')[0];
-        if (mainDate && mainDate < minDate) errors.main = TICKET_LEAD_MESSAGE;
-      }
-      if (d.mockRequired && !errors.mock) {
-        const mockDate = (d.mockStartAt || '').split('T')[0];
-        if (mockDate && mockDate < minDate) errors.mock = TICKET_LEAD_MESSAGE;
+    const mainDate = (d.mainStartAt || '').split('T')[0];
+    if (referenceDate && !errors.main) {
+      const minMainDate = addDaysISO(referenceDate, MIN_TICKET_LEAD_DAYS);
+      if (mainDate && mainDate < minMainDate) errors.main = TICKET_LEAD_MESSAGE;
+    }
+    if (d.mockRequired && !errors.mock) {
+      const mockDate = (d.mockStartAt || '').split('T')[0];
+      if (mainDate && mockDate) {
+        const minMockDate = addDaysISO(mainDate, MIN_MOCK_AFTER_MAIN_DAYS);
+        if (mockDate < minMockDate) errors.mock = MOCK_AFTER_MAIN_MESSAGE;
       }
     }
     return errors;
@@ -2280,7 +2285,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
               <li><strong>Program</strong> must exactly match a name already in Settings &rarr; Programs (case-insensitive). An unrecognized program skips that title with an error.</li>
               <li><strong>Mock Assessment Required</strong> must be <code>Yes</code> or <code>No</code> (also accepts <code>Y</code>/<code>N</code>). Anything else &mdash; a number, blank-looking text, a typo &mdash; skips that title with an error.</li>
               <li><strong>SEB Status</strong> must be <code>SEB</code> or <code>Non-SEB</code>. Anything else skips that title with an error.</li>
-              <li><strong>Assessment Date</strong> (Main, and Mock if required) must be at least 4 days out from when the title was originally raised &mdash; today, for a brand-new title; its original raise date, if you're moving the date on one that already exists. SMEs need that lead time to prepare configs. Sooner than that skips the row with an error. Only checked when a row actually sets a date &mdash; leaving it blank to keep the existing date is unaffected.</li>
+              <li><strong>Main Assessment Date</strong> must be at least 4 days out from when the title was originally raised &mdash; today, for a brand-new title; its original raise date, if you're moving the date on one that already exists. SMEs need that lead time to prepare configs. Sooner than that skips the row with an error.</li>
+              <li><strong>Mock Assessment Date</strong> (if required) must be at least 1 day after the Main Assessment Date, not the raise date. Sooner than that skips the row with an error.</li>
+              <li>Both checks only run when a row actually sets that date &mdash; leaving it blank to keep the existing date is unaffected.</li>
             </ul>
             <p class="section-desc"><strong>Date &amp; time format:</strong> Mock and Main Start/End Date &amp; Time columns work the same way &mdash; one combined value per cell, time always in <strong>24-hour</strong> format. Use either <code>YYYY-MM-DD HH:MM</code> (e.g. <code>2026-09-12 14:30</code> &mdash; that's 2:30 PM) or <code>DD-MM-YYYY HH:MM</code> (e.g. <code>12-09-2026 09:00</code> &mdash; that's 9:00 AM). Don't type "AM"/"PM" into the cell itself &mdash; convert to 24-hour first (add 12 to any PM hour except 12 PM itself). A value in any other shape is left blank and flagged as an error in the preview, rather than imported wrong.</p>
           </details>
@@ -6056,15 +6063,26 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       // title's original ticketRaisedAt (today, for a brand-new one), so
       // re-importing a nearer date for a title that already exists is
       // caught too, not just first-time creation. Only runs when this row
-      // actually sets a date (left blank = "don't change it").
-      if (ticketRaisedAt) {
+      // actually sets a date (left blank = "don't change it"). Mock is then
+      // checked separately against Main, not the ticket date.
+      const mainDateForLead = (raw.mainStartAt || '').split('T')[0];
+      if (ticketRaisedAt && mainDateForLead) {
         const minDate = addDaysISO(ticketRaisedAt, MIN_TICKET_LEAD_DAYS);
-        const mainDate = (raw.mainStartAt || '').split('T')[0];
-        const mockDate = raw.mockRequired ? (raw.mockStartAt || '').split('T')[0] : '';
-        if ((mainDate && mainDate < minDate) || (mockDate && mockDate < minDate)) {
+        if (mainDateForLead < minDate) {
           rowErrors.push('"' + key + '": ' + TICKET_LEAD_MESSAGE);
           invalidSkipped++;
           return;
+        }
+      }
+      if (raw.mockRequired) {
+        const mockDateForLead = (raw.mockStartAt || '').split('T')[0];
+        if (mainDateForLead && mockDateForLead) {
+          const minMockDate = addDaysISO(mainDateForLead, MIN_MOCK_AFTER_MAIN_DAYS);
+          if (mockDateForLead < minMockDate) {
+            rowErrors.push('"' + key + '": ' + MOCK_AFTER_MAIN_MESSAGE);
+            invalidSkipped++;
+            return;
+          }
         }
       }
 
