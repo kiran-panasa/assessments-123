@@ -5395,40 +5395,48 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     closeTitleFormModal();
   }
 
-  function handlePostSaveNotify(saved, wasNewRow, beforeSnapshotJson, wasConfigOnly) {
+  function notifyTitleRaised(saved) {
     if (!fs || !db) return;
     const where = saved.program + ' · ' + saved.batch;
-    if (wasNewRow) {
-      notifyProgramEvent({
-        type: 'title-raised',
-        program: saved.program,
-        batchId: saved.id,
-        headline: 'New Assessment Request — ' + where,
-        badgeLabel: 'PENDING',
-        badgeTone: 'attention',
-        body: actorLabel() + ' raised an assessment request for ' + where + '. Please check the syllabus and update the assessment config before the assessment date.',
-        to: ['content', 'ops']
-      });
-      return;
-    }
-    let before = {};
-    try { before = beforeSnapshotJson ? JSON.parse(beforeSnapshotJson) : {}; } catch (e) {}
-    if (wasConfigOnly) {
-      notifyAssessmentConfigChange(before, saved);
-      return;
-    }
-    const changed = summarizeTitleChanges(before, saved);
-    if (!changed.length) return;
     notifyProgramEvent({
-      type: 'title-changed',
+      type: 'title-raised',
       program: saved.program,
       batchId: saved.id,
+      headline: 'New Assessment Request — ' + where,
+      badgeLabel: 'PENDING',
+      badgeTone: 'attention',
+      body: actorLabel() + ' raised an assessment request for ' + where + '. Please check the syllabus and update the assessment config before the assessment date.',
+      to: ['content', 'ops']
+    });
+  }
+
+  function notifyTitleChanged(before, after) {
+    if (!fs || !db) return;
+    const changed = summarizeTitleChanges(before, after);
+    if (!changed.length) return;
+    const where = after.program + ' · ' + after.batch;
+    notifyProgramEvent({
+      type: 'title-changed',
+      program: after.program,
+      batchId: after.id,
       headline: 'Title Updated — ' + where,
       badgeLabel: 'UPDATED',
       badgeTone: 'no',
       body: actorLabel() + ' updated ' + where + ' (' + changed.join(', ') + ').',
       to: ['ops', 'content']
     });
+  }
+
+  function handlePostSaveNotify(saved, wasNewRow, beforeSnapshotJson, wasConfigOnly) {
+    if (!fs || !db) return;
+    if (wasNewRow) { notifyTitleRaised(saved); return; }
+    let before = {};
+    try { before = beforeSnapshotJson ? JSON.parse(beforeSnapshotJson) : {}; } catch (e) {}
+    if (wasConfigOnly) {
+      notifyAssessmentConfigChange(before, saved);
+      return;
+    }
+    notifyTitleChanged(before, saved);
   }
 
   // Assessment Config links (Mock/Main) added or changed on a Title -- tells
@@ -6873,6 +6881,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'confirm-import') {
       if (!canManageRecordCatalog() || !importPreview || !importPreview.batches.length) return;
       const imported = importPreview.batches;
+      const beforeById = new Map(batches.map(b => [b.id, b]));
       const existingIds = new Set(batches.map(b => b.id));
       const newOnes = imported.filter(b => !existingIds.has(b.id));
       const updatedOnes = imported.filter(b => existingIds.has(b.id));
@@ -6881,6 +6890,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       activeSection = 'records';
       render();
       imported.forEach(persistSave);
+      // Bulk Import skipped notifications entirely before -- same triggers as
+      // a single Raise Request / edit now fire per title, so Content/Ops
+      // hear about new or changed titles no matter which path added them.
+      newOnes.forEach(notifyTitleRaised);
+      updatedOnes.forEach(u => { const before = beforeById.get(u.id); if (before) notifyTitleChanged(before, u); });
       let msg;
       if (newOnes.length && updatedOnes.length) msg = newOnes.length + ' added, ' + updatedOnes.length + ' updated.';
       else if (newOnes.length) msg = newOnes.length + (newOnes.length === 1 ? ' batch imported.' : ' batches imported.');
