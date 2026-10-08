@@ -109,7 +109,7 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 .cell-input--narrow{min-width:68px;}
 .cell-input--date,.cell-input--time{font-family:var(--font-mono);min-width:120px;font-variant-numeric:tabular-nums;}
 .cell-input--datetime{font-family:var(--font-mono);min-width:190px;font-variant-numeric:tabular-nums;}
-.field-error{color:var(--danger);font-size:11px;margin-top:4px;font-family:var(--font-body);max-width:130px;}
+.field-error{color:var(--danger);font-size:11px;margin-top:4px;font-family:var(--font-body);max-width:280px;line-height:1.4;}
 .actions{display:flex;gap:4px;}
 td.col-actions{padding-left:8px;padding-right:8px;}
 .empty-state{padding:56px 24px;text-align:center;color:var(--muted);font-family:var(--font-body);}
@@ -1449,10 +1449,29 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return h12 + ':' + String(p[1]).padStart(2,'0') + ' ' + period;
   }
 
+  // SMEs need lead time to prepare configs -- a newly raised ticket's
+  // Assessment Date must be at least this many days out from the day the
+  // ticket itself is raised. Only applies to ticket creation (isNewRow);
+  // once a title exists, "ticket creation date" is a fixed historical fact
+  // that re-validating on every later edit wouldn't make sense against.
+  const MIN_TICKET_LEAD_DAYS = 4;
+  const TICKET_LEAD_MESSAGE = 'Invalid Assessment Date: The Assessment Date must be at least ' + MIN_TICKET_LEAD_DAYS + ' days from the ticket/request date. SMEs require a minimum of ' + MIN_TICKET_LEAD_DAYS + ' days to prepare the necessary configurations. Please select an Assessment Date that provides sufficient preparation time.';
+
   function validateDraft(d) {
     const errors = {};
     if (d.mockRequired && d.mockStartAt && d.mockEndAt && d.mockEndAt <= d.mockStartAt) errors.mock = 'End must be after start.';
     if (d.mainStartAt && d.mainEndAt && d.mainEndAt <= d.mainStartAt) errors.main = 'End must be after start.';
+    if (isNewRow) {
+      const minDate = addDaysISO(todayISO(), MIN_TICKET_LEAD_DAYS);
+      if (!errors.main) {
+        const mainDate = (d.mainStartAt || '').split('T')[0];
+        if (mainDate && mainDate < minDate) errors.main = TICKET_LEAD_MESSAGE;
+      }
+      if (d.mockRequired && !errors.mock) {
+        const mockDate = (d.mockStartAt || '').split('T')[0];
+        if (mockDate && mockDate < minDate) errors.mock = TICKET_LEAD_MESSAGE;
+      }
+    }
     return errors;
   }
 
@@ -2244,6 +2263,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
               <li><strong>Program</strong> must exactly match a name already in Settings &rarr; Programs (case-insensitive). An unrecognized program skips that title with an error.</li>
               <li><strong>Mock Assessment Required</strong> must be <code>Yes</code> or <code>No</code> (also accepts <code>Y</code>/<code>N</code>). Anything else &mdash; a number, blank-looking text, a typo &mdash; skips that title with an error.</li>
               <li><strong>SEB Status</strong> must be <code>SEB</code> or <code>Non-SEB</code>. Anything else skips that title with an error.</li>
+              <li><strong>Assessment Date</strong> (Main, and Mock if required) on a brand-new title must be at least 4 days out from today &mdash; SMEs need that lead time to prepare configs. Sooner than that skips the title with an error. Doesn't apply when updating a title that already exists.</li>
             </ul>
             <p class="section-desc"><strong>Date &amp; time format:</strong> Mock and Main Start/End Date &amp; Time columns work the same way &mdash; one combined value per cell, time always in <strong>24-hour</strong> format. Use either <code>YYYY-MM-DD HH:MM</code> (e.g. <code>2026-09-12 14:30</code> &mdash; that's 2:30 PM) or <code>DD-MM-YYYY HH:MM</code> (e.g. <code>12-09-2026 09:00</code> &mdash; that's 9:00 AM). Don't type "AM"/"PM" into the cell itself &mdash; convert to 24-hour first (add 12 to any PM hour except 12 PM itself). A value in any other shape is left blank and flagged as an error in the preview, rather than imported wrong.</p>
           </details>
@@ -3194,6 +3214,13 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function fmtISO(d) {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  function addDaysISO(dateISO, days) {
+    const [y, m, d] = dateISO.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + days);
+    return fmtISO(dt);
   }
 
   function getWeekRange(d) {
@@ -5486,7 +5513,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const allowed = titleFormConfigOnly ? canViewConfigColumns() : canEditRecords();
     if (!allowed) return;
     const errors = validateDraft(draft);
-    if (Object.keys(errors).length) { updateErrorDisplays(); renderTitleFormModal(); flashToast('Fix the highlighted time ranges before saving.', 'error'); return; }
+    if (Object.keys(errors).length) { updateErrorDisplays(); renderTitleFormModal(); flashToast('Fix the highlighted errors before saving.', 'error'); return; }
     if (!draft.program) { flashToast('Program is required.', 'error'); return; }
     if (!draft.batch.trim()) { flashToast('Title is required.', 'error'); return; }
     draft.updatedAt = new Date().toISOString();
@@ -5982,6 +6009,20 @@ function boot(seedBatches, seedStudents, seedTestUids) {
           delete raw[f];
         }
       });
+
+      // Same lead-time rule as manual Raise Request, and only for the same
+      // reason: a brand-new ticket, not an update to one that already exists.
+      if (!existingBatch) {
+        const minDate = addDaysISO(todayISO(), MIN_TICKET_LEAD_DAYS);
+        const mainDate = (raw.mainStartAt || '').split('T')[0];
+        const mockDate = raw.mockRequired ? (raw.mockStartAt || '').split('T')[0] : '';
+        if ((mainDate && mainDate < minDate) || (mockDate && mockDate < minDate)) {
+          rowErrors.push('"' + key + '": ' + TICKET_LEAD_MESSAGE);
+          invalidSkipped++;
+          return;
+        }
+      }
+
       built.push(normalizeBatch(raw));
     });
     return { batches: built, skipped: skipped, invalidSkipped: invalidSkipped, dateWarnings: dateWarnings, rowErrors: rowErrors };
