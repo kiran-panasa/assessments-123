@@ -1903,7 +1903,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             </div>
             <div class="settings-panel" style="margin-top:18px;">
               <h3 class="settings-panel-title">Escalation Managers</h3>
-              <p class="section-desc">Pick the Admin(s) who should get the SLA breach escalation for each program, when an exam is due and its config is still missing. If a program has no one picked here, its escalations fall back to every Admin so they&rsquo;re never silently lost.</p>
+              <p class="section-desc">Pick who should get the SLA breach escalation for each program, when an exam is due and its config is still missing &mdash; anyone registered, from any team (picking someone here doesn&rsquo;t change their role or permissions). If a program has no one picked here, its escalations fall back to every Admin so they&rsquo;re never silently lost.</p>
               <div id="program-escalation-list"></div>
             </div>
             </div>
@@ -3992,25 +3992,30 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function renderProgramMappingPanel(elId, kind, team, teamLabel) {
     const el = document.getElementById(elId);
     if (!el) return;
-    const users = appUsers.filter(u => teamsOf(u).includes(team) && u.status !== 'pending');
+    // team === null means "anyone registered, any team" -- used for Escalation
+    // Managers, since picking someone there shouldn't require making them an
+    // Admin (which would also grant them Admin's broader app permissions).
+    const users = appUsers.filter(u => (!team || teamsOf(u).includes(team)) && u.status !== 'pending');
     if (!programOptions.length) {
       el.innerHTML = '<p class="section-desc">Add a program on the Programs tab first.</p>';
       return;
     }
     if (!users.length) {
-      el.innerHTML = '<p class="section-desc">No ' + esc(teamLabel) + ' members yet — register one on the Teams page first.</p>';
+      el.innerHTML = '<p class="section-desc">No ' + esc(teamLabel) + ' yet — register one on the Teams page first.</p>';
       return;
     }
     const info = PROGRAM_MAPPING_KIND_INFO[kind];
     const map = info.map();
     const cls = info.cls;
+    const showTeamSuffix = !team;
     el.innerHTML = programOptions.map(program => {
       const chosen = map[program] || [];
       return '<div class="program-owner-row">'
         + '<div class="program-owner-row-name">' + esc(program) + '</div>'
-        + '<div class="program-owner-row-checks">' + users.map(u =>
-            '<label class="notify-recipient-row"><input type="checkbox" class="' + cls + '" data-program="' + esc(program) + '" data-id="' + u.id + '"' + (chosen.includes(u.id) ? ' checked' : '') + '> ' + esc(u.name || u.email) + '</label>'
-          ).join('') + '</div>'
+        + '<div class="program-owner-row-checks">' + users.map(u => {
+            const suffix = showTeamSuffix ? ' <span class="muted-cell">(' + esc(teamsOf(u).map(t => TEAM_LABELS[t] || t).join(', ') || 'No team') + ')</span>' : '';
+            return '<label class="notify-recipient-row"><input type="checkbox" class="' + cls + '" data-program="' + esc(program) + '" data-id="' + u.id + '"' + (chosen.includes(u.id) ? ' checked' : '') + '> ' + esc(u.name || u.email) + suffix + '</label>';
+          }).join('') + '</div>'
         + '</div>';
     }).join('');
   }
@@ -4018,7 +4023,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function renderProgramOwnersPanel() {
     renderProgramMappingPanel('program-owners-list', 'owner', 'assessments_ops', 'Assessments Ops team');
     renderProgramMappingPanel('program-heads-list', 'head', 'content', 'Content team');
-    renderProgramMappingPanel('program-escalation-list', 'escalation', 'admin', 'Admin team');
+    renderProgramMappingPanel('program-escalation-list', 'escalation', null, 'registered team members');
   }
 
   function testUidsForProgram(program) {
