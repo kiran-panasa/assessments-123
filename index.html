@@ -244,6 +244,16 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .program-owner-row{display:flex;align-items:flex-start;gap:16px;padding:10px 0;border-bottom:1px solid var(--border-soft);}
 .program-owner-row-name{min-width:160px;font-weight:600;}
 .program-owner-row-checks{display:flex;flex-wrap:wrap;gap:6px 18px;}
+.mapping-select{position:relative;min-width:240px;}
+.mapping-select-trigger{width:100%;text-align:left;padding:7px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--ink);font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;}
+.mapping-select-trigger:hover{border-color:var(--accent);}
+.mapping-select-caret{color:var(--muted);font-size:11px;flex-shrink:0;}
+.mapping-select-panel{position:absolute;top:calc(100% + 4px);left:0;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.18);width:300px;max-width:80vw;padding:8px;}
+.mapping-select-search{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;margin-bottom:6px;background:var(--surface);color:var(--ink);box-sizing:border-box;}
+.mapping-select-options{max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
+.mapping-select-option{display:flex;align-items:center;gap:6px;font-size:13px;padding:5px 6px;border-radius:5px;cursor:pointer;}
+.mapping-select-option:hover{background:var(--surface-2);}
+.mapping-select-empty{font-size:12.5px;color:var(--muted);padding:6px;}
 .auth-user-badge strong{color:var(--ink);}
 .invite-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
 .invite-row:last-child{border-bottom:none;}
@@ -620,6 +630,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let notifPanelOpen = false;
   let programContentHeads = {};
   let escalationManagers = {};
+  let openMappingDropdown = null;
+  let mappingSearchText = '';
   let addStudentsTargetBatch = '';
   let addStudentsTargetBatchId = '';
   let addStudentsRows = [];
@@ -4010,12 +4022,31 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const showTeamSuffix = !team;
     el.innerHTML = programOptions.map(program => {
       const chosen = map[program] || [];
+      const key = kind + '|' + program;
+      const isOpen = openMappingDropdown === key;
+      const chosenUsers = users.filter(u => chosen.includes(u.id));
+      let summary;
+      if (!chosenUsers.length) summary = 'Select people…';
+      else if (chosenUsers.length <= 2) summary = chosenUsers.map(u => u.name || u.email).join(', ');
+      else summary = chosenUsers.slice(0, 2).map(u => u.name || u.email).join(', ') + ' +' + (chosenUsers.length - 2) + ' more';
+      const query = isOpen ? mappingSearchText.trim().toLowerCase() : '';
+      const visibleUsers = query ? users.filter(u => ((u.name || '') + ' ' + (u.email || '')).toLowerCase().includes(query)) : users;
+      const optionRows = visibleUsers.map(u => {
+        const suffix = showTeamSuffix ? ' <span class="muted-cell">(' + esc(teamsOf(u).map(t => TEAM_LABELS[t] || t).join(', ') || 'No team') + ')</span>' : '';
+        return '<label class="mapping-select-option"><input type="checkbox" class="' + cls + '" data-program="' + esc(program) + '" data-id="' + u.id + '"' + (chosen.includes(u.id) ? ' checked' : '') + '> ' + esc(u.name || u.email) + suffix + '</label>';
+      }).join('') || '<div class="mapping-select-empty">No match.</div>';
+      const panelHTML = !isOpen ? '' : (
+        '<div class="mapping-select-panel">'
+        + '<input type="text" class="mapping-select-search" placeholder="Search people…" value="' + esc(mappingSearchText) + '">'
+        + '<div class="mapping-select-options">' + optionRows + '</div>'
+        + '</div>'
+      );
       return '<div class="program-owner-row">'
         + '<div class="program-owner-row-name">' + esc(program) + '</div>'
-        + '<div class="program-owner-row-checks">' + users.map(u => {
-            const suffix = showTeamSuffix ? ' <span class="muted-cell">(' + esc(teamsOf(u).map(t => TEAM_LABELS[t] || t).join(', ') || 'No team') + ')</span>' : '';
-            return '<label class="notify-recipient-row"><input type="checkbox" class="' + cls + '" data-program="' + esc(program) + '" data-id="' + u.id + '"' + (chosen.includes(u.id) ? ' checked' : '') + '> ' + esc(u.name || u.email) + suffix + '</label>';
-          }).join('') + '</div>'
+        + '<div class="mapping-select">'
+        + '<button type="button" class="mapping-select-trigger" data-action="toggle-mapping-dropdown" data-kind="' + kind + '" data-program="' + esc(program) + '">' + esc(summary) + ' <span class="mapping-select-caret">▾</span></button>'
+        + panelHTML
+        + '</div>'
         + '</div>';
     }).join('');
   }
@@ -6738,6 +6769,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   root.addEventListener('click', e => {
+    if (openMappingDropdown && !e.target.closest('.mapping-select')) {
+      openMappingDropdown = null;
+      renderProgramOwnersPanel();
+    }
     const btn = e.target.closest('[data-action]');
     if (!btn) {
       const tr = e.target.closest('#tbody tr[data-id]');
@@ -7019,6 +7054,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'submit-publish-modal') {
       submitPublishModal();
     }
+    else if (action === 'toggle-mapping-dropdown') {
+      const key = btn.dataset.kind + '|' + btn.dataset.program;
+      openMappingDropdown = openMappingDropdown === key ? null : key;
+      mappingSearchText = '';
+      renderProgramOwnersPanel();
+    }
     else if (action === 'add-program-option') {
       addProgramOption();
     }
@@ -7131,6 +7172,33 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (t.id === 'interview-search') { interviewSearchQuery = t.value; renderInterviewsTable(); return; }
     if (t.matches('.program-option-input')) {
       renameProgramOption(Number(t.dataset.index), t.value);
+      return;
+    }
+    if (t.matches('.mapping-select-search')) {
+      // Filter the already-rendered option rows directly instead of calling
+      // renderProgramOwnersPanel() -- that would rebuild this very input and
+      // drop focus/cursor position on every keystroke.
+      mappingSearchText = t.value;
+      const panel = t.closest('.mapping-select-panel');
+      const optionsEl = panel && panel.querySelector('.mapping-select-options');
+      if (optionsEl) {
+        const query = t.value.trim().toLowerCase();
+        let anyVisible = false;
+        optionsEl.querySelectorAll('.mapping-select-option').forEach(row => {
+          const match = !query || row.textContent.toLowerCase().includes(query);
+          row.hidden = !match;
+          if (match) anyVisible = true;
+        });
+        let emptyEl = optionsEl.querySelector('.mapping-select-empty');
+        if (!anyVisible && !emptyEl) {
+          emptyEl = document.createElement('div');
+          emptyEl.className = 'mapping-select-empty';
+          emptyEl.textContent = 'No match.';
+          optionsEl.appendChild(emptyEl);
+        } else if (anyVisible && emptyEl) {
+          emptyEl.remove();
+        }
+      }
       return;
     }
     if (t.matches('.publish-modal-field') && publishModalDraft) {
