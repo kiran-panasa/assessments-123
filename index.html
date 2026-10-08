@@ -1388,7 +1388,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         mobile: (s && s.mobile) || '',
         email: (s && s.email) || ''
       })) : [],
-      updatedAt: b.updatedAt || ''
+      updatedAt: b.updatedAt || '',
+      // The day this Title was first raised -- set once at creation and never
+      // touched again by later edits, so the 4-day lead-time rule keeps
+      // checking against the real ticket date, not "today" at edit time.
+      ticketRaisedAt: b.ticketRaisedAt || ''
     };
   }
 
@@ -1449,11 +1453,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return h12 + ':' + String(p[1]).padStart(2,'0') + ' ' + period;
   }
 
-  // SMEs need lead time to prepare configs -- a newly raised ticket's
-  // Assessment Date must be at least this many days out from the day the
-  // ticket itself is raised. Only applies to ticket creation (isNewRow);
-  // once a title exists, "ticket creation date" is a fixed historical fact
-  // that re-validating on every later edit wouldn't make sense against.
+  // SMEs need lead time to prepare configs -- a ticket's Assessment Date
+  // must stay at least this many days out from the day the ticket was
+  // *originally* raised (draft.ticketRaisedAt, stamped once at creation and
+  // never touched again) -- not "today". So this keeps applying on every
+  // later edit too: moving the date closer in after the fact is exactly
+  // what this rule exists to stop. A brand-new, not-yet-saved ticket has no
+  // ticketRaisedAt on its draft yet, so isNewRow covers that one moment.
+  // Older titles raised before this field existed have no reference date
+  // to check against, so the rule simply doesn't apply to them.
   const MIN_TICKET_LEAD_DAYS = 4;
   const TICKET_LEAD_MESSAGE = 'Invalid Assessment Date: The Assessment Date must be at least ' + MIN_TICKET_LEAD_DAYS + ' days from the ticket/request date. SMEs require a minimum of ' + MIN_TICKET_LEAD_DAYS + ' days to prepare the necessary configurations. Please select an Assessment Date that provides sufficient preparation time.';
 
@@ -1461,8 +1469,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const errors = {};
     if (d.mockRequired && d.mockStartAt && d.mockEndAt && d.mockEndAt <= d.mockStartAt) errors.mock = 'End must be after start.';
     if (d.mainStartAt && d.mainEndAt && d.mainEndAt <= d.mainStartAt) errors.main = 'End must be after start.';
-    if (isNewRow) {
-      const minDate = addDaysISO(todayISO(), MIN_TICKET_LEAD_DAYS);
+    const referenceDate = d.ticketRaisedAt || (isNewRow ? todayISO() : '');
+    if (referenceDate) {
+      const minDate = addDaysISO(referenceDate, MIN_TICKET_LEAD_DAYS);
       if (!errors.main) {
         const mainDate = (d.mainStartAt || '').split('T')[0];
         if (mainDate && mainDate < minDate) errors.main = TICKET_LEAD_MESSAGE;
@@ -2263,7 +2272,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
               <li><strong>Program</strong> must exactly match a name already in Settings &rarr; Programs (case-insensitive). An unrecognized program skips that title with an error.</li>
               <li><strong>Mock Assessment Required</strong> must be <code>Yes</code> or <code>No</code> (also accepts <code>Y</code>/<code>N</code>). Anything else &mdash; a number, blank-looking text, a typo &mdash; skips that title with an error.</li>
               <li><strong>SEB Status</strong> must be <code>SEB</code> or <code>Non-SEB</code>. Anything else skips that title with an error.</li>
-              <li><strong>Assessment Date</strong> (Main, and Mock if required) on a brand-new title must be at least 4 days out from today &mdash; SMEs need that lead time to prepare configs. Sooner than that skips the title with an error. Doesn't apply when updating a title that already exists.</li>
+              <li><strong>Assessment Date</strong> (Main, and Mock if required) must be at least 4 days out from when the title was originally raised &mdash; today, for a brand-new title; its original raise date, if you're moving the date on one that already exists. SMEs need that lead time to prepare configs. Sooner than that skips the row with an error. Only checked when a row actually sets a date &mdash; leaving it blank to keep the existing date is unaffected.</li>
             </ul>
             <p class="section-desc"><strong>Date &amp; time format:</strong> Mock and Main Start/End Date &amp; Time columns work the same way &mdash; one combined value per cell, time always in <strong>24-hour</strong> format. Use either <code>YYYY-MM-DD HH:MM</code> (e.g. <code>2026-09-12 14:30</code> &mdash; that's 2:30 PM) or <code>DD-MM-YYYY HH:MM</code> (e.g. <code>12-09-2026 09:00</code> &mdash; that's 9:00 AM). Don't type "AM"/"PM" into the cell itself &mdash; convert to 24-hour first (add 12 to any PM hour except 12 PM itself). A value in any other shape is left blank and flagged as an error in the preview, rather than imported wrong.</p>
           </details>
@@ -5305,6 +5314,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const blank = normalizeBatch({ id });
     editingId = id; isNewRow = true;
     draft = cloneForEdit(blank);
+    // Stamped now, at raise time -- this is "the ticket/request date" the
+    // 4-day lead-time rule checks against, for this ticket's whole life.
+    draft.ticketRaisedAt = todayISO();
     titleFormReadOnly = false;
     titleFormConfigOnly = false;
     titleFormSnapshot = JSON.stringify(draft);
@@ -5978,6 +5990,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         }
       }
 
+      // Same as Program/Mock Required/SEB Status just above: an existing
+      // title keeps its original raise date; only a brand-new one gets
+      // stamped with today (the day of this import).
+      const ticketRaisedAt = existingBatch ? (existingBatch.ticketRaisedAt || '') : todayISO();
+
       const raw = {
         id: existingBatch ? existingBatch.id : uid(),
         batch: first.batch,
@@ -5998,7 +6015,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         mainStart: first.mainStart || '',
         mainEnd: first.mainEnd || '',
         mainTag: first.mainTag || '',
-        mainSebStatus: mainSebStatus
+        mainSebStatus: mainSebStatus,
+        ticketRaisedAt: ticketRaisedAt
       };
       IMPORT_DATETIME_FIELDS.forEach(f => {
         if (raw[f] && !isValidImportDateTime(raw[f])) {
@@ -6010,10 +6028,13 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         }
       });
 
-      // Same lead-time rule as manual Raise Request, and only for the same
-      // reason: a brand-new ticket, not an update to one that already exists.
-      if (!existingBatch) {
-        const minDate = addDaysISO(todayISO(), MIN_TICKET_LEAD_DAYS);
+      // Same lead-time rule as manual Raise Request -- checked against the
+      // title's original ticketRaisedAt (today, for a brand-new one), so
+      // re-importing a nearer date for a title that already exists is
+      // caught too, not just first-time creation. Only runs when this row
+      // actually sets a date (left blank = "don't change it").
+      if (ticketRaisedAt) {
+        const minDate = addDaysISO(ticketRaisedAt, MIN_TICKET_LEAD_DAYS);
         const mainDate = (raw.mainStartAt || '').split('T')[0];
         const mockDate = raw.mockRequired ? (raw.mockStartAt || '').split('T')[0] : '';
         if ((mainDate && mainDate < minDate) || (mockDate && mockDate < minDate)) {
