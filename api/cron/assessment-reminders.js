@@ -6,9 +6,11 @@
 // Tier 1 (exam is tomorrow): reminder notification to the program's
 // Assessments Ops owners and Content heads, same as before.
 // Tier 2 (exam is TODAY and still has no config): escalation notification
-// straight to Admin -- this fires the morning of the exam, which in
-// practice is ~24h after Tier 1's reminder would have gone out the day
-// before. Carries along whatever reason Content logged on that reminder.
+// to that program's Escalation Manager(s) (Settings -> Escalation Managers;
+// falls back to every Admin if a program has none picked) -- this fires the
+// morning of the exam, which in practice is ~24h after Tier 1's reminder
+// would have gone out the day before. Carries along whatever reason Content
+// logged on that reminder.
 //
 // Every write first checks whether its doc already exists before setting
 // it, so a retried/duplicate run on the same day can't wipe out readBy or
@@ -152,7 +154,8 @@ export default async function handler(req, res) {
         audienceUids: [],
         audienceProgram: null,
         audienceContentProgram: null,
-        audienceAdmins: true,
+        audienceEscalationProgram: g.program || null,
+        audienceAdmins: false,
         audienceTeams: [],
         readBy: [],
         createdAt: new Date().toISOString(),

@@ -619,6 +619,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let programOwners = {};
   let notifPanelOpen = false;
   let programContentHeads = {};
+  let escalationManagers = {};
   let addStudentsTargetBatch = '';
   let addStudentsTargetBatchId = '';
   let addStudentsRows = [];
@@ -731,6 +732,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         if (notifPanelOpen) renderNotificationsPanel();
       }, err => {
         console.error('Firestore program content heads sync error', err);
+      });
+      fs.onSnapshot(fs.doc(db, 'settings', 'escalationManagers'), snap => {
+        escalationManagers = (snap.exists() && snap.data().map) || {};
+        renderProgramOwnersPanel();
+        updateNotificationBell();
+        if (notifPanelOpen) renderNotificationsPanel();
+      }, err => {
+        console.error('Firestore escalation managers sync error', err);
       });
       updateSyncBadge();
     } catch (err) {
@@ -1299,6 +1308,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       audienceProgram: n.audienceProgram || null,
       audienceAdmins: !!n.audienceAdmins,
       audienceContentProgram: n.audienceContentProgram || null,
+      audienceEscalationProgram: n.audienceEscalationProgram || null,
       audienceTeams: Array.isArray(n.audienceTeams) ? n.audienceTeams : [],
       createdByUid: n.createdByUid || '',
       readBy: Array.isArray(n.readBy) ? n.readBy : [],
@@ -1890,6 +1900,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
               <h3 class="settings-panel-title">Program Content Heads</h3>
               <p class="section-desc">Pick the Content team member(s) who head each program &mdash; two or three per program is fine. They&rsquo;re notified when a new request is raised or a Title changes under that program.</p>
               <div id="program-heads-list"></div>
+            </div>
+            <div class="settings-panel" style="margin-top:18px;">
+              <h3 class="settings-panel-title">Escalation Managers</h3>
+              <p class="section-desc">Pick the Admin(s) who should get the SLA breach escalation for each program, when an exam is due and its config is still missing. If a program has no one picked here, its escalations fall back to every Admin so they&rsquo;re never silently lost.</p>
+              <div id="program-escalation-list"></div>
             </div>
             </div>
           </section>
@@ -3954,16 +3969,21 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     document.querySelectorAll('#section-settings .tab-row .tab-btn').forEach(tb => tb.classList.toggle('active', tb.dataset.tab === settingsTab));
   }
 
-  // Program -> people mappings (Assessments Ops owners, Content heads) share one
-  // shape: { [program]: [uid, ...] } in a settings doc.
+  // Program -> people mappings (Assessments Ops owners, Content heads,
+  // Escalation Managers) share one shape: { [program]: [uid, ...] } in a settings doc.
+  const PROGRAM_MAPPING_KIND_INFO = {
+    owner: { map: () => programOwners, docId: 'programOwners', cls: 'program-owner-check' },
+    head: { map: () => programContentHeads, docId: 'programContentHeads', cls: 'program-head-check' },
+    escalation: { map: () => escalationManagers, docId: 'escalationManagers', cls: 'program-escalation-check' }
+  };
   function toggleProgramMapping(kind, program, uid, checked) {
     if (!fs || !db) return;
-    const current = kind === 'head' ? programContentHeads : programOwners;
+    const info = PROGRAM_MAPPING_KIND_INFO[kind];
+    const current = info.map();
     const list = (current[program] || []).slice();
     const next = checked ? Array.from(new Set(list.concat([uid]))) : list.filter(id => id !== uid);
     const updatedMap = { ...current, [program]: next };
-    const docId = kind === 'head' ? 'programContentHeads' : 'programOwners';
-    fs.setDoc(fs.doc(db, 'settings', docId), { map: updatedMap }, { merge: true }).catch(err => {
+    fs.setDoc(fs.doc(db, 'settings', info.docId), { map: updatedMap }, { merge: true }).catch(err => {
       console.error('Could not save program mapping', err);
       flashToast('Could not save that mapping.', 'error');
     });
@@ -3981,8 +4001,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       el.innerHTML = '<p class="section-desc">No ' + esc(teamLabel) + ' members yet — register one on the Teams page first.</p>';
       return;
     }
-    const map = kind === 'head' ? programContentHeads : programOwners;
-    const cls = kind === 'head' ? 'program-head-check' : 'program-owner-check';
+    const info = PROGRAM_MAPPING_KIND_INFO[kind];
+    const map = info.map();
+    const cls = info.cls;
     el.innerHTML = programOptions.map(program => {
       const chosen = map[program] || [];
       return '<div class="program-owner-row">'
@@ -3997,6 +4018,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function renderProgramOwnersPanel() {
     renderProgramMappingPanel('program-owners-list', 'owner', 'assessments_ops', 'Assessments Ops team');
     renderProgramMappingPanel('program-heads-list', 'head', 'content', 'Content team');
+    renderProgramMappingPanel('program-escalation-list', 'escalation', 'admin', 'Admin team');
   }
 
   function testUidsForProgram(program) {
@@ -6140,9 +6162,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   // its audience: a listed user, an Ops owner / Content head of its program,
   // or a member of a targeted team. The person who triggered it never sees
   // their own notification.
-  // Strictly follows the Settings -> Program Owners / Content Heads mapping
-  // (and any other explicit targeting) -- being Admin is not, by itself, a
-  // reason to see a notification. Only audienceAdmins:true (the access-
+  // Strictly follows the Settings -> Program Owners / Content Heads /
+  // Escalation Managers mapping (and any other explicit targeting) --
+  // being Admin is not, by itself, a reason to see a notification, except
+  // as the fallback when a program has no Escalation Manager picked yet.
+  // Only audienceAdmins:true (the access-
   // request notification) is meant for every Admin regardless of mapping.
   function notificationVisible(n) {
     if (!authUser) return false;
@@ -6151,6 +6175,13 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (n.audienceUids.includes(authUser.uid)) return true;
     if (n.audienceProgram && (programOwners[n.audienceProgram] || []).includes(authUser.uid)) return true;
     if (n.audienceContentProgram && (programContentHeads[n.audienceContentProgram] || []).includes(authUser.uid)) return true;
+    if (n.audienceEscalationProgram) {
+      const managers = escalationManagers[n.audienceEscalationProgram] || [];
+      if (managers.includes(authUser.uid)) return true;
+      // No Escalation Manager picked for this program yet -- fall back to
+      // every Admin so the breach isn't silently lost to an empty mapping.
+      if (!managers.length && hasTeam('admin')) return true;
+    }
     if (n.audienceTeams.some(t => hasTeam(t))) return true;
     return false;
   }
@@ -7168,6 +7199,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     if (t.matches('.program-head-check')) {
       toggleProgramMapping('head', t.dataset.program, t.dataset.id, t.checked);
+      return;
+    }
+    if (t.matches('.program-escalation-check')) {
+      toggleProgramMapping('escalation', t.dataset.program, t.dataset.id, t.checked);
       return;
     }
     if (t.matches('.row-checkbox-batch')) {
