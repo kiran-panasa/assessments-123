@@ -105,6 +105,7 @@ tr.row-editing td.col-syllabus{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 va
 .students-count-badge{font-family:var(--font-display);font-weight:600;font-size:11px;color:var(--accent-ink);background:var(--accent-soft);padding:2px 8px;border-radius:999px;margin-bottom:2px;}
 .badge--no{background:var(--surface-2);color:var(--muted);}
 .badge--attention{background:var(--amber-soft);color:var(--amber);}
+.badge--danger{background:var(--danger-soft);color:var(--danger);}
 .cell-input{width:100%;min-width:104px;font-family:var(--font-body);font-size:12.5px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--ink);}
 .cell-input--narrow{min-width:68px;}
 .cell-input--date,.cell-input--time{font-family:var(--font-mono);min-width:120px;font-variant-numeric:tabular-nums;}
@@ -5549,14 +5550,30 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     render();
   }
 
+  function notifyTitleDeleted(removed) {
+    if (!fs || !db) return;
+    const where = removed.program + ' · ' + removed.batch;
+    notifyProgramEvent({
+      type: 'title-deleted',
+      program: removed.program,
+      headline: 'Title Deleted — ' + where,
+      badgeLabel: 'DELETED',
+      badgeTone: 'danger',
+      body: actorLabel() + ' deleted ' + where + '. No assessment is scheduled for it anymore.',
+      to: ['content', 'ops']
+    });
+  }
+
   function removeBatch(id) {
     if (!canEditRecords()) return;
     if (!confirm('Delete this batch? This cannot be undone.')) return;
+    const removed = batches.find(b => b.id === id);
     batches = batches.filter(b => b.id !== id);
     if (editingId === id) { editingId = null; draft = null; isNewRow = false; }
     render();
     persistDelete(id);
     flashToast('Title deleted.', 'success');
+    if (removed) notifyTitleDeleted(removed);
   }
 
   function startStudentEdit(id) {
