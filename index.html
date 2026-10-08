@@ -235,6 +235,10 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .notif-card-head{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
 .notif-card-body{margin:0;font-size:13px;color:var(--ink-2);}
 .notif-card-foot{margin-top:6px;font-size:11.5px;}
+.notif-reason-row{display:flex;gap:6px;margin-top:8px;align-items:flex-start;}
+.notif-reason-input{flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;font-family:inherit;resize:vertical;background:var(--surface);color:var(--ink);}
+.notif-reason-note{margin-top:6px;font-size:11.5px;color:var(--muted);}
+.notif-reason-note strong{color:var(--ink-2);}
 .notify-recipient-row{display:flex;align-items:center;gap:6px;font-size:13px;padding:4px 0;}
 .team-checkbox-group{display:flex;flex-wrap:wrap;gap:4px 16px;}
 .program-owner-row{display:flex;align-items:flex-start;gap:16px;padding:10px 0;border-bottom:1px solid var(--border-soft);}
@@ -1299,7 +1303,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       createdByUid: n.createdByUid || '',
       readBy: Array.isArray(n.readBy) ? n.readBy : [],
       createdAt: n.createdAt || '',
-      createdBy: n.createdBy || ''
+      createdBy: n.createdBy || '',
+      reason: n.reason || '',
+      reasonBy: n.reasonBy || '',
+      reasonAt: n.reasonAt || ''
     };
   }
 
@@ -6172,6 +6179,21 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     fs.setDoc(fs.doc(db, 'notifications', id), { readBy: n.readBy.concat([authUser.uid]) }, { merge: true }).catch(err => console.error('Mark read failed', err));
   }
 
+  function submitNotificationReason(id) {
+    if (!fs || !db) return;
+    const input = document.getElementById('notif-reason-input-' + id);
+    if (!input) return;
+    const reason = input.value.trim();
+    if (!reason) return;
+    fs.setDoc(fs.doc(db, 'notifications', id), {
+      reason: reason,
+      reasonBy: actorLabel(),
+      reasonAt: new Date().toISOString()
+    }, { merge: true }).then(() => {
+      renderNotificationsPanel();
+    }).catch(err => console.error('Save reason failed', err));
+  }
+
   function markAllNotificationsRead() {
     if (!fs || !db || !authUser) return;
     myNotifications().filter(n => !isNotificationRead(n)).forEach(n => {
@@ -6213,6 +6235,17 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return '';
   }
 
+  function notificationReasonHTML(n) {
+    if (n.type !== 'assessment-config-reminder') return '';
+    if (n.reason) {
+      return '<div class="notif-reason-note"><strong>Reason noted by Content:</strong> ' + esc(n.reason) + '</div>';
+    }
+    return '<div class="notif-reason-row" data-action="ignore">'
+      + '<textarea class="notif-reason-input" rows="2" id="notif-reason-input-' + n.id + '" data-action="ignore" placeholder="Add a reason (e.g. sent for testing, instructor hasn\'t replied)"></textarea>'
+      + '<button type="button" class="btn btn--ghost btn--xs" data-action="notif-reason-submit" data-id="' + n.id + '">Save</button>'
+      + '</div>';
+  }
+
   function notificationCardHTML(n) {
     const read = isNotificationRead(n);
     const dateLabel = fmtUpdatedAt(n.createdAt) || '';
@@ -6220,6 +6253,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return '<div class="notif-card' + (read ? '' : ' notif-card--unread') + '" data-action="notif-open" data-id="' + n.id + '">'
       + '<div class="notif-card-head"><strong>' + esc(n.headline) + '</strong> <span class="badge badge--' + esc(n.badgeTone) + '">' + esc(n.badgeLabel) + '</span></div>'
       + '<p class="notif-card-body">' + esc(n.body) + '</p>'
+      + notificationReasonHTML(n)
       + '<div class="notif-card-foot"><span class="muted-cell">' + esc(dateLabel) + '</span>'
       + (navLabel ? ' &middot; <a href="javascript:void(0)" data-action="notif-nav" data-id="' + n.id + '">' + navLabel + '</a>' : '')
       + '</div></div>';
@@ -6912,6 +6946,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     else if (action === 'notif-nav') {
       notifNavigate(id);
+    }
+    else if (action === 'notif-reason-submit') {
+      submitNotificationReason(id);
+    }
+    else if (action === 'ignore') {
+      // no-op -- stops the click from bubbling to the card's notif-open action
     }
     else if (action === 'open-publish-modal') {
       openPublishModal(id, btn.dataset.type);

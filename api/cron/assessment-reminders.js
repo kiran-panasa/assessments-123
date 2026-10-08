@@ -1,7 +1,18 @@
-// Vercel Cron job — runs daily at 03:30 UTC (09:00 IST). Checks every Title's
-// Main/Mock Assessment date; if it's tomorrow and that side's config link is
-// still empty, writes a reminder notification for the program's Assessments
-// Ops owners and Content heads (Settings -> Program Owners / Content Heads).
+// Vercel Cron job — runs once daily at 03:30 UTC (09:00 IST). Hobby-plan
+// Vercel accounts are hard-limited to one cron invocation per day (no
+// sub-daily schedules at all), so both tiers below are built to work from
+// that single daily check rather than true hour-by-hour polling:
+//
+// Tier 1 (exam is tomorrow): reminder notification to the program's
+// Assessments Ops owners and Content heads, same as before.
+// Tier 2 (exam is TODAY and still has no config): escalation notification
+// straight to Admin -- this fires the morning of the exam, which in
+// practice is ~24h after Tier 1's reminder would have gone out the day
+// before. Carries along whatever reason Content logged on that reminder.
+//
+// Every write first checks whether its doc already exists before setting
+// it, so a retried/duplicate run on the same day can't wipe out readBy or
+// a reason someone already added.
 //
 // Runs with Firebase Admin credentials (service account), which bypass the
 // app's normal Firestore Security Rules -- this is the one part of the app
@@ -21,12 +32,17 @@ function getDb() {
 }
 
 // Vercel Cron runs in UTC; this app and its users are IST (UTC+5:30) -- shift
-// "now" so date-only comparisons ("is this tomorrow?") land on the IST day.
+// "now" so date-only comparisons ("is this tomorrow/today?") land on the IST day.
 function istDateISO(offsetDays = 0) {
   const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
   const now = new Date(Date.now() + IST_OFFSET_MS);
   now.setUTCDate(now.getUTCDate() + offsetDays);
   return now.toISOString().slice(0, 10);
+}
+
+async function docExists(db, id) {
+  const snap = await db.collection("notifications").doc(id).get();
+  return snap.exists;
 }
 
 export default async function handler(req, res) {
@@ -44,6 +60,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 
+  const today = istDateISO(0);
   const tomorrow = istDateISO(1);
 
   let batches;
@@ -54,51 +71,97 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to read batches: " + e.message });
   }
 
-  const reminders = [];
-  for (const b of batches) {
-    const program = b.program || "";
-    const checks = [
-      { type: "main", required: true, startAt: b.mainStartAt, configUrl: b.mainConfigUrl, label: "Main Assessment" },
-      { type: "mock", required: !!b.mockRequired, startAt: b.mockStartAt, configUrl: b.mockConfigUrl, label: "Mock Assessment" },
-    ];
-    for (const c of checks) {
-      if (!c.required || !c.startAt) continue;
-      const date = String(c.startAt).split("T")[0];
-      if (date !== tomorrow) continue;
-      if (c.configUrl) continue; // already submitted -- nothing to remind about
-      reminders.push({ batch: b, ...c, program });
+  function gapsFor(targetDate) {
+    const out = [];
+    for (const b of batches) {
+      const program = b.program || "";
+      const checks = [
+        { type: "main", required: true, startAt: b.mainStartAt, configUrl: b.mainConfigUrl, label: "Main Assessment" },
+        { type: "mock", required: !!b.mockRequired, startAt: b.mockStartAt, configUrl: b.mockConfigUrl, label: "Mock Assessment" },
+      ];
+      for (const c of checks) {
+        if (!c.required || !c.startAt) continue;
+        const date = String(c.startAt).split("T")[0];
+        if (date !== targetDate) continue;
+        if (c.configUrl) continue; // already submitted -- nothing to remind/escalate about
+        out.push({ batch: b, ...c, program });
+      }
     }
+    return out;
   }
 
-  let sent = 0;
-  for (const r of reminders) {
-    const docId = `reminder-${r.type}-${r.batch.id}-${tomorrow}`;
-    const where = r.program + " · " + r.batch.batch;
+  const tier1Gaps = gapsFor(tomorrow);
+  const tier2Gaps = gapsFor(today);
+
+  let remindersSent = 0;
+  for (const g of tier1Gaps) {
+    const where = g.program + " · " + g.batch.batch;
+    const docId = `reminder-${g.type}-${g.batch.id}-${tomorrow}`;
     try {
+      if (await docExists(db, docId)) continue;
       await db.collection("notifications").doc(docId).set({
         type: "assessment-config-reminder",
-        headline: "Reminder: " + r.label + " Config Missing — " + where,
+        headline: "Reminder: " + g.label + " Config Missing — " + where,
         badgeLabel: "REMINDER",
         badgeTone: "attention",
-        body: r.label + " for " + where + " is scheduled for tomorrow (" + tomorrow + ") and still has no config link. Please submit it today.",
+        body: g.label + " for " + where + " is scheduled for tomorrow (" + tomorrow + ") and still has no config link. Please submit it today.",
         navSection: "topin",
         navTeamTab: null,
-        navBatchId: r.batch.id,
+        navBatchId: g.batch.id,
         audienceUids: [],
-        audienceProgram: r.program || null,
-        audienceContentProgram: r.program || null,
+        audienceProgram: g.program || null,
+        audienceContentProgram: g.program || null,
         audienceAdmins: false,
+        audienceTeams: [],
+        reason: "",
+        reasonBy: "",
+        reasonAt: "",
+        readBy: [],
+        createdAt: new Date().toISOString(),
+        createdBy: "system",
+        createdByUid: "",
+      });
+      remindersSent++;
+    } catch (e) { /* keep going -- one bad write shouldn't block the rest */ }
+  }
+
+  let escalationsSent = 0;
+  for (const g of tier2Gaps) {
+    const where = g.program + " · " + g.batch.batch;
+    const escalationId = `escalation-${g.type}-${g.batch.id}-${today}`;
+    try {
+      if (await docExists(db, escalationId)) continue;
+
+      let reasonLine = "";
+      try {
+        const reminderId = `reminder-${g.type}-${g.batch.id}-${today}`;
+        const reminderSnap = await db.collection("notifications").doc(reminderId).get();
+        const reason = reminderSnap.exists ? reminderSnap.data().reason : "";
+        if (reason) reasonLine = " Reason given by Content: “" + reason + "”";
+      } catch (e) { /* no reason available, continue without it */ }
+
+      await db.collection("notifications").doc(escalationId).set({
+        type: "assessment-config-escalation",
+        headline: "SLA Breach: " + g.label + " Config Missing — " + where,
+        badgeLabel: "SLA BREACH",
+        badgeTone: "danger",
+        body: g.label + " for " + where + " is scheduled for TODAY (" + today + ") and still has no config link." + reasonLine,
+        navSection: "topin",
+        navTeamTab: null,
+        navBatchId: g.batch.id,
+        audienceUids: [],
+        audienceProgram: null,
+        audienceContentProgram: null,
+        audienceAdmins: true,
         audienceTeams: [],
         readBy: [],
         createdAt: new Date().toISOString(),
         createdBy: "system",
         createdByUid: "",
-      }, { merge: true });
-      sent++;
-    } catch (e) {
-      // keep going -- one bad write shouldn't block the rest of today's reminders
-    }
+      });
+      escalationsSent++;
+    } catch (e) { /* keep going */ }
   }
 
-  res.status(200).json({ checked: batches.length, tomorrow, remindersSent: sent });
+  res.status(200).json({ checked: batches.length, today, tomorrow, remindersSent, escalationsSent });
 }
