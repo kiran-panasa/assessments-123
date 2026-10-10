@@ -236,6 +236,9 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .notif-card-body{margin:0;font-size:13px;color:var(--ink-2);}
 .notif-card-foot{margin-top:6px;font-size:11.5px;}
 .notif-reason-row{display:flex;gap:6px;margin-top:8px;align-items:flex-start;}
+.week-library-prompt{margin-top:10px;padding:10px 12px;border:1px solid var(--accent);border-radius:8px;background:var(--surface-2);}
+.week-library-prompt p{margin:0 0 8px;font-size:12.5px;color:var(--ink-2);}
+.week-library-prompt-actions{display:flex;gap:8px;}
 .notif-reason-input{flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;font-family:inherit;resize:vertical;background:var(--surface);color:var(--ink);}
 .notif-reason-note{margin-top:6px;font-size:11.5px;color:var(--muted);}
 .notif-reason-note strong{color:var(--ink-2);}
@@ -591,7 +594,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   const TEAM_SECTIONS = {
     admin: ['overview', 'records', 'topin', 'assessments', 'nxtmock-config', 'interviews', 'config-library', 'teams', 'settings', 'help'],
     content: ['overview', 'records', 'topin', 'nxtmock-config', 'config-library', 'help'],
-    onground: ['overview', 'records', 'assessments', 'nxtmock-config', 'interviews', 'config-library', 'help'],
+    onground: ['overview', 'records', 'assessments', 'nxtmock-config', 'interviews', 'help'],
     assessments_ops: ['overview', 'records', 'topin', 'assessments', 'nxtmock-config', 'interviews', 'config-library', 'help']
   };
   const TEAM_LABELS = {
@@ -640,6 +643,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let weekConfigs = [];
   let weekConfigProgramFilter = '';
   let weekConfigImportPreview = null;
+  // Whether the person has already answered the "reuse this Week's library
+  // config?" prompt for the Title form / NxtMock Config modal currently
+  // open -- reset whenever that modal is (re)opened, so a "No" sticks for
+  // the rest of that editing session instead of re-nagging on every render.
+  let titleWeekLibraryDismissed = false;
+  let nxtmockWeekLibraryDismissed = false;
   let addStudentsTargetBatch = '';
   let addStudentsTargetBatchId = '';
   let addStudentsRows = [];
@@ -2826,6 +2835,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (!b) return;
     nxtmockConfigModalId = id;
     nxtmockConfigModalNeeded = interviewNeededValue(b);
+    nxtmockWeekLibraryDismissed = false;
     render();
     const overlay = document.getElementById('nxtmock-config-modal-overlay');
     if (overlay) overlay.hidden = false;
@@ -2859,12 +2869,24 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     ];
     const detectedWeek = parseWeekFromTitle(b.batch);
     const libraryMatch = detectedWeek === null ? null : findWeekConfig(b.program, detectedWeek);
+    const nxtmockHasBlankToFill = !!libraryMatch && (
+      (mainOn && !mainVal && libraryMatch.mainInterviewConfigUrl) ||
+      (mockOn && !mockVal && libraryMatch.mockInterviewConfigUrl)
+    );
     const libraryHintHTML = (!mainOn && !mockOn) ? '' : (
       detectedWeek === null
         ? '<p class="footnote">No Week detected in the Title text &mdash; Config Library reuse isn&rsquo;t available for this Title.</p>'
         : !libraryMatch
           ? '<p class="footnote">Week ' + detectedWeek + ' detected, but no Config Library entry yet for ' + esc(b.program || 'this Program') + '.</p>'
-          : '<p class="footnote">Week ' + detectedWeek + ' library config found. <button type="button" class="btn btn--ghost btn--xs" data-action="apply-week-library-nxtmock">Apply to blank fields</button></p>'
+          : !nxtmockHasBlankToFill
+            ? ''
+            : nxtmockWeekLibraryDismissed
+              ? '<p class="footnote">Week ' + detectedWeek + ' library config available. <button type="button" class="btn btn--ghost btn--xs" data-action="apply-week-library-nxtmock">Reuse it</button></p>'
+              : '<div class="week-library-prompt"><p>Week ' + detectedWeek + ' already has a saved Interview Config. Reuse the same config?</p>'
+                + '<div class="week-library-prompt-actions">'
+                + '<button type="button" class="btn btn--primary btn--xs" data-action="apply-week-library-nxtmock">Yes, reuse it</button>'
+                + '<button type="button" class="btn btn--ghost btn--xs" data-action="dismiss-week-library-nxtmock">No, I&rsquo;ll fill it in</button>'
+                + '</div></div>'
     );
     body.innerHTML =
       '<p class="section-desc">Program: <strong>' + (esc(b.program) || '—') + '</strong> &middot; Title: <strong>' + esc(b.batch) + '</strong></p>'
@@ -2890,8 +2912,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     let filled = [];
     if (mainInput && !mainInput.value && match.mainInterviewConfigUrl) { mainInput.value = match.mainInterviewConfigUrl; filled.push('Main Interview Config'); }
     if (mockInput && !mockInput.value && match.mockInterviewConfigUrl) { mockInput.value = match.mockInterviewConfigUrl; filled.push('Mock Interview Config'); }
+    nxtmockWeekLibraryDismissed = true;
+    renderNxtmockConfigModal();
     if (!filled.length) { flashToast('Those fields already have a value, or aren’t shown for this Interview Needed choice.', 'error'); return; }
     flashToast('Applied from Week ' + week + ' library: ' + filled.join(', ') + '.', 'success');
+  }
+
+  function dismissWeekLibraryNxtmockForm() {
+    nxtmockWeekLibraryDismissed = true;
+    renderNxtmockConfigModal();
   }
 
   function requestCloseNxtmockConfigModal() {
@@ -5766,6 +5795,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     titleFormReadOnly = false;
     titleFormConfigOnly = false;
     titleFormSnapshot = JSON.stringify(draft);
+    titleWeekLibraryDismissed = false;
     render();
     openTitleFormModal();
   }
@@ -5783,6 +5813,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     titleFormReadOnly = false;
     titleFormConfigOnly = false;
     titleFormSnapshot = JSON.stringify(draft);
+    titleWeekLibraryDismissed = false;
     render();
     openTitleFormModal();
   }
@@ -5811,6 +5842,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     titleFormReadOnly = false;
     titleFormConfigOnly = true;
     titleFormSnapshot = JSON.stringify(draft);
+    titleWeekLibraryDismissed = false;
     render();
     openTitleFormModal();
   }
@@ -5851,12 +5883,24 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       : '';
     const detectedWeek = parseWeekFromTitle(d.batch);
     const libraryMatch = canViewConfigColumns() ? findWeekConfig(d.program, detectedWeek) : null;
+    const titleHasBlankToFill = !!libraryMatch && (
+      (!d.mainConfigUrl && libraryMatch.mainConfigUrl) ||
+      (d.mockRequired && !d.mockConfigUrl && libraryMatch.mockConfigUrl)
+    );
     const libraryHintHTML = !configEditing ? '' : (
       detectedWeek === null
         ? '<p class="footnote">No Week detected in the Title text (looks for &ldquo;Week - 3&rdquo;, &ldquo;Week 3&rdquo; or &ldquo;W3&rdquo;) &mdash; Config Library reuse isn&rsquo;t available for this Title.</p>'
         : !libraryMatch
           ? '<p class="footnote">Week ' + detectedWeek + ' detected, but no Config Library entry yet for ' + esc(d.program || 'this Program') + '.</p>'
-          : '<p class="footnote">Week ' + detectedWeek + ' library config found for ' + esc(d.program) + '. <button type="button" class="btn btn--ghost btn--xs" data-action="apply-week-library">Apply to blank fields</button></p>'
+          : !titleHasBlankToFill
+            ? ''
+            : titleWeekLibraryDismissed
+              ? '<p class="footnote">Week ' + detectedWeek + ' library config available for ' + esc(d.program) + '. <button type="button" class="btn btn--ghost btn--xs" data-action="apply-week-library">Reuse it</button></p>'
+              : '<div class="week-library-prompt"><p>Week ' + detectedWeek + ' already has a saved config for <strong>' + esc(d.program) + '</strong>. Reuse the same config?</p>'
+                + '<div class="week-library-prompt-actions">'
+                + '<button type="button" class="btn btn--primary btn--xs" data-action="apply-week-library">Yes, reuse it</button>'
+                + '<button type="button" class="btn btn--ghost btn--xs" data-action="dismiss-week-library">No, I&rsquo;ll fill it in</button>'
+                + '</div></div>'
     );
     body.innerHTML =
       '<div class="filter-field"><label>Program' + (editing ? ' <span class="required-mark">*</span>' : '') + '</label>' + programCell(d.program, editing) + '</div>'
@@ -5907,9 +5951,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     let filled = [];
     if (!draft.mainConfigUrl && match.mainConfigUrl) { draft.mainConfigUrl = match.mainConfigUrl; filled.push('Main Assessment Config'); }
     if (draft.mockRequired && !draft.mockConfigUrl && match.mockConfigUrl) { draft.mockConfigUrl = match.mockConfigUrl; filled.push('Mock Assessment Config'); }
-    if (!filled.length) { flashToast('Those fields already have a value — nothing to apply.', 'error'); return; }
+    titleWeekLibraryDismissed = true;
+    if (!filled.length) { renderTitleFormModal(); flashToast('Those fields already have a value — nothing to apply.', 'error'); return; }
     renderTitleFormModal();
     flashToast('Applied from Week ' + week + ' library: ' + filled.join(', ') + '.', 'success');
+  }
+
+  function dismissWeekLibraryTitleForm() {
+    titleWeekLibraryDismissed = true;
+    renderTitleFormModal();
   }
 
   function requestCancelTitleForm() {
@@ -7470,8 +7520,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'apply-week-library') {
       applyWeekLibraryToTitleForm();
     }
+    else if (action === 'dismiss-week-library') {
+      dismissWeekLibraryTitleForm();
+    }
     else if (action === 'apply-week-library-nxtmock') {
       applyWeekLibraryToNxtmockForm();
+    }
+    else if (action === 'dismiss-week-library-nxtmock') {
+      dismissWeekLibraryNxtmockForm();
     }
     else if (action === 'toggle-mapping-dropdown') {
       const key = btn.dataset.kind + '|' + btn.dataset.program;
