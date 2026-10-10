@@ -632,15 +632,13 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let escalationManagers = {};
   let openMappingDropdown = null;
   let mappingSearchText = '';
-  // Campus list, and the Config Library (reusable Main/Mock Assessment Config
-  // and Main/Mock Interview Config links per Program + Campus + Week) --
-  // both Firestore-only settings, same as programOwners/escalationManagers
-  // above: no localStorage/Artifact fallback, since they're meant to be one
-  // shared list the whole team sees, not a per-browser copy.
-  let campusOptions = [];
+  // The Config Library (reusable Main/Mock Assessment Config and Main/Mock
+  // Interview Config links per Program + Week) -- Firestore-only, same as
+  // programOwners/escalationManagers above: no localStorage/Artifact
+  // fallback, since it's meant to be one shared list the whole team sees,
+  // not a per-browser copy.
   let weekConfigs = [];
   let weekConfigProgramFilter = '';
-  let weekConfigCampusFilter = '';
   let weekConfigImportPreview = null;
   let addStudentsTargetBatch = '';
   let addStudentsTargetBatchId = '';
@@ -762,14 +760,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         if (notifPanelOpen) renderNotificationsPanel();
       }, err => {
         console.error('Firestore escalation managers sync error', err);
-      });
-      fs.onSnapshot(fs.doc(db, 'settings', 'campusOptions'), snap => {
-        campusOptions = (snap.exists() && snap.data().list) || [];
-        renderCampusOptionsList();
-        if (draft) renderTitleFormModal();
-        renderWeekConfigsTable();
-      }, err => {
-        console.error('Firestore campus options sync error', err);
       });
       const weekConfigsCol = fs.collection(db, 'weekConfigs');
       fs.onSnapshot(weekConfigsCol, snap => {
@@ -1379,14 +1369,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   // One reusable Main/Mock Assessment Config + Main/Mock Interview Config
-  // link set per Program + Campus + Week -- so Ops/Content can apply the
-  // same, already-known-correct links to every Title that lands in that
-  // week instead of re-typing (or re-finding) them each time.
+  // link set per Program + Week -- so Ops/Content can apply the same,
+  // already-known-correct links to every Title that lands in that week
+  // instead of re-typing (or re-finding) them each time. No separate Campus
+  // key: campus-specific programs are already their own Program entries
+  // (e.g. "Intensive Offline - Kukatpally" vs "... - Madhapur").
   function normalizeWeekConfig(w) {
     return {
       id: (w && w.id) || uid(),
       program: (w && w.program) || '',
-      campus: (w && w.campus) || '',
       week: (w && w.week !== undefined && w.week !== null && w.week !== '') ? Number(w.week) : null,
       mainConfigUrl: (w && w.mainConfigUrl) || '',
       mockConfigUrl: (w && w.mockConfigUrl) || '',
@@ -1406,13 +1397,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return m ? Number(m[1]) : null;
   }
 
-  function findWeekConfig(program, campus, week) {
+  function findWeekConfig(program, week) {
     if (!program || week === null || week === undefined) return null;
     const p = program.trim().toLowerCase();
-    const c = (campus || '').trim().toLowerCase();
     return weekConfigs.find(w =>
       (w.program || '').trim().toLowerCase() === p &&
-      (w.campus || '').trim().toLowerCase() === c &&
       w.week === week
     ) || null;
   }
@@ -1486,8 +1475,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       // The day this Title was first raised -- set once at creation and never
       // touched again by later edits, so the 4-day lead-time rule keeps
       // checking against the real ticket date, not "today" at edit time.
-      ticketRaisedAt: b.ticketRaisedAt || '',
-      campus: b.campus || ''
+      ticketRaisedAt: b.ticketRaisedAt || ''
     };
   }
 
@@ -1912,10 +1900,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
           <section class="content-section" id="section-config-library">
             <h2 class="section-heading">Config Library</h2>
-            <p class="section-desc">One reusable Main/Mock Assessment Config and Main/Mock Interview Config link set per Program + Campus + Week &mdash; so a Title that lands in a week you&rsquo;ve already configured can reuse it instead of being typed again. Week is matched from the Title&rsquo;s name text (&ldquo;Week - 3&rdquo;, &ldquo;W3&rdquo;, etc).</p>
+            <p class="section-desc">One reusable Main/Mock Assessment Config and Main/Mock Interview Config link set per Program + Week &mdash; so a Title that lands in a week you&rsquo;ve already configured can reuse it instead of being typed again. Week is matched from the Title&rsquo;s name text (&ldquo;Week - 3&rdquo;, &ldquo;W3&rdquo;, etc). For a campus-specific config, use its own Program entry (e.g. &ldquo;Intensive Offline - Kukatpally&rdquo;).</p>
             <div class="filter-bar">
               <div class="filter-field"><label for="weekconfig-filter-program">Program</label><select id="weekconfig-filter-program"><option value="">All Programs</option></select></div>
-              <div class="filter-field"><label for="weekconfig-filter-campus">Campus</label><select id="weekconfig-filter-campus"><option value="">All Campuses</option></select></div>
               <button type="button" class="btn btn--ghost btn--sm" data-action="clear-weekconfig-filter">Clear</button>
               <button type="button" class="btn btn--primary btn--sm filter-bar-import" data-action="open-weekconfig-import">Bulk Import</button>
             </div>
@@ -1924,7 +1911,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                 <thead>
                   <tr class="thead-single">
                     <th>Program</th>
-                    <th>Campus</th>
                     <th>Week</th>
                     <th>Main Assessment Config</th>
                     <th>Mock Assessment Config</th>
@@ -1938,7 +1924,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
             </div>
             <div class="filter-bar" style="margin-top:14px;">
               <div class="filter-field"><label for="new-weekconfig-program">Program</label><select id="new-weekconfig-program"></select></div>
-              <div class="filter-field"><label for="new-weekconfig-campus">Campus</label><select id="new-weekconfig-campus"></select></div>
               <div class="filter-field"><label for="new-weekconfig-week">Week</label><input type="number" min="0" id="new-weekconfig-week" placeholder="e.g. 1" style="max-width:90px;"></div>
               <button type="button" class="btn btn--primary btn--sm" data-action="add-week-config">Add</button>
             </div>
@@ -1962,18 +1947,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
                 <div style="display:flex;gap:8px;">
                   <input type="text" id="new-program-name" placeholder="e.g. NIAT" style="flex:1;">
                   <button type="button" class="btn btn--primary btn--sm" data-action="add-program-option">Add</button>
-                </div>
-              </div>
-            </div>
-            <div class="settings-panel" style="margin-top:18px;">
-              <h3 class="settings-panel-title">Campuses</h3>
-              <p class="section-desc">Manage the list of campuses available on the Title form, and used to match entries in the Config Library.</p>
-              <div id="campus-options-list"></div>
-              <div class="filter-field" style="margin-top:14px;max-width:360px;">
-                <label for="new-campus-name">Add a campus</label>
-                <div style="display:flex;gap:8px;">
-                  <input type="text" id="new-campus-name" placeholder="e.g. Kukatpally" style="flex:1;">
-                  <button type="button" class="btn btn--primary btn--sm" data-action="add-campus-option">Add</button>
                 </div>
               </div>
             </div>
@@ -2452,10 +2425,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
           </div>
           <details class="import-help">
             <summary>Which columns can I use?</summary>
-            <p class="section-desc">Headers: <strong>Program, Campus, Week, Main Assessment Config, Mock Assessment Config, Main Interview Config, Mock Interview Config</strong>. One row per Program + Campus + Week &mdash; re-importing the same combination updates that entry rather than creating a duplicate.</p>
+            <p class="section-desc">Headers: <strong>Program, Week, Main Assessment Config, Mock Assessment Config, Main Interview Config, Mock Interview Config</strong>. One row per Program + Week &mdash; re-importing the same combination updates that entry rather than creating a duplicate.</p>
             <ul class="section-desc" style="margin:0 0 16px;padding-left:18px;">
               <li><strong>Program</strong> must exactly match a name already in Settings &rarr; Programs (case-insensitive). An unrecognized program skips that row with an error.</li>
-              <li><strong>Campus</strong> must exactly match a name already in Settings &rarr; Campuses (case-insensitive), or be left blank. An unrecognized campus skips that row with an error.</li>
               <li><strong>Week</strong> must be a whole number. Missing or non-numeric skips that row with an error.</li>
               <li>The four config columns are optional &mdash; leave any blank to leave that link unset (or unchanged, when updating an existing entry).</li>
             </ul>
@@ -2652,12 +2624,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const known = programOptions.includes(value) || !value ? programOptions : programOptions.concat(value);
     const opts = ['<option value="">&mdash; Select &mdash;</option>'].concat(known.map(p => '<option value="'+esc(p)+'"'+(p===value?' selected':'')+'>'+esc(p)+'</option>'));
     return '<select class="cell-input" data-field="program">' + opts.join('') + '</select>';
-  }
-  function campusCell(value, editing) {
-    if (!editing) return value ? esc(value) : dash();
-    const known = campusOptions.includes(value) || !value ? campusOptions : campusOptions.concat(value);
-    const opts = ['<option value="">&mdash; Select &mdash;</option>'].concat(known.map(c => '<option value="'+esc(c)+'"'+(c===value?' selected':'')+'>'+esc(c)+'</option>'));
-    return '<select class="cell-input" data-field="campus">' + opts.join('') + '</select>';
   }
   function syllabusPairCell(items, editing, batchId) {
     if (!editing) {
@@ -2892,12 +2858,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       ['both', 'Main & Mock']
     ];
     const detectedWeek = parseWeekFromTitle(b.batch);
-    const libraryMatch = detectedWeek === null ? null : findWeekConfig(b.program, b.campus, detectedWeek);
+    const libraryMatch = detectedWeek === null ? null : findWeekConfig(b.program, detectedWeek);
     const libraryHintHTML = (!mainOn && !mockOn) ? '' : (
       detectedWeek === null
         ? '<p class="footnote">No Week detected in the Title text &mdash; Config Library reuse isn&rsquo;t available for this Title.</p>'
         : !libraryMatch
-          ? '<p class="footnote">Week ' + detectedWeek + ' detected, but no Config Library entry yet for ' + esc(b.program || 'this Program') + (b.campus ? ' / ' + esc(b.campus) : '') + '.</p>'
+          ? '<p class="footnote">Week ' + detectedWeek + ' detected, but no Config Library entry yet for ' + esc(b.program || 'this Program') + '.</p>'
           : '<p class="footnote">Week ' + detectedWeek + ' library config found. <button type="button" class="btn btn--ghost btn--xs" data-action="apply-week-library-nxtmock">Apply to blank fields</button></p>'
     );
     body.innerHTML =
@@ -2917,7 +2883,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const b = batches.find(x => x.id === nxtmockConfigModalId);
     if (!b) return;
     const week = parseWeekFromTitle(b.batch);
-    const match = findWeekConfig(b.program, b.campus, week);
+    const match = findWeekConfig(b.program, week);
     if (!match) { flashToast('No Config Library entry to apply.', 'error'); return; }
     const mainInput = document.getElementById('nxtmock-config-main');
     const mockInput = document.getElementById('nxtmock-config-mock');
@@ -3404,7 +3370,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td' + configColsHidden + '>' + configField(d.mainConfigUrl) + '</td>';
 
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
-      + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + programCell(d.program, editing) + (d.campus ? '<br><span class="muted-cell">' + esc(d.campus) + '</span>' : '') + '</td>'
+      + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + programCell(d.program, editing) + '</td>'
       + '<td>' + textCell('batch', d.batch, editing, 'Title') + '</td>'
       + '<td class="mono">' + mainAssessmentDateCell(b) + '</td>'
       + '<td>' + studentsButtonCell(id, d.batch) + '</td>'
@@ -4144,57 +4110,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     flashToast('Program deleted.', 'success');
   }
 
-  function renderCampusOptionsList() {
-    const el = document.getElementById('campus-options-list');
-    if (!el) return;
-    if (!campusOptions.length) { el.innerHTML = '<p class="muted-cell">No campuses yet.</p>'; return; }
-    el.innerHTML = campusOptions.map((c, i) =>
-      '<div class="program-option-row">'
-      + '<input type="text" class="cell-input campus-option-input" data-index="'+i+'" value="'+esc(c)+'">'
-      + '<button type="button" class="btn--icon-danger" data-action="delete-campus-option" data-index="'+i+'" aria-label="Delete campus" title="Delete campus">'+ICON_TRASH+'</button>'
-      + '</div>'
-    ).join('');
-  }
-
-  // Writes the whole list in one go (small array, simplest possible shape).
-  // Renaming is saved on blur (change, not input) so typing a letter at a
-  // time doesn't round-trip through Firestore and re-render this very input
-  // out from under the person's cursor.
-  function saveCampusOptions(next) {
-    if (!fs || !db) { flashToast('Campus list needs live sync to save -- not available right now.', 'error'); return; }
-    fs.setDoc(fs.doc(db, 'settings', 'campusOptions'), { list: next }).catch(err => {
-      console.error('Could not save campus list', err);
-      flashToast('Could not save the campus list.', 'error');
-    });
-  }
-
-  function addCampusOption() {
-    const el = document.getElementById('new-campus-name');
-    const name = el ? el.value.trim() : '';
-    if (!name) { flashToast('Enter a campus name first.', 'error'); return; }
-    if (campusOptions.some(c => c.toLowerCase() === name.toLowerCase())) { flashToast('That campus already exists.', 'error'); return; }
-    saveCampusOptions(campusOptions.concat(name));
-    if (el) el.value = '';
-    flashToast('Campus added.', 'success');
-  }
-
-  function renameCampusOption(index, value) {
-    if (campusOptions[index] == null) return;
-    const next = campusOptions.slice();
-    next[index] = value;
-    saveCampusOptions(next);
-  }
-
-  function deleteCampusOption(index) {
-    const name = campusOptions[index];
-    if (name == null) return;
-    if (!confirm('Delete "' + name + '" from the campus list? Titles already set to this campus will keep showing it, but you won\'t be able to pick it again unless you re-add it.')) return;
-    const next = campusOptions.slice();
-    next.splice(index, 1);
-    saveCampusOptions(next);
-    flashToast('Campus deleted.', 'success');
-  }
-
   function updateSettingsTabVisibility() {
     const programsPanel = document.getElementById('settings-tab-programs');
     const testUidsPanel = document.getElementById('settings-tab-testuids');
@@ -4352,11 +4267,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function getFilteredWeekConfigs() {
     return weekConfigs.filter(w =>
-      (!weekConfigProgramFilter || w.program === weekConfigProgramFilter) &&
-      (!weekConfigCampusFilter || w.campus === weekConfigCampusFilter)
+      (!weekConfigProgramFilter || w.program === weekConfigProgramFilter)
     ).slice().sort((a, b) =>
       (a.program || '').localeCompare(b.program || '') ||
-      (a.campus || '').localeCompare(b.campus || '') ||
       (a.week || 0) - (b.week || 0)
     );
   }
@@ -4375,7 +4288,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         tbody.innerHTML = list.map(w =>
           '<tr>'
           + '<td>' + (esc(w.program) || dash()) + '</td>'
-          + '<td>' + (esc(w.campus) || dash()) + '</td>'
           + '<td class="mono">' + (w.week === null ? dash() : w.week) + '</td>'
           + '<td>' + weekConfigUrlCell(w.id, 'mainConfigUrl', w.mainConfigUrl) + '</td>'
           + '<td>' + weekConfigUrlCell(w.id, 'mockConfigUrl', w.mockConfigUrl) + '</td>'
@@ -4388,17 +4300,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     const progFilterSel = document.getElementById('weekconfig-filter-program');
     if (progFilterSel) progFilterSel.innerHTML = '<option value="">All Programs</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===weekConfigProgramFilter?' selected':'')+'>'+esc(p)+'</option>').join('');
-    const campusFilterSel = document.getElementById('weekconfig-filter-campus');
-    if (campusFilterSel) campusFilterSel.innerHTML = '<option value="">All Campuses</option>' + campusOptions.map(c => '<option value="'+esc(c)+'"'+(c===weekConfigCampusFilter?' selected':'')+'>'+esc(c)+'</option>').join('');
     const newProgSel = document.getElementById('new-weekconfig-program');
     if (newProgSel) {
       const current = newProgSel.value;
       newProgSel.innerHTML = '<option value="">Select program</option>' + programOptions.map(p => '<option value="'+esc(p)+'"'+(p===current?' selected':'')+'>'+esc(p)+'</option>').join('');
-    }
-    const newCampusSel = document.getElementById('new-weekconfig-campus');
-    if (newCampusSel) {
-      const current = newCampusSel.value;
-      newCampusSel.innerHTML = '<option value="">No campus</option>' + campusOptions.map(c => '<option value="'+esc(c)+'"'+(c===current?' selected':'')+'>'+esc(c)+'</option>').join('');
     }
   }
 
@@ -4422,16 +4327,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function addWeekConfig() {
     if (!canWrite) return;
     const programEl = document.getElementById('new-weekconfig-program');
-    const campusEl = document.getElementById('new-weekconfig-campus');
     const weekEl = document.getElementById('new-weekconfig-week');
     const program = programEl ? programEl.value : '';
-    const campus = campusEl ? campusEl.value : '';
     const weekRaw = weekEl ? weekEl.value.trim() : '';
     if (!program) { flashToast('Select a program first.', 'error'); return; }
     if (weekRaw === '' || isNaN(Number(weekRaw))) { flashToast('Enter a week number first.', 'error'); return; }
     const week = Number(weekRaw);
-    if (findWeekConfig(program, campus, week)) { flashToast('An entry for that Program + Campus + Week already exists.', 'error'); return; }
-    const entry = normalizeWeekConfig({ id: uid(), program: program, campus: campus, week: week });
+    if (findWeekConfig(program, week)) { flashToast('An entry for that Program + Week already exists.', 'error'); return; }
+    const entry = normalizeWeekConfig({ id: uid(), program: program, week: week });
     weekConfigs = weekConfigs.concat(entry);
     if (weekEl) weekEl.value = '';
     render();
@@ -4460,7 +4363,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   function clearWeekConfigFilter() {
     weekConfigProgramFilter = '';
-    weekConfigCampusFilter = '';
     renderWeekConfigsTable();
   }
 
@@ -4481,7 +4383,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
   const WEEKCONFIG_IMPORT_FIELD_MAP = {
     program: 'program',
-    campus: 'campus',
     week: 'week',
     mainassessmentconfig: 'mainConfigUrl', mainconfig: 'mainConfigUrl',
     mockassessmentconfig: 'mockConfigUrl', mockconfig: 'mockConfigUrl',
@@ -4502,23 +4403,15 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       if (!mapped.program) { rowErrors.push('Row ' + rowNum + ': missing Program.'); return; }
       const program = programOptions.find(p => p.toLowerCase() === mapped.program.toLowerCase());
       if (!program) { rowErrors.push('Row ' + rowNum + ': "' + mapped.program + '" is not a recognized Program.'); return; }
-      let campus = '';
-      if (mapped.campus) {
-        const matchedCampus = campusOptions.find(c => c.toLowerCase() === mapped.campus.toLowerCase());
-        if (!matchedCampus) { rowErrors.push('Row ' + rowNum + ': "' + mapped.campus + '" is not a recognized Campus.'); return; }
-        campus = matchedCampus;
-      }
       if (!mapped.week || isNaN(Number(mapped.week))) { rowErrors.push('Row ' + rowNum + ': Week must be a number.'); return; }
       const week = Number(mapped.week);
       const existing = weekConfigs.find(w =>
         (w.program || '').toLowerCase() === program.toLowerCase() &&
-        (w.campus || '').toLowerCase() === campus.toLowerCase() &&
         w.week === week
       );
       built.push(normalizeWeekConfig({
         id: existing ? existing.id : uid(),
         program: program,
-        campus: campus,
         week: week,
         mainConfigUrl: mapped.mainConfigUrl || (existing ? existing.mainConfigUrl : ''),
         mockConfigUrl: mapped.mockConfigUrl || (existing ? existing.mockConfigUrl : ''),
@@ -4573,12 +4466,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const existingIds = new Set(weekConfigs.map(w => w.id));
     const newCount = weekConfigImportPreview.entries.filter(w => !existingIds.has(w.id)).length;
     const updCount = weekConfigImportPreview.entries.length - newCount;
-    el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new entry' : ' new entries') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'entry' : 'entries') + ' updated' : '') + ' (matched by Program + Campus + Week).</p>'
-      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Program</th><th>Campus</th><th>Week</th></tr></thead><tbody>'
+    el.innerHTML = '<p class="import-summary">' + newCount + (newCount === 1 ? ' new entry' : ' new entries') + (updCount ? ', ' + updCount + ' existing ' + (updCount === 1 ? 'entry' : 'entries') + ' updated' : '') + ' (matched by Program + Week).</p>'
+      + '<div class="table-wrap" style="max-height:280px;"><table><thead><tr><th></th><th>Program</th><th>Week</th></tr></thead><tbody>'
       + weekConfigImportPreview.entries.slice(0, 20).map(w => '<tr>'
           + '<td><span class="badge '+(existingIds.has(w.id)?'badge--no':'badge--yes')+'">'+(existingIds.has(w.id)?'Update':'New')+'</span></td>'
           + '<td>' + esc(w.program) + '</td>'
-          + '<td>' + (esc(w.campus) || dash()) + '</td>'
           + '<td>' + w.week + '</td>'
         + '</tr>').join('')
       + '</tbody></table></div>'
@@ -4601,12 +4493,11 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   }
 
   function downloadWeekConfigImportSampleCSV() {
-    const headers = ['Program', 'Campus', 'Week', 'Main Assessment Config', 'Mock Assessment Config', 'Main Interview Config', 'Mock Interview Config'];
+    const headers = ['Program', 'Week', 'Main Assessment Config', 'Mock Assessment Config', 'Main Interview Config', 'Mock Interview Config'];
     const sampleProgram = programOptions[0] || 'Intensive Offline';
-    const sampleCampus = campusOptions[0] || '';
     const rows = [
-      [sampleProgram, sampleCampus, '1', 'https://config.topin.tech/…', 'https://config.topin.tech/…', 'https://…', 'https://…'],
-      [sampleProgram, sampleCampus, '2', 'https://config.topin.tech/…', '', '', '']
+      [sampleProgram, '1', 'https://config.topin.tech/…', 'https://config.topin.tech/…', 'https://…', 'https://…'],
+      [sampleProgram, '2', 'https://config.topin.tech/…', '', '', '']
     ];
     const csv = [headers].concat(rows).map(r => r.map(v => /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v).join(',')).join('\n');
     try {
@@ -5706,7 +5597,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     renderAssessmentsTable();
     renderInterviewsTable();
     renderProgramOptionsList();
-    renderCampusOptionsList();
     renderTestUidsList();
     renderWeekConfigsTable();
     renderProgramOwnersPanel();
@@ -5960,17 +5850,16 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         + '</div>'
       : '';
     const detectedWeek = parseWeekFromTitle(d.batch);
-    const libraryMatch = canViewConfigColumns() ? findWeekConfig(d.program, d.campus, detectedWeek) : null;
+    const libraryMatch = canViewConfigColumns() ? findWeekConfig(d.program, detectedWeek) : null;
     const libraryHintHTML = !configEditing ? '' : (
       detectedWeek === null
         ? '<p class="footnote">No Week detected in the Title text (looks for &ldquo;Week - 3&rdquo;, &ldquo;Week 3&rdquo; or &ldquo;W3&rdquo;) &mdash; Config Library reuse isn&rsquo;t available for this Title.</p>'
         : !libraryMatch
-          ? '<p class="footnote">Week ' + detectedWeek + ' detected, but no Config Library entry yet for ' + esc(d.program || 'this Program') + (d.campus ? ' / ' + esc(d.campus) : '') + '.</p>'
-          : '<p class="footnote">Week ' + detectedWeek + ' library config found for ' + esc(d.program) + (d.campus ? ' / ' + esc(d.campus) : '') + '. <button type="button" class="btn btn--ghost btn--xs" data-action="apply-week-library">Apply to blank fields</button></p>'
+          ? '<p class="footnote">Week ' + detectedWeek + ' detected, but no Config Library entry yet for ' + esc(d.program || 'this Program') + '.</p>'
+          : '<p class="footnote">Week ' + detectedWeek + ' library config found for ' + esc(d.program) + '. <button type="button" class="btn btn--ghost btn--xs" data-action="apply-week-library">Apply to blank fields</button></p>'
     );
     body.innerHTML =
       '<div class="filter-field"><label>Program' + (editing ? ' <span class="required-mark">*</span>' : '') + '</label>' + programCell(d.program, editing) + '</div>'
-      + '<div class="filter-field"><label>Campus</label>' + campusCell(d.campus, editing) + '</div>'
       + '<div class="filter-field"><label>Title' + (editing ? ' <span class="required-mark">*</span>' : '') + '</label>' + textCell('batch', d.batch, editing, 'Title') + '</div>'
       + '<hr class="modal-divider">'
       + '<p class="modal-subheading">Syllabus</p>'
@@ -6013,7 +5902,7 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function applyWeekLibraryToTitleForm() {
     if (!draft) return;
     const week = parseWeekFromTitle(draft.batch);
-    const match = findWeekConfig(draft.program, draft.campus, week);
+    const match = findWeekConfig(draft.program, week);
     if (!match) { flashToast('No Config Library entry to apply.', 'error'); return; }
     let filled = [];
     if (!draft.mainConfigUrl && match.mainConfigUrl) { draft.mainConfigUrl = match.mainConfigUrl; filled.push('Main Assessment Config'); }
@@ -7596,12 +7485,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'delete-program-option') {
       deleteProgramOption(Number(btn.dataset.index));
     }
-    else if (action === 'add-campus-option') {
-      addCampusOption();
-    }
-    else if (action === 'delete-campus-option') {
-      deleteCampusOption(Number(btn.dataset.index));
-    }
     else if (action === 'clear-weekconfig-filter') {
       clearWeekConfigFilter();
     }
@@ -7835,10 +7718,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       toggleProgramMapping('escalation', t.dataset.program, t.dataset.id, t.checked);
       return;
     }
-    if (t.matches('.campus-option-input')) {
-      renameCampusOption(Number(t.dataset.index), t.value);
-      return;
-    }
     if (t.matches('.row-checkbox-batch')) {
       const id = t.dataset.id;
       if (t.checked) selectedBatchIds.add(id); else selectedBatchIds.delete(id);
@@ -7877,7 +7756,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (t.id === 'interview-filter-program') { interviewProgramFilter = t.value; renderInterviewsTable(); return; }
     if (t.id === 'interview-filter-status') { interviewStatusTab = t.value; renderInterviewsTable(); return; }
     if (t.id === 'weekconfig-filter-program') { weekConfigProgramFilter = t.value; renderWeekConfigsTable(); return; }
-    if (t.id === 'weekconfig-filter-campus') { weekConfigCampusFilter = t.value; renderWeekConfigsTable(); return; }
     if (t.matches('.weekconfig-field')) {
       updateWeekConfigField(t.dataset.id, t.dataset.field, t.value);
       return;
