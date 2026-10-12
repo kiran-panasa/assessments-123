@@ -618,14 +618,27 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   let syllabusProgramFilter = '';
   let syllabusDateFrom = '';
   let syllabusDateTo = '';
+  // Shared across the whole team via Firestore settings/programOptions once
+  // Firebase is connected (see initFirebase) -- this local value and
+  // localStorage copy are only the fallback for before that connects, or
+  // for fully local/offline use.
   const PROGRAM_OPTIONS_LS_KEY = 'cohort-ledger:program-options:v1';
   let programOptions = [];
   try {
     const rawProgramOptions = localStorage.getItem(PROGRAM_OPTIONS_LS_KEY);
     programOptions = rawProgramOptions ? JSON.parse(rawProgramOptions) : ['NIAT', 'Intensive Offline', 'Academy', 'Edge 2.0'];
   } catch (e) { programOptions = ['NIAT', 'Intensive Offline', 'Academy', 'Edge 2.0']; }
-  function saveProgramOptions() {
-    try { localStorage.setItem(PROGRAM_OPTIONS_LS_KEY, JSON.stringify(programOptions)); } catch (e) {}
+  function saveProgramOptions(next) {
+    if (fs && db) {
+      fs.setDoc(fs.doc(db, 'settings', 'programOptions'), { list: next }).catch(err => {
+        console.error('Could not save program list', err);
+        flashToast('Could not save the program list.', 'error');
+      });
+    } else {
+      programOptions = next;
+      try { localStorage.setItem(PROGRAM_OPTIONS_LS_KEY, JSON.stringify(programOptions)); } catch (e) {}
+      renderProgramOptionsList();
+    }
   }
   let notifyLastRecipients = '';
   let notifications = [];
@@ -769,6 +782,25 @@ function boot(seedBatches, seedStudents, seedTestUids) {
         if (notifPanelOpen) renderNotificationsPanel();
       }, err => {
         console.error('Firestore escalation managers sync error', err);
+      });
+      let programOptionsMigrated = false;
+      fs.onSnapshot(fs.doc(db, 'settings', 'programOptions'), snap => {
+        if (snap.exists()) {
+          programOptions = (snap.data().list || []).filter(p => p && String(p).trim());
+        } else if (!programOptionsMigrated) {
+          // First time anyone's opened this build -- seed the shared list
+          // from whatever this browser had locally (the old per-browser-only
+          // copy), so programs already in use aren't lost. Every admin
+          // shares one synced list from here on; this branch only runs once.
+          programOptionsMigrated = true;
+          const seed = programOptions.filter(p => p && String(p).trim());
+          fs.setDoc(fs.doc(db, 'settings', 'programOptions'), { list: seed }).catch(err => {
+            console.error('Could not migrate program list to shared storage', err);
+          });
+        }
+        render();
+      }, err => {
+        console.error('Firestore program options sync error', err);
       });
       const weekConfigsCol = fs.collection(db, 'weekConfigs');
       fs.onSnapshot(weekConfigsCol, snap => {
@@ -4116,26 +4148,25 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const name = el ? el.value.trim() : '';
     if (!name) { flashToast('Enter a program name first.', 'error'); return; }
     if (programOptions.some(p => p.toLowerCase() === name.toLowerCase())) { flashToast('That program already exists.', 'error'); return; }
-    programOptions.push(name);
-    saveProgramOptions();
+    saveProgramOptions(programOptions.concat(name));
     if (el) el.value = '';
-    renderProgramOptionsList();
     flashToast('Program added.', 'success');
   }
 
   function renameProgramOption(index, value) {
-    if (!programOptions[index]) return;
-    programOptions[index] = value;
-    saveProgramOptions();
+    if (programOptions[index] == null) return;
+    const next = programOptions.slice();
+    next[index] = value;
+    saveProgramOptions(next);
   }
 
   function deleteProgramOption(index) {
     const name = programOptions[index];
     if (name == null) return;
     if (!confirm('Delete "' + name + '" from the program list? Titles already set to this program will keep showing it, but you won\'t be able to pick it again unless you re-add it.')) return;
-    programOptions.splice(index, 1);
-    saveProgramOptions();
-    renderProgramOptionsList();
+    const next = programOptions.slice();
+    next.splice(index, 1);
+    saveProgramOptions(next);
     flashToast('Program deleted.', 'success');
   }
 
@@ -7666,10 +7697,6 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     if (t.id === 'nxtmock-config-search') { nxtmockConfigSearchQuery = t.value; renderNxtmockConfigsTable(); return; }
     if (t.id === 'assess-search') { assessSearchQuery = t.value; renderAssessmentsTable(); return; }
     if (t.id === 'interview-search') { interviewSearchQuery = t.value; renderInterviewsTable(); return; }
-    if (t.matches('.program-option-input')) {
-      renameProgramOption(Number(t.dataset.index), t.value);
-      return;
-    }
     if (t.matches('.mapping-select-search')) {
       // Filter the already-rendered option rows directly instead of calling
       // renderProgramOwnersPanel() -- that would rebuild this very input and
@@ -7772,6 +7799,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     if (t.matches('.program-escalation-check')) {
       toggleProgramMapping('escalation', t.dataset.program, t.dataset.id, t.checked);
+      return;
+    }
+    if (t.matches('.program-option-input')) {
+      renameProgramOption(Number(t.dataset.index), t.value);
       return;
     }
     if (t.matches('.row-checkbox-batch')) {
