@@ -2717,11 +2717,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return '<input type="datetime-local" class="cell-input cell-input--datetime" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
   }
   function actionsCell(id) {
+    const cloneBtn = canManageRecordCatalog() ? '<button type="button" class="btn btn--ghost btn--xs" data-action="clone-title" data-id="'+id+'" title="Create a new Title pre-filled from this one">Clone</button>' : '';
     if (canEditRecords()) {
-      return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
+      return '<div class="actions">' + cloneBtn + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
     }
     if (canViewConfigColumns()) {
-      return '<div class="actions"><button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button></div>';
+      return '<div class="actions">' + cloneBtn + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button></div>';
     }
     return '<span class="muted-cell">Locked</span>';
   }
@@ -2798,6 +2799,22 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return '<a href="'+esc(value)+'" target="_blank" rel="noopener noreferrer" class="config-link" title="'+esc(value)+'">'+esc(short)+'</a>';
   }
 
+  // Same as configField, but when the cell is blank and a Config Library
+  // entry exists for this Title's Program + detected Week, shows a
+  // one-click "Reuse" button right in the table instead of a plain dash --
+  // so the match is visible without opening the edit modal at all.
+  function configFieldReuseAware(b, field) {
+    const value = b[field];
+    if (value) return configField(value);
+    if (!canWrite || !canViewConfigColumns()) return dash();
+    const week = parseWeekFromTitle(b.batch);
+    const match = week === null ? null : findWeekConfig(b.program, week);
+    if (match && match[field]) {
+      return '<button type="button" class="btn btn--ghost btn--xs" data-action="apply-week-library-row" data-id="'+b.id+'" data-field="'+field+'" title="Reuse the Week '+week+' Config Library entry">Reuse Week '+week+'</button>';
+    }
+    return dash();
+  }
+
   function fmtUpdatedAt(iso) {
     if (!iso) return '';
     const d = new Date(iso);
@@ -2823,8 +2840,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td class="mono">' + mainAssessmentDateCell(b) + '</td>'
       + '<td><span class="type-tag type-tag--blue">Main</span> <span class="badge '+(b.mockRequired?'badge--yes':'badge--no')+'">Mock '+(b.mockRequired?'✓':'✗')+'</span></td>'
       + '<td><span class="badge '+(status==='submitted'?'badge--yes':'badge--no')+'">'+(status==='submitted'?'Submitted':'Pending')+'</span></td>'
-      + '<td>' + (b.mockRequired ? configField(b.mockConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td>' + configField(b.mainConfigUrl) + '</td>'
+      + '<td>' + (b.mockRequired ? configFieldReuseAware(b, 'mockConfigUrl') : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td>' + configFieldReuseAware(b, 'mainConfigUrl') + '</td>'
       + '<td>' + (b.mainSebStatus ? '<span class="badge '+(b.mainSebStatus==='SEB'?'badge--yes':'badge--no')+'">'+esc(b.mainSebStatus)+'</span>' : dash()) + '</td>'
       + '<td class="mono">' + (fmtUpdatedAt(b.updatedAt) || dash()) + '</td>'
       + '<td class="col-actions">' + configActionsCell(b.id) + '</td>'
@@ -3427,8 +3444,8 @@ function boot(seedBatches, seedStudents, seedTestUids) {
 
     const configColsHidden = canViewConfigColumns() ? '' : ' hidden';
     const configCols =
-        '<td' + configColsHidden + '>' + (d.mockRequired ? configField(d.mockConfigUrl) : '<span class="muted-cell">Not Required</span>') + '</td>'
-      + '<td' + configColsHidden + '>' + configField(d.mainConfigUrl) + '</td>';
+        '<td' + configColsHidden + '>' + (d.mockRequired ? configFieldReuseAware(d, 'mockConfigUrl') : '<span class="muted-cell">Not Required</span>') + '</td>'
+      + '<td' + configColsHidden + '>' + configFieldReuseAware(d, 'mainConfigUrl') + '</td>';
 
     return '<tr class="'+(editing?'row-editing':'')+'" id="row-'+id+'" data-id="'+id+'">'
       + '<td class="col-syllabus"><input type="checkbox" class="row-checkbox-batch" data-id="'+id+'"'+(selectedBatchIds.has(id)?' checked':'')+'> ' + programCell(d.program, editing) + '</td>'
@@ -5849,6 +5866,48 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     openTitleFormModal();
   }
 
+  // "Make a copy" of an existing Title -- same syllabus, Main/Mock setup,
+  // SEB status, and config links (both Assessment Config and Interview
+  // Config), opened as a brand-new Raise Request so the person just
+  // renames it and sets fresh dates rather than retyping everything.
+  // Dates, publish state, invites, and the shortlist are NOT carried over --
+  // those belong to the original run, not the new one.
+  function startClone(id) {
+    if (!canManageRecordCatalog()) return;
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    activeSection = 'records';
+    const newId = uid();
+    const seed = normalizeBatch({
+      ...b,
+      id: newId,
+      batch: '',
+      mainStartAt: '', mainEndAt: '',
+      mockStartAt: '', mockEndAt: '',
+      mainInterviewStartAt: '', mainInterviewEndAt: '',
+      mockInterviewStartAt: '', mockInterviewEndAt: '',
+      mainPublished: false, mockPublished: false,
+      mainAssessmentLink: '', mockAssessmentLink: '',
+      publishedAt: '',
+      mainInviteSent: false, mainInviteSentAt: '',
+      mockInviteSent: false, mockInviteSentAt: '',
+      mainInterviewInvited: false, mockInterviewInvited: false,
+      mainInterviewLink: '', mockInterviewLink: '',
+      interviewShortlist: [],
+      updatedAt: ''
+    });
+    editingId = newId; isNewRow = true;
+    draft = cloneForEdit(seed);
+    draft.ticketRaisedAt = todayISO();
+    titleFormReadOnly = false;
+    titleFormConfigOnly = false;
+    titleFormSnapshot = JSON.stringify(draft);
+    titleWeekLibraryDismissed = false;
+    render();
+    openTitleFormModal();
+    flashToast('Cloned "' + b.batch + '" — give it a new Title name and dates, then Save.', 'success');
+  }
+
   function viewTitleDetails(id) {
     const b = batches.find(x => x.id === id);
     if (!b) return;
@@ -5991,6 +6050,27 @@ function boot(seedBatches, seedStudents, seedTestUids) {
   function dismissWeekLibraryTitleForm() {
     titleWeekLibraryDismissed = true;
     renderTitleFormModal();
+  }
+
+  // One-click reuse straight from the Curriculum / Topin Configs table row --
+  // no need to open the edit modal first. Only ever fills the one blank
+  // field the button was rendered for (configFieldReuseAware already only
+  // shows the button when that field is blank and a match exists).
+  function applyWeekLibraryToBatchRow(id, field) {
+    if (!canWrite || !canViewConfigColumns()) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const b = batches[idx];
+    const week = parseWeekFromTitle(b.batch);
+    const match = week === null ? null : findWeekConfig(b.program, week);
+    if (!match || !match[field]) { flashToast('No Config Library entry to apply.', 'error'); return; }
+    const before = b;
+    const updated = normalizeBatch({ ...b, [field]: match[field], updatedAt: new Date().toISOString() });
+    batches[idx] = updated;
+    render();
+    persistSave(updated);
+    notifyAssessmentConfigChange(before, updated);
+    flashToast('Reused Week ' + week + ' library config.', 'success');
   }
 
   function requestCancelTitleForm() {
@@ -7553,6 +7633,12 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     else if (action === 'dismiss-week-library') {
       dismissWeekLibraryTitleForm();
+    }
+    else if (action === 'apply-week-library-row') {
+      applyWeekLibraryToBatchRow(id, btn.dataset.field);
+    }
+    else if (action === 'clone-title') {
+      startClone(id);
     }
     else if (action === 'apply-week-library-nxtmock') {
       applyWeekLibraryToNxtmockForm();
