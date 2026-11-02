@@ -61,6 +61,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-body);-webkit-
 .btn--ghost{background:transparent;border-color:var(--border);color:var(--ink-2);}
 .btn--ghost:hover{background:var(--surface-2);}
 .btn--icon-danger{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 8px;display:inline-flex;align-items:center;}
+.btn--icon{background:transparent;border:1px solid transparent;color:var(--muted);padding:4px 6px;display:inline-flex;align-items:center;border-radius:6px;vertical-align:middle;}
+.btn--icon:hover{color:var(--accent);background:var(--accent-soft);border-color:var(--accent-soft);}
 .btn--danger{background:var(--btn-danger-bg);color:var(--btn-danger-text);}
 .btn--danger:hover{background:var(--btn-danger-bg-hover);}
 .btn--icon-danger:hover{color:var(--danger);background:var(--danger-soft);border-color:var(--danger-soft);}
@@ -296,7 +298,8 @@ button.kpi-card:focus-visible{outline:2px solid var(--kpi-accent,var(--accent));
 .item-edit-row .cell-input{flex:1;min-width:0;}
 .item-add-input{opacity:.85;}
 .item-row.paragraph-row{white-space:pre-wrap;}
-.syllabus-pair-cell{padding:0 !important;min-width:300px;max-width:340px;}
+.syllabus-pair-cell{padding:0 !important;min-width:300px;max-width:340px;position:relative;}
+.syllabus-download-btn{position:absolute;top:4px;right:4px;z-index:2;background:var(--surface);}
 .syllabus-pairs{display:flex;flex-direction:column;}
 .syllabus-pair-row{display:grid;grid-template-columns:120px 1fr;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border-soft);}
 .syllabus-pair-row:last-child{border-bottom:none;}
@@ -513,6 +516,7 @@ boot(${JSON.stringify(batches)}, ${JSON.stringify(students)}, ${JSON.stringify(t
 
 function boot(seedBatches, seedStudents, seedTestUids) {
   const ICON_TRASH = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 4H13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6 4V2.6C6 2.27 6.27 2 6.6 2H9.4C9.73 2 10 2.27 10 2.6V4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M4.2 4L4.8 12.6C4.85 13.37 5.48 14 6.26 14H9.74C10.52 14 11.15 13.37 11.2 12.6L11.8 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const ICON_DOWNLOAD = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M8 2V10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M4.8 7.5L8 10.7L11.2 7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 12.5V13.2C2.5 13.75 2.95 14.2 3.5 14.2H12.5C13.05 14.2 13.5 13.75 13.5 13.2V12.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
   const ICON_DASHBOARD = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>';
   const ICON_BOOK = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><path d="M2.5 3.2C2.5 2.8 2.83 2.5 3.23 2.5H7.5V13.5H3.23C2.83 13.5 2.5 13.17 2.5 12.77V3.2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M13.5 3.2C13.5 2.8 13.17 2.5 12.77 2.5H8.5V13.5H12.77C13.17 13.5 13.5 13.17 13.5 12.77V3.2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
   const ICON_LINK = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="nav-icon"><path d="M6.5 9.5L9.5 6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M7.2 4.6L8.4 3.4C9.5 2.3 11.3 2.3 12.4 3.4C13.5 4.5 13.5 6.3 12.4 7.4L11.2 8.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8.8 11.4L7.6 12.6C6.5 13.7 4.7 13.7 3.6 12.6C2.5 11.5 2.5 9.7 3.6 8.6L4.8 7.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
@@ -2767,16 +2771,17 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return '<input type="datetime-local" class="cell-input cell-input--datetime" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
   }
   function actionsCell(id) {
-    const b = batches.find(x => x.id === id);
-    const syllabusBtn = (b && b.syllabusItems && b.syllabusItems.length) ? '<button type="button" class="btn btn--ghost btn--xs" data-action="download-syllabus" data-id="'+id+'" title="Download this Title&#39;s syllabus as an Excel sheet">Syllabus</button>' : '';
+    // Syllabus download now lives as a small icon in the Syllabus column
+    // itself (see rowHTML) -- not duplicated here, to keep this already-wide
+    // Actions column from needing even more horizontal scrolling.
     const cloneBtn = canManageRecordCatalog() ? '<button type="button" class="btn btn--ghost btn--xs" data-action="clone-title" data-id="'+id+'" title="Create a new Title pre-filled from this one">Clone</button>' : '';
     if (canEditRecords()) {
-      return '<div class="actions">' + syllabusBtn + cloneBtn + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
+      return '<div class="actions">' + cloneBtn + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
     }
     if (canViewConfigColumns()) {
-      return '<div class="actions">' + syllabusBtn + cloneBtn + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button></div>';
+      return '<div class="actions">' + cloneBtn + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button></div>';
     }
-    return syllabusBtn ? ('<div class="actions">' + syllabusBtn + '</div>') : '<span class="muted-cell">Locked</span>';
+    return '<span class="muted-cell">Locked</span>';
   }
 
   function studentsButtonCell(id, batchName) {
@@ -3512,7 +3517,10 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       + '<td>' + textCell('batch', d.batch, editing, 'Title') + '</td>'
       + '<td class="mono">' + mainAssessmentDateCell(b) + '</td>'
       + '<td>' + studentsButtonCell(id, d.batch) + '</td>'
-      + '<td colspan="2" class="syllabus-pair-cell">' + syllabusPairCell(d.syllabusItems, editing, id) + '</td>'
+      + '<td colspan="2" class="syllabus-pair-cell">'
+        + (d.syllabusItems && d.syllabusItems.length ? '<button type="button" class="btn--icon syllabus-download-btn" data-action="download-syllabus" data-id="'+id+'" aria-label="Download syllabus" title="Download syllabus (Excel)">'+ICON_DOWNLOAD+'</button>' : '')
+        + syllabusPairCell(d.syllabusItems, editing, id)
+      + '</td>'
       + '<td>' + sebCell(d, editing) + '</td>'
       + '<td>' + toggleCell(d.mockRequired, editing, 'toggle-mock', false) + '</td>'
       + mockCols
