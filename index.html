@@ -2767,14 +2767,16 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     return '<input type="datetime-local" class="cell-input cell-input--datetime" data-field="'+field+'" value="'+esc(d[field]||'')+'">';
   }
   function actionsCell(id) {
+    const b = batches.find(x => x.id === id);
+    const syllabusBtn = (b && b.syllabusItems && b.syllabusItems.length) ? '<button type="button" class="btn btn--ghost btn--xs" data-action="download-syllabus" data-id="'+id+'" title="Download this Title&#39;s syllabus as an Excel sheet">Syllabus</button>' : '';
     const cloneBtn = canManageRecordCatalog() ? '<button type="button" class="btn btn--ghost btn--xs" data-action="clone-title" data-id="'+id+'" title="Create a new Title pre-filled from this one">Clone</button>' : '';
     if (canEditRecords()) {
-      return '<div class="actions">' + cloneBtn + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
+      return '<div class="actions">' + syllabusBtn + cloneBtn + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button><button type="button" class="btn--icon-danger" data-action="delete" data-id="'+id+'" aria-label="Delete batch" title="Delete batch">'+ICON_TRASH+'</button></div>';
     }
     if (canViewConfigColumns()) {
-      return '<div class="actions">' + cloneBtn + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button></div>';
+      return '<div class="actions">' + syllabusBtn + cloneBtn + '<button type="button" class="btn btn--ghost btn--xs" data-action="edit" data-id="'+id+'">Edit</button></div>';
     }
-    return '<span class="muted-cell">Locked</span>';
+    return syllabusBtn ? ('<div class="actions">' + syllabusBtn + '</div>') : '<span class="muted-cell">Locked</span>';
   }
 
   function studentsButtonCell(id, batchName) {
@@ -7270,6 +7272,112 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
   }
 
+  // Topics are typed free-text (one per line in the syllabus editor), but a
+  // Title built from the legacy CSV import path joins them with " | "
+  // instead -- split on real line breaks first, and only fall back to
+  // splitting on "|" when there weren't any, so both shapes still turn into
+  // one topic per exported row.
+  function splitTopicsForExport(topics) {
+    if (!topics) return [];
+    let lines = String(topics).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    if (lines.length <= 1 && topics.includes('|')) {
+      lines = String(topics).split('|').map(s => s.trim()).filter(Boolean);
+    }
+    return lines.length ? lines : [String(topics).trim()];
+  }
+
+  async function buildSyllabusWorkbook(b) {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Assessments & NxtMock Ops';
+    const ws = wb.addWorksheet('Syllabus');
+    ws.columns = [
+      { header: 'Assessment', width: 26 },
+      { header: 'Subjects', width: 26 },
+      { header: 'Topics', width: 58 }
+    ];
+    const thin = { style: 'thin', color: { argb: 'FF000000' } };
+    const allBorders = { top: thin, left: thin, bottom: thin, right: thin };
+    const headerRow = ws.getRow(1);
+    headerRow.eachCell(cell => {
+      cell.font = { bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } };
+      cell.border = allBorders;
+    });
+
+    const items = (b.syllabusItems && b.syllabusItems.length) ? b.syllabusItems : [{ subject: '', topics: '' }];
+    let r = 2;
+    items.forEach(it => {
+      const topicLines = splitTopicsForExport(it.topics);
+      const rows = topicLines.length ? topicLines : [''];
+      const startRow = r;
+      rows.forEach((topic, i) => {
+        const row = ws.addRow(['', i === 0 ? it.subject : '', topic]);
+        row.eachCell({ includeEmpty: true }, cell => { cell.border = allBorders; });
+        const topicCell = row.getCell(3);
+        topicCell.font = { color: { argb: 'FF1F4E79' } };
+        topicCell.alignment = { horizontal: 'left', vertical: 'top' };
+        r++;
+      });
+      const endRow = r - 1;
+      if (endRow > startRow) ws.mergeCells(startRow, 2, endRow, 2);
+      const subjCell = ws.getCell(startRow, 2);
+      subjCell.font = { bold: true };
+      subjCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    });
+
+    const lastDataRow = r - 1;
+    if (lastDataRow >= 2) {
+      if (lastDataRow > 2) ws.mergeCells(2, 1, lastDataRow, 1);
+      const assessmentCell = ws.getCell(2, 1);
+      assessmentCell.value = b.batch || '';
+      assessmentCell.font = { bold: true };
+      assessmentCell.alignment = { horizontal: 'left', vertical: 'bottom', wrapText: true };
+    }
+    return wb;
+  }
+
+  async function downloadSyllabusXLSX(id) {
+    const b = batches.find(x => x.id === id);
+    if (!b) return;
+    if (typeof ExcelJS === 'undefined') {
+      flashToast('Syllabus export isn’t available right now — the Excel library failed to load.', 'error');
+      return;
+    }
+    let buffer;
+    try {
+      const wb = await buildSyllabusWorkbook(b);
+      buffer = await wb.xlsx.writeBuffer();
+    } catch (e) {
+      flashToast('Could not build the syllabus sheet.', 'error');
+      return;
+    }
+    const filename = (b.batch || 'Syllabus').replace(/[\\/:*?"<>|]/g, '_') + ' - Syllabus.xlsx';
+    if (window.claude && typeof window.claude.use === 'function') {
+      const downloads = await window.claude.use('downloads');
+      if (downloads) {
+        // .xlsx isn't in this preview's downloadable-extension allowlist -- same
+        // limitation as the Bulk Import sample sheet; use the deployed site instead.
+        flashToast('Excel downloads aren’t available in this preview — use the deployed site to download the syllabus.', 'error');
+        return;
+      }
+    }
+    try {
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      flashToast('Syllabus downloaded.', 'success');
+    } catch (e) {
+      flashToast('Could not download the syllabus sheet.', 'error');
+    }
+  }
+
   async function buildSampleWorkbook() {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Assessments & NxtMock Ops';
@@ -7742,6 +7850,9 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     }
     else if (action === 'clone-title') {
       startClone(id);
+    }
+    else if (action === 'download-syllabus') {
+      downloadSyllabusXLSX(id);
     }
     else if (action === 'apply-week-library-nxtmock') {
       applyWeekLibraryToNxtmockForm();
