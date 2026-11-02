@@ -1447,6 +1447,56 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     ) || null;
   }
 
+  const SIMILAR_SYLLABUS_THRESHOLD = 0.8;
+
+  // Whole-syllabus fingerprint: every word across every Subject + Topics
+  // pair, combined into one set (not matched pair-by-pair -- a Title's
+  // subjects can be reordered or split differently between two otherwise
+  // near-identical syllabuses, so comparing the whole bag of words is more
+  // robust than trying to line up individual rows).
+  function syllabusWordSet(items) {
+    const set = new Set();
+    (items || []).forEach(it => {
+      const text = ((it.subject || '') + ' ' + (it.topics || '')).toLowerCase();
+      text.split(/[^a-z0-9]+/).forEach(w => { if (w.length >= 3) set.add(w); });
+    });
+    return set;
+  }
+
+  function jaccardSimilarity(a, b) {
+    if (!a.size || !b.size) return 0;
+    let inter = 0;
+    a.forEach(w => { if (b.has(w)) inter++; });
+    const union = a.size + b.size - inter;
+    return union ? inter / union : 0;
+  }
+
+  // Finds the best-matching OTHER Title in the same Program whose syllabus
+  // overlaps this one by at least SIMILAR_SYLLABUS_THRESHOLD, among Titles
+  // that already have a Main (or, if required, Mock) Assessment Config --
+  // i.e. an already-configured sibling worth reusing from. This is a
+  // fallback for when there's no Config Library entry for this Program +
+  // Week; it never runs at all if one exists (checked by the caller).
+  function findSimilarConfiguredTitle(b) {
+    if (!b.program || !b.batch) return null;
+    const words = syllabusWordSet(b.syllabusItems);
+    if (!words.size) return null;
+    let best = null;
+    batches.forEach(other => {
+      if (other.id === b.id) return;
+      if ((other.program || '').trim().toLowerCase() !== b.program.trim().toLowerCase()) return;
+      const hasConfig = !!other.mainConfigUrl || (!!b.mockRequired && !!other.mockConfigUrl);
+      if (!hasConfig) return;
+      const otherWords = syllabusWordSet(other.syllabusItems);
+      if (!otherWords.size) return;
+      const score = jaccardSimilarity(words, otherWords);
+      if (score >= SIMILAR_SYLLABUS_THRESHOLD && (!best || score > best.score)) {
+        best = { batch: other, score: score };
+      }
+    });
+    return best;
+  }
+
   function normalizeBatch(b) {
     const mockRequired = !!b.mockRequired;
     // Interview requirement is a tri-state: true/false once someone has explicitly
@@ -2811,6 +2861,14 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     const match = week === null ? null : findWeekConfig(b.program, week);
     if (match && match[field]) {
       return '<button type="button" class="btn btn--ghost btn--xs" data-action="apply-week-library-row" data-id="'+b.id+'" data-field="'+field+'" title="Reuse the Week '+week+' Config Library entry">Reuse Week '+week+'</button>';
+    }
+    // No Config Library entry for this Program + Week -- fall back to
+    // checking whether an already-configured sibling Title in the same
+    // Program has a near-identical syllabus.
+    const similar = findSimilarConfiguredTitle(b);
+    if (similar && similar.batch[field]) {
+      const pct = Math.round(similar.score * 100);
+      return '<button type="button" class="btn btn--ghost btn--xs" data-action="apply-similar-title-row" data-id="'+b.id+'" data-field="'+field+'" data-source="'+similar.batch.id+'" title="Syllabus is '+pct+'% similar to &quot;'+esc(similar.batch.batch)+'&quot; (already configured)">Reuse from &ldquo;'+esc(similar.batch.batch)+'&rdquo; ('+pct+'%)</button>';
     }
     return dash();
   }
@@ -5973,24 +6031,34 @@ function boot(seedBatches, seedStudents, seedTestUids) {
       : '';
     const detectedWeek = parseWeekFromTitle(d.batch);
     const libraryMatch = canViewConfigColumns() ? findWeekConfig(d.program, detectedWeek) : null;
-    const titleHasBlankToFill = !!libraryMatch && (
-      (!d.mainConfigUrl && libraryMatch.mainConfigUrl) ||
-      (d.mockRequired && !d.mockConfigUrl && libraryMatch.mockConfigUrl)
+    // No Config Library entry for this Program + Week -- fall back to an
+    // already-configured sibling Title in the same Program with a
+    // near-identical syllabus (whole-syllabus word overlap, see
+    // findSimilarConfiguredTitle).
+    const similarMatch = (canViewConfigColumns() && !libraryMatch) ? findSimilarConfiguredTitle(d) : null;
+    const reuseSource = libraryMatch
+      ? { label: 'Week ' + detectedWeek, main: libraryMatch.mainConfigUrl, mock: libraryMatch.mockConfigUrl, action: 'apply-week-library' }
+      : similarMatch
+        ? { label: '&ldquo;' + esc(similarMatch.batch.batch) + '&rdquo; (' + Math.round(similarMatch.score * 100) + '% similar)', main: similarMatch.batch.mainConfigUrl, mock: similarMatch.batch.mockConfigUrl, action: 'apply-similar-title' }
+        : null;
+    const titleHasBlankToFill = !!reuseSource && (
+      (!d.mainConfigUrl && reuseSource.main) ||
+      (d.mockRequired && !d.mockConfigUrl && reuseSource.mock)
     );
     const libraryHintHTML = !configEditing ? '' : (
-      detectedWeek === null
-        ? '<p class="footnote">No Week detected in the Title text (looks for &ldquo;Week - 3&rdquo;, &ldquo;Week 3&rdquo; or &ldquo;W3&rdquo;) &mdash; Config Library reuse isn&rsquo;t available for this Title.</p>'
-        : !libraryMatch
-          ? '<p class="footnote">Week ' + detectedWeek + ' detected, but no Config Library entry yet for ' + esc(d.program || 'this Program') + '.</p>'
-          : !titleHasBlankToFill
-            ? ''
-            : titleWeekLibraryDismissed
-              ? '<p class="footnote">Week ' + detectedWeek + ' library config available for ' + esc(d.program) + '. <button type="button" class="btn btn--ghost btn--xs" data-action="apply-week-library">Reuse it</button></p>'
-              : '<div class="week-library-prompt"><p>Week ' + detectedWeek + ' already has a saved config for <strong>' + esc(d.program) + '</strong>. Reuse the same config?</p>'
-                + '<div class="week-library-prompt-actions">'
-                + '<button type="button" class="btn btn--primary btn--xs" data-action="apply-week-library">Yes, reuse it</button>'
-                + '<button type="button" class="btn btn--ghost btn--xs" data-action="dismiss-week-library">No, I&rsquo;ll fill it in</button>'
-                + '</div></div>'
+      !reuseSource
+        ? (detectedWeek === null
+            ? '<p class="footnote">No Week detected in the Title text (looks for &ldquo;Week - 3&rdquo;, &ldquo;Week 3&rdquo; or &ldquo;W3&rdquo;), and no similar already-configured Title found in ' + esc(d.program || 'this Program') + '.</p>'
+            : '<p class="footnote">Week ' + detectedWeek + ' detected, but no Config Library entry or similar already-configured Title found for ' + esc(d.program || 'this Program') + '.</p>')
+        : !titleHasBlankToFill
+          ? ''
+          : titleWeekLibraryDismissed
+            ? '<p class="footnote">A config is available to reuse from ' + reuseSource.label + '. <button type="button" class="btn btn--ghost btn--xs" data-action="' + reuseSource.action + '">Reuse it</button></p>'
+            : '<div class="week-library-prompt"><p>' + (libraryMatch ? (reuseSource.label + ' already has a saved config for <strong>' + esc(d.program) + '</strong>.') : ('This syllabus looks like ' + reuseSource.label + ', which is already configured.')) + ' Reuse the same config?</p>'
+              + '<div class="week-library-prompt-actions">'
+              + '<button type="button" class="btn btn--primary btn--xs" data-action="' + reuseSource.action + '">Yes, reuse it</button>'
+              + '<button type="button" class="btn btn--ghost btn--xs" data-action="dismiss-week-library">No, I&rsquo;ll fill it in</button>'
+              + '</div></div>'
     );
     body.innerHTML =
       '<div class="filter-field"><label>Program' + (editing ? ' <span class="required-mark">*</span>' : '') + '</label>' + programCell(d.program, editing) + '</div>'
@@ -6047,6 +6115,20 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     flashToast('Applied from Week ' + week + ' library: ' + filled.join(', ') + '.', 'success');
   }
 
+  function applySimilarTitleToTitleForm() {
+    if (!draft) return;
+    const similar = findSimilarConfiguredTitle(draft);
+    if (!similar) { flashToast('No similar configured Title to apply.', 'error'); return; }
+    const source = similar.batch;
+    let filled = [];
+    if (!draft.mainConfigUrl && source.mainConfigUrl) { draft.mainConfigUrl = source.mainConfigUrl; filled.push('Main Assessment Config'); }
+    if (draft.mockRequired && !draft.mockConfigUrl && source.mockConfigUrl) { draft.mockConfigUrl = source.mockConfigUrl; filled.push('Mock Assessment Config'); }
+    titleWeekLibraryDismissed = true;
+    if (!filled.length) { renderTitleFormModal(); flashToast('Those fields already have a value — nothing to apply.', 'error'); return; }
+    renderTitleFormModal();
+    flashToast('Applied from "' + source.batch + '": ' + filled.join(', ') + '.', 'success');
+  }
+
   function dismissWeekLibraryTitleForm() {
     titleWeekLibraryDismissed = true;
     renderTitleFormModal();
@@ -6071,6 +6153,21 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     persistSave(updated);
     notifyAssessmentConfigChange(before, updated);
     flashToast('Reused Week ' + week + ' library config.', 'success');
+  }
+
+  function applySimilarTitleToBatchRow(id, field, sourceId) {
+    if (!canWrite || !canViewConfigColumns()) return;
+    const idx = batches.findIndex(b => b.id === id);
+    if (idx === -1) return;
+    const source = batches.find(b => b.id === sourceId);
+    if (!source || !source[field]) { flashToast('That source Title no longer has a config to reuse.', 'error'); return; }
+    const before = batches[idx];
+    const updated = normalizeBatch({ ...before, [field]: source[field], updatedAt: new Date().toISOString() });
+    batches[idx] = updated;
+    render();
+    persistSave(updated);
+    notifyAssessmentConfigChange(before, updated);
+    flashToast('Reused config from "' + source.batch + '".', 'success');
   }
 
   function requestCancelTitleForm() {
@@ -7631,11 +7728,17 @@ function boot(seedBatches, seedStudents, seedTestUids) {
     else if (action === 'apply-week-library') {
       applyWeekLibraryToTitleForm();
     }
+    else if (action === 'apply-similar-title') {
+      applySimilarTitleToTitleForm();
+    }
     else if (action === 'dismiss-week-library') {
       dismissWeekLibraryTitleForm();
     }
     else if (action === 'apply-week-library-row') {
       applyWeekLibraryToBatchRow(id, btn.dataset.field);
+    }
+    else if (action === 'apply-similar-title-row') {
+      applySimilarTitleToBatchRow(id, btn.dataset.field, btn.dataset.source);
     }
     else if (action === 'clone-title') {
       startClone(id);
